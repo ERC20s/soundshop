@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Bright Saw",
+    "osc": "sawtooth",
+    "adsr": {"A": 8, "D": 120, "S": 0.6, "R": 250},
+    "filter": {"type": "lowpass", "cutoff": 6000, "q": 0.8},
+    "masterDB": -6
+  },
+  {
+    "name": "Warm Pad",
+    "osc": "triangle",
+    "adsr": {"A": 200, "D": 300, "S": 0.8, "R": 900},
+    "filter": {"type": "lowpass", "cutoff": 3000, "q": 1.2},
+    "masterDB": -10
+  }
+]

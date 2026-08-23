@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Soundshop — Synth Demo</title>
+  <link rel="stylesheet" href="demo/styles.css">
+</head>
+<body>
+  <main class="wrap">
+    <h1>Soundshop — Synth Demo</h1>
+    <div class="controls">
+      <div class="row">
+        <label>Power <button id="power">Start Audio</button></label>
+        <label>Master <input id="master" type="range" min="-24" max="0" value="-6"> <span id="masterVal">-6 dB</span></label>
+        <label>Oscillator <select id="oscType"><option>sine</option><option>square</option><option>sawtooth</option><option>triangle</option></select></label>
+        <label>Preset <select id="preset"><option>Loading...</option></select></label>
+      </div>
+      <div class="row">
+        <div class="group">
+          <div class="label">ADSR (ms / sustain 0-1)</div>
+          <label>A <input id="envA" type="range" min="0" max="2000" value="10"></label>
+          <label>D <input id="envD" type="range" min="0" max="2000" value="150"></label>
+          <label>S <input id="envS" type="range" min="0" max="1" step="0.01" value="0.7"></label>
+          <label>R <input id="envR" type="range" min="0" max="3000" value="300"></label>
+        </div>
+        <div class="group">
+          <div class="label">Filter</div>
+          <label>Type <select id="filterType"><option>lowpass</option><option>highpass</option><option>bandpass</option></select></label>
+          <label>Cutoff <input id="filterCutoff" type="range" min="100" max="16000" value="8000"></label>
+          <label>Q <input id="filterQ" type="range" min="0" max="30" step="0.1" value="1"></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="keyboard" id="keyboard" aria-label="Synth keyboard">
+      <!-- keys filled by script -->
+    </div>
+
+    <p class="help">Tip: click a key or use computer keys z/s/x/d/c/v/g/b/h/n/j/m to play notes. Changes apply immediately.</p>
+
+  </main>
+  <script type="module" src="demo/synth.js"></script>
+</body>
+</html>
