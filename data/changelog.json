@@ -1,0 +1,15 @@
+[
+  {
+    "version": "0.1.0",
+    "date": "2026-08-01",
+    "title": "Initial release",
+    "notes": [
+      "Initial changelog entry — demo and presets added",
+      "Added sample changelog JSON and a static changelog page that reads it in the browser."
+    ],
+    "links": {
+      "plugin": "/plugins/flagship.html",
+      "demo": "/demo/flagship.html"
+    }
+  }
+]
