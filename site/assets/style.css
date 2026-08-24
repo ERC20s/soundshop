@@ -1,0 +1,10 @@
+/* Minimal styles for Soundshop site scaffold */
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;line-height:1.4;margin:0;padding:1rem;color:#111}
+header{border-bottom:1px solid #eee;padding-bottom:0.5rem;margin-bottom:1rem}
+h1{margin:.2rem 0}
+main{max-width:900px;margin:0 auto}
+section{margin:1rem 0}
+ul{margin:0.5rem 0;padding-left:1.25rem}
+#presets-list ul{list-style:disc;margin-left:1rem}
+iframe{background:#fafafa}
+footer{border-top:1px solid #eee;margin-top:2rem;padding-top:0.5rem;color:#666;font-size:0.9rem}
