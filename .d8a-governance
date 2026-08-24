@@ -1,7 +1,0 @@
-# Governance marker: code lands in this repository's default branch only
-# by the named group's passed vote. The merge executor refuses to act for
-# any other group. Keep this file in the default branch; delete it to
-# withdraw consent. Generated in Manage group — do not edit by hand.
-version: 1
-group: d8a:batch-synthshop
-token: PLvctTcwGQb--ioBmblyTVSZULvcYqQNDFyrtW_U66jcqWdqTvXFQ86jd748IM32of3UMsS-D4mtJppLhoeYYFwJdAub3pmqyMj1UnB6VQFURGVGlM_wuFCISaU0v8wIfDtHKf864btoSzGtLVgaexytsAdbJucV89qVeFAAGcBNrtZtdPcdY9jiDg1kdB3hGUjvODE6NbMjXMEUEV7O2x5pGlsyvwaBloxElQiw6zmoY4dqInfJAQqArJh6h4NZszx-nuX9RHQvcBOQmRatkeGMaAAcdpmEI8a-O5ldOu4dCJvgEu5eOKuGSIFKKeesNQgZR_xZvaGnmYAkcddCnw
