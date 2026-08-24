@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Soundshop — Presets Gallery</title>
+  <link rel="stylesheet" href="/site/assets/style.css">
+  <style>
+    .preset { margin: 0.5em 0; padding: 0.5em; border: 1px solid #ddd; }
+    .preset .meta { font-size: 0.9em; color: #555; }
+    #notice { margin: 1em 0; color: #a00; }
+    #search { margin-bottom: 1em; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Presets Gallery</h1>
+    <p>Browse, download and preview presets for the Flagship synth.</p>
+  </header>
+  <main>
+    <div id="notice"></div>
+    <div>
+      <input id="search" placeholder="Search by name or tag" style="width:100%;padding:8px" />
+    </div>
+    <div id="list">Loading presets…</div>
+    <section>
+      <h2>Developer notes</h2>
+      <p>If a demo is available on this page that exposes a global function <code>applyPreset(preset)</code>, the Preview buttons will call it. Otherwise the gallery will attempt to postMessage the preset to an iframe (demo) with src ending in <code>demo/flagship-demo.html</code> or <code>demo.html</code>. If neither is present, previewing will show these instructions.</p>
+      <p>Preset JSON Schema: <a href="/site/presets/schema.json">/site/presets/schema.json</a></p>
+    </section>
+  </main>
+  <script>
+    (function(){
+      var listEl = document.getElementById('list');
+      var notice = document.getElementById('notice');
+      var search = document.getElementById('search');
+      var presets = [];
+
+      function render(filter){
+        listEl.textContent = '';
+        var filtered = presets.filter(function(p){
+          if(!filter) return true;
+          var q = filter.toLowerCase();
+          if(p.name && p.name.toLowerCase().indexOf(q)!==-1) return true;
+          if(Array.isArray(p.tags)){
+            return p.tags.join(' ').toLowerCase().indexOf(q)!==-1;
+          }
+          return false;
+        });
+        if(filtered.length===0){ listEl.textContent = 'No presets found.'; return; }
+        filtered.forEach(function(p, idx){
+          var div = document.createElement('div'); div.className='preset';
+          var h = document.createElement('div'); h.textContent = (p.name || 'Untitled') + ' — ' + (p.author||'unknown');
+          var m = document.createElement('div'); m.className='meta';
+          m.textContent = (p.tags||[]).join(', ');
+          var buttons = document.createElement('div'); buttons.style.marginTop='6px';
+          var dl = document.createElement('button'); dl.textContent='Download JSON'; dl.onclick = function(){ downloadPreset(p); };
+          var prev = document.createElement('button'); prev.textContent='Preview'; prev.style.marginLeft='8px'; prev.onclick = function(){ previewPreset(p); };
+          buttons.appendChild(dl); buttons.appendChild(prev);
+          div.appendChild(h); div.appendChild(m); div.appendChild(buttons);
+          listEl.appendChild(div);
+        });
+      }
+
+      function downloadPreset(p){
+        var blob = new Blob([JSON.stringify(p, null, 2)], {type:'application/json'});
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a'); a.href = url; a.download = (p.name||'preset') + '.json';
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      }
+
+      function previewPreset(p){
+        // 1. try global applyPreset
+        try{
+          if(typeof window.applyPreset === 'function'){
+            window.applyPreset(p);
+            notice.textContent = 'Preview sent to local demo via applyPreset.';
+            return;
+          }
+        }catch(e){}
+        // 2. find a demo iframe
+        var iframe = document.querySelector('iframe[src*="demo/flagship-demo.html"], iframe[src*="demo.html"]');
+        if(!iframe){
+          // try any iframe on the page
+          iframe = document.querySelector('iframe');
+        }
+        if(iframe && iframe.contentWindow){
+          iframe.contentWindow.postMessage({type:'applyPreset', preset:p}, '*');
+          notice.textContent = 'Preview posted to demo iframe.';
+          return;
+        }
+        // 3. fallback
+        notice.textContent = 'No demo available on this page. To enable preview, expose window.applyPreset(preset) or add an iframe hosting the demo (src ending in /demo/flagship-demo.html) that listens for postMessage({type:"applyPreset",preset}).';
+      }
+
+      // load presets
+      fetch('/site/presets/sample-presets.json').then(function(r){ if(!r.ok) throw new Error('fetch failed'); return r.json(); })
+        .then(function(data){ presets = Array.isArray(data)?data:[]; render(); })
+        .catch(function(){ listEl.textContent = 'Unable to load presets.'; });
+
+      search.addEventListener('input', function(){ render(this.value); });
+
+      // expose simple API for embedding pages
+      window.soundshopPresets = {render:render};
+    })();
+  </script>
+</body>
+</html>

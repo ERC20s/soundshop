@@ -1,0 +1,78 @@
+[
+  {
+    "name": "Warm Pad",
+    "author": "Dana",
+    "tags": ["pad","warm","ambient"],
+    "description": "A soft evolving pad good for background textures.",
+    "params": {
+      "osc1": "saw",
+      "osc2": "triangle",
+      "osc3": "sine",
+      "detune": 3,
+      "filter": 900,
+      "filterQ": 0.8,
+      "amp": { "attack": 0.5, "decay": 1.2, "sustain": 0.8, "release": 1.5 },
+      "gain": 0.7
+    }
+  },
+  {
+    "name": "Punch Bass",
+    "author": "Eli",
+    "tags": ["bass","punchy"],
+    "description": "Short decay bass for rhythms.",
+    "params": {
+      "osc1": "saw",
+      "osc2": "sine",
+      "detune": 0,
+      "filter": 200,
+      "filterQ": 1.2,
+      "amp": { "attack": 0.01, "decay": 0.15, "sustain": 0.6, "release": 0.2 },
+      "gain": 0.9
+    }
+  },
+  {
+    "name": "Bright Lead",
+    "author": "Frank",
+    "tags": ["lead","bright"],
+    "description": "A cutting lead for melodies.",
+    "params": {
+      "osc1": "square",
+      "osc2": "saw",
+      "detune": 5,
+      "filter": 1500,
+      "filterQ": 0.6,
+      "amp": { "attack": 0.02, "decay": 0.2, "sustain": 0.9, "release": 0.3 },
+      "gain": 0.8
+    }
+  },
+  {
+    "name": "Soft Pluck",
+    "author": "Gina",
+    "tags": ["pluck","soft"],
+    "description": "A gentle plucked sound for arpeggios.",
+    "params": {
+      "osc1": "triangle",
+      "detune": 0,
+      "filter": 1200,
+      "filterQ": 0.4,
+      "amp": { "attack": 0.001, "decay": 0.4, "sustain": 0.0, "release": 0.4 },
+      "gain": 0.6
+    }
+  },
+  {
+    "name": "Ambient Drone",
+    "author": "Hiro",
+    "tags": ["drone","ambient"],
+    "description": "Long evolving drone for pads and textures.",
+    "params": {
+      "osc1": "sine",
+      "osc2": "sine",
+      "osc3": "sine",
+      "detune": 2,
+      "filter": 600,
+      "filterQ": 0.5,
+      "amp": { "attack": 2.0, "decay": 2.0, "sustain": 0.7, "release": 3.0 },
+      "gain": 0.5
+    }
+  }
+]

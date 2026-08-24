@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Soundshop Preset",
+  "description": "Schema for a Flagship synth preset",
+  "type": "object",
+  "required": ["name", "params"],
+  "properties": {
+    "name": { "type": "string" },
+    "author": { "type": "string" },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "description": { "type": "string" },
+    "params": {
+      "type": "object",
+      "properties": {
+        "osc1": { "type": "string", "enum": ["sine","saw","triangle","square"] },
+        "osc2": { "type": "string", "enum": ["sine","saw","triangle","square"] },
+        "osc3": { "type": "string", "enum": ["sine","saw","triangle","square"] },
+        "detune": { "type": "number" },
+        "filter": { "type": "number" },
+        "filterQ": { "type": "number" },
+        "amp": {
+          "type": "object",
+          "properties": {
+            "attack": { "type": "number" },
+            "decay": { "type": "number" },
+            "sustain": { "type": "number" },
+            "release": { "type": "number" }
+          }
+        },
+        "gain": { "type": "number" }
+      }
+    }
+  }
+}
