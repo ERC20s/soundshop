@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Flagship Synth Demo</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding: 12px; color:#222; }
+    .row { display:flex; gap:12px; align-items:center; margin-bottom:8px; flex-wrap:wrap }
+    label { font-size:13px }
+    select, input[type=range], button { font-size:13px }
+    .keyboard { user-select:none; display:flex; gap:2px; padding:8px 0 }
+    .key { width:34px; height:120px; border:1px solid #444; background:#fff; display:flex; align-items:flex-end; justify-content:center; cursor:pointer; position:relative }
+    .key.black { width:24px; height:78px; background:#222; color:#fff; margin-left:-12px; margin-right:-12px; z-index:2 }
+    .key.pressed { background:#b3d4ff }
+    .controls { border:1px solid #ddd; padding:10px; border-radius:6px; background:#fafafa }
+    .small { font-size:12px; color:#555 }
+    .footer { margin-top:10px; font-size:12px; color:#666 }
+  </style>
+</head>
+<body>
+  <h1>Flagship — Minimal Demo</h1>
+  <div class="controls">
+    <div class="row">
+      <button id="power">Start Audio</button>
+      <label class="small">Preset: <select id="preset-select"><option>Loading…</option></select></label>
+      <label class="small">Osc1: <select id="osc1-select"><option value="sine">sine</option><option value="square">square</option><option value="sawtooth">saw</option><option value="triangle">triangle</option></select></label>
+      <label class="small">Osc2: <select id="osc2-select"><option value="sine">sine</option><option value="square">square</option><option value="sawtooth">saw</option><option value="triangle">triangle</option></select></label>
+    </div>
+    <div class="row">
+      <label class="small">Filter cutoff: <input id="filter-cutoff" type="range" min="100" max="5000" value="1200"></label>
+      <label class="small">Resonance (Q): <input id="filter-q" type="range" min="0" max="30" value="6"></label>
+    </div>
+    <div class="row">
+      <label class="small">Attack: <input id="env-attack" type="range" min="0" max="2" step="0.01" value="0.02"></label>
+      <label class="small">Decay: <input id="env-decay" type="range" min="0" max="2" step="0.01" value="0.2"></label>
+      <label class="small">Sustain: <input id="env-sustain" type="range" min="0" max="1" step="0.01" value="0.8"></label>
+      <label class="small">Release: <input id="env-release" type="range" min="0" max="3" step="0.01" value="0.5"></label>
+    </div>
+  </div>
+
+  <div style="margin-top:12px">
+    <div class="keyboard" id="keyboard"></div>
+    <div class="footer">Click or touch keys to play. Use the controls or select a preset to change timbre. AudioContext is created on first gesture to satisfy browser autoplay rules.</div>
+  </div>
+
+  <script>
+  (function(){
+    // Basic synth implementation with 2 oscillators, filter, ADSR, polyphony up to 8
+    var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    var ctx = null;
+    var masterGain = null;
+    var voices = {}; // map note -> voice
+    var voiceOrder = []; // track active notes for stealing
+    var MAX_POLYPHONY = 8;
+
+    // UI elements
+    var powerBtn = document.getElementById('power');
+    var keyboardEl = document.getElementById('keyboard');
+    var osc1Select = document.getElementById('osc1-select');
+    var osc2Select = document.getElementById('osc2-select');
+    var filterCut = document.getElementById('filter-cutoff');
+    var filterQ = document.getElementById('filter-q');
+    var envAttack = document.getElementById('env-attack');
+    var envDecay = document.getElementById('env-decay');
+    var envSustain = document.getElementById('env-sustain');
+    var envRelease = document.getElementById('env-release');
+    var presetSelect = document.getElementById('preset-select');
+
+    // default params
+    var params = {
+      osc1: 'sawtooth',
+      osc2: 'triangle',
+      filterCut: Number(filterCut.value),
+      filterQ: Number(filterQ.value),
+      attack: Number(envAttack.value),
+      decay: Number(envDecay.value),
+      sustain: Number(envSustain.value),
+      release: Number(envRelease.value)
+    };
+
+    function ensureAudioContext() {
+      if (!ctx) {
+        ctx = new AudioContextCtor();
+        masterGain = ctx.createGain();
+        masterGain.gain.value = 0.9;
+        masterGain.connect(ctx.destination);
+        try { ctx.resume && ctx.resume(); } catch(e){}
+        powerBtn.textContent = 'Audio Started';
+        powerBtn.disabled = true;
+      }
+      return ctx;
+    }
+
+    function noteToFreq(note) {
+      // note as MIDI number
+      return 440 * Math.pow(2, (note - 69)/12);
+    }
+
+    function now() { return (ctx && ctx.currentTime) || 0; }
+
+    function Voice(note) {
+      this.note = note;
+      this.freq = noteToFreq(note);
+      this.osc1 = ctx.createOscillator();
+      this.osc2 = ctx.createOscillator();
+      this.osc1.type = params.osc1;
+      this.osc2.type = params.osc2;
+      this.osc2.detune.value = -7; // slight detune for thickness
+
+      this.filter = ctx.createBiquadFilter();
+      this.filter.type = 'lowpass';
+      this.filter.frequency.value = params.filterCut;
+      this.filter.Q.value = params.filterQ;
+
+      this.gain = ctx.createGain();
+      this.gain.gain.value = 0;
+
+      // chain: osc1+osc2 -> filter -> gain -> master
+      this.osc1.connect(this.filter);
+      this.osc2.connect(this.filter);
+      this.filter.connect(this.gain);
+      this.gain.connect(masterGain);
+
+      this.osc1.frequency.value = this.freq;
+      this.osc2.frequency.value = this.freq;
+      this.osc1.start();
+      this.osc2.start();
+
+      this.startTime = now();
+      this.stopScheduled = false;
+
+      // apply ADSR on gain and a subtle filter envelope
+      applyEnvelope(this);
+    }
+
+    function applyEnvelope(v) {
+      var t = now();
+      var a = params.attack; var d = params.decay; var s = params.sustain; var r = params.release;
+      // Gain envelope
+      v.gain.gain.cancelScheduledValues(t);
+      v.gain.gain.setValueAtTime(0.0001, t);
+      v.gain.gain.linearRampToValueAtTime(1.0, t + a);
+      v.gain.gain.linearRampToValueAtTime(s, t + a + d);
+      // Filter envelope - bump cutoff at note start and decay to base
+      v.filter.frequency.cancelScheduledValues(t);
+      var base = params.filterCut;
+      var envAmount = Math.max(200, base * 0.8);
+      v.filter.frequency.setValueAtTime(base + envAmount, t);
+      v.filter.frequency.exponentialRampToValueAtTime(Math.max(100, base), t + a + d + 0.01);
+    }
+
+    Voice.prototype.stop = function() {
+      if (this.stopScheduled) return;
+      this.stopScheduled = true;
+      var t = now();
+      var r = params.release;
+      this.gain.gain.cancelScheduledValues(t);
+      this.gain.gain.setValueAtTime(this.gain.gain.value, t);
+      this.gain.gain.linearRampToValueAtTime(0.0001, t + r);
+      // stop oscillators after release
+      var self = this;
+      setTimeout(function(){ try{ self.osc1.stop(); self.osc2.stop(); } catch(e){} }, (r+0.05)*1000);
+    };
+
+    function noteOn(note) {
+      ensureAudioContext();
+      if (voices[note]) return; // already playing
+      if (voiceOrder.length >= MAX_POLYPHONY) {
+        // steal the oldest
+        var oldest = voiceOrder.shift();
+        if (voices[oldest]) { voices[oldest].stop(); delete voices[oldest]; }
+      }
+      var v = new Voice(note);
+      voices[note] = v;
+      voiceOrder.push(note);
+      highlightKey(note, true);
+    }
+
+    function noteOff(note) {
+      var v = voices[note];
+      if (!v) return;
+      v.stop();
+      // remove from order
+      var idx = voiceOrder.indexOf(note);
+      if (idx !== -1) voiceOrder.splice(idx,1);
+      delete voices[note];
+      highlightKey(note, false);
+    }
+
+    // Build a simple 2-octave keyboard (C3..B4) mapped to MIDI notes 48..71
+    var startNote = 48, keys = [];
+    var whiteKeyPattern = [0,2,4,5,7,9,11];
+    for (var i=0;i<24;i++){
+      var midi = startNote + i;
+      var noteInOctave = (midi % 12);
+      var isBlack = [1,3,6,8,10].indexOf(noteInOctave) !== -1;
+      var k = document.createElement('div');
+      k.className = 'key' + (isBlack? ' black':'');
+      k.dataset.midi = midi;
+      k.textContent = '';
+      keyboardEl.appendChild(k);
+      (function(m){
+        k.addEventListener('mousedown', function(e){ e.preventDefault(); noteOn(m); });
+        k.addEventListener('mouseup', function(e){ e.preventDefault(); noteOff(m); });
+        k.addEventListener('mouseleave', function(e){ e.preventDefault(); noteOff(m); });
+        k.addEventListener('touchstart', function(e){ e.preventDefault(); noteOn(m); });
+        k.addEventListener('touchend', function(e){ e.preventDefault(); noteOff(m); });
+      })(midi);
+      keys.push(k);
+    }
+
+    function highlightKey(midi, on) {
+      var el = keyboardEl.querySelector('[data-midi="'+midi+'"]');
+      if (el) { if (on) el.classList.add('pressed'); else el.classList.remove('pressed'); }
+    }
+
+    // Wire UI to params
+    osc1Select.addEventListener('change', function(){ params.osc1 = osc1Select.value; });
+    osc2Select.addEventListener('change', function(){ params.osc2 = osc2Select.value; });
+    filterCut.addEventListener('input', function(){ params.filterCut = Number(filterCut.value); updateLiveFilter(); });
+    filterQ.addEventListener('input', function(){ params.filterQ = Number(filterQ.value); updateLiveFilter(); });
+    envAttack.addEventListener('input', function(){ params.attack = Number(envAttack.value); });
+    envDecay.addEventListener('input', function(){ params.decay = Number(envDecay.value); });
+    envSustain.addEventListener('input', function(){ params.sustain = Number(envSustain.value); });
+    envRelease.addEventListener('input', function(){ params.release = Number(envRelease.value); });
+
+    function updateLiveFilter(){
+      // update existing voices' filters to new base values
+      for (var k in voices){
+        try{ voices[k].filter.Q.value = params.filterQ; voices[k].filter.frequency.setTargetAtTime(params.filterCut, now(), 0.01); } catch(e){}
+      }
+    }
+
+    powerBtn.addEventListener('click', function(){ ensureAudioContext(); });
+
+    // Keyboard (computer) mapping — rows: z s x d c v g b h n j m ,
+    var keymap = ['z','s','x','d','c','v','g','b','h','n','j','m',',','l','.',';','/'];
+    var keyToMidi = {};
+    // map to starting midi
+    for (var i=0;i<keymap.length;i++){ keyToMidi[keymap[i]] = startNote + i; }
+    window.addEventListener('keydown', function(e){ if (e.repeat) return; var k = e.key.toLowerCase(); var m = keyToMidi[k]; if (m) { noteOn(m); } });
+    window.addEventListener('keyup', function(e){ var k = e.key.toLowerCase(); var m = keyToMidi[k]; if (m) { noteOff(m); } });
+
+    // Load presets
+    function loadPresets(){
+      fetch('/site/presets/flagship-presets.json').then(function(r){ if(!r.ok) throw new Error('fetch failed'); return r.json(); }).then(function(list){
+        presetSelect.innerHTML = '';
+        list.forEach(function(p, idx){
+          var opt = document.createElement('option'); opt.value = idx; opt.textContent = p.name + ' — ' + (p.author||'unknown');
+          opt.dataset.params = JSON.stringify(p.params||{});
+          presetSelect.appendChild(opt);
+        });
+      }).catch(function(err){
+        presetSelect.innerHTML = '<option>Unavailable</option>';
+        console.warn('Unable to load presets', err);
+      });
+    }
+
+    presetSelect.addEventListener('change', function(){
+      var sel = presetSelect.selectedOptions[0]; if(!sel) return;
+      try{ var p = JSON.parse(sel.dataset.params||'{}'); applyPreset(p); } catch(e){ }
+    });
+
+    function applyPreset(p){
+      if (p.osc1) { osc1Select.value = p.osc1; params.osc1 = p.osc1; }
+      if (p.osc2) { osc2Select.value = p.osc2; params.osc2 = p.osc2; }
+      if (p.filter) { filterCut.value = p.filter; params.filterCut = Number(p.filter); updateLiveFilter(); }
+      // future preset fields can be applied here
+    }
+
+    // Populate initial UI
+    loadPresets();
+
+    // Accessibility: resume context on any gesture if needed
+    document.addEventListener('click', function(){ if (ctx && ctx.state === 'suspended') ctx.resume(); });
+
+    // expose for debugging
+    window.__flagship = { params: params, notesOn: function(){return Object.keys(voices); } };
+
+  })();
+  </script>
+</body>
+</html>
