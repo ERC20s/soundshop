@@ -13,4 +13,9 @@ Structure added by the scaffold:
 Demo integration:
 The flagship demo will be added under site/demo/ (not included here). flagship.html embeds the demo as an iframe: "<iframe src=\"/site/demo/flagship-demo.html\">" and loads presets from "/site/presets/flagship-presets.json" so demo PRs can target those paths.
 
+Presets gallery and schema:
+- site/presets.html — a static presets gallery page that loads /site/presets/sample-presets.json, lets visitors search, download individual presets, and attempts to preview them by calling a local applyPreset(preset) function or posting a message to a demo iframe.
+- site/presets/schema.json — a JSON Schema documenting the shape of preset files (oscillator, filter, envelope, gain, etc.).
+- site/presets/sample-presets.json — five realistic example presets to seed the gallery.
+
 Serve the site/ directory with any static server (file:// works for simple testing) to view the pages. The group uses small, static files to keep incremental reviews simple and low-risk.
