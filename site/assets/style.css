@@ -56,3 +56,8 @@ ul{margin:0.5rem 0;padding-left:1.25rem}
 .demo-hint{margin:.6rem 0 0;color:#666;font-size:.85rem}
 iframe{background:#fafafa}
 footer{border-top:1px solid #eee;margin-top:2rem;padding-top:0.5rem;color:#666;font-size:0.9rem}
+
+/* Small rule for the loaded-from-preset note and the gallery play link */
+.demo-loaded-note{margin:0.3rem 0 0;color:#444;font-size:0.9rem}
+.play-in-demo{display:inline-block;padding:.1rem .55rem;border:1px solid #e0e0e6;border-radius:999px;background:#fff;color:#334;font:inherit;font-size:.85rem;line-height:1.4;text-decoration:none;margin-left:0.4rem}
+.play-in-demo:hover,.play-in-demo:focus{border-color:#5b7cfa;background:#eef2ff;color:#243}

@@ -151,6 +151,25 @@
               card.appendChild(btn);
             }
 
+            // "Play in demo" link: opens the flagship keyboard with the
+            // preset's osc1/filter encoded in the query string and jumps to
+            // the demo slot. Added whenever osc1 or filter exists so the link
+            // works even if Web Audio preview code failed to load.
+            if(params.osc1 != null || params.filter != null){
+              try {
+                var play = document.createElement('a');
+                play.className = 'tag-chip play-in-demo';
+                var wavePart = 'wave=' + encodeURIComponent(String(params.osc1 == null ? '' : params.osc1));
+                var cutPart = 'cutoff=' + encodeURIComponent(String(params.filter == null ? '' : params.filter));
+                var presetPart = 'preset=' + encodeURIComponent(String(p.name || ''));
+                play.href = '../plugins/flagship.html' + '?' + wavePart + '&' + cutPart + '&' + presetPart + '#demo';
+                play.textContent = 'play in demo';
+                play.title = 'Open the Flagship demo and load this preset';
+                play.setAttribute('aria-label', 'Play ' + (p.name || 'this preset') + ' in the Flagship demo');
+                card.appendChild(play);
+              } catch(e){ /* encodeURIComponent should always exist; fail silently */ }
+            }
+
             var permalink = document.createElement('a');
             permalink.className = 'preset-permalink';
             permalink.href = '#' + card.id;
@@ -227,34 +246,12 @@
           }
 
           function clearSearch(){
-            if(!search) return;
-            search.value = '';
-            applyFilter();
-            if(typeof search.focus === 'function') search.focus();
+            if(search){ search.value = ''; applyFilter(); if(typeof search.focus === 'function') search.focus(); }
           }
 
-          if(clearBtn) clearBtn.addEventListener('click', clearSearch);
-
-          // Deep links: when the URL carries #preset-<slug>, make sure that
-          // card is visible and scroll it into view. If an active query has
-          // filtered the card out, clear the query and re-run the filter — the
-          // page then shows a consistent state (empty box, full list) instead
-          // of one force-shown card under a query that excludes it.
-          function applyHash(){
-            var id = (location.hash || '').replace(/^#/, '');
-            if(!id) return;
-            var target = document.getElementById(id);
-            if(!target || target.className.indexOf('preset-card') === -1) return;
-            if(target.style.display === 'none'){
-              if(search) search.value = '';
-              applyFilter();
-            }
-            if(typeof target.scrollIntoView === 'function') target.scrollIntoView();
-          }
-          applyHash();
-          window.addEventListener('hashchange', applyHash);
         }).catch(function(){
-          document.getElementById('presets-gallery').textContent = 'Unable to load presets.';
+          var el = document.getElementById('presets-gallery');
+          if(el) el.textContent = 'Failed to load presets.';
         });
     })();
   </script>

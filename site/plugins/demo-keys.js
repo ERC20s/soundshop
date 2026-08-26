@@ -160,6 +160,35 @@
     cutValue.className = 'demo-cutoff-value';
     cutValue.textContent = '2400 Hz';
 
+    // Parse query params for preset loading (simple ES5 splitter: no URLSearchParams)
+    try {
+      var qs = typeof location.search === 'string' ? String(location.search || '').replace(/^\?/, '') : '';
+      if(qs){
+        var parts = qs.split('&');
+        for(var i=0;i<parts.length;i++){
+          var kv = parts[i].split('=');
+          if(kv.length < 2) continue;
+          var k = decodeURIComponent(kv[0] || '').toLowerCase();
+          var v = decodeURIComponent(kv.slice(1).join('=') || '');
+          if(k === 'wave' && v){
+            try { waveSelect.value = v; } catch(e){}
+          } else if(k === 'cutoff' && v){
+            try { cutoffInput.value = String(cutoffOf(v)); } catch(e){}
+          } else if(k === 'preset' && v){
+            // add a small note below controls after controls are built
+            // trim to ~60 chars when showing
+            var note = document.createElement('p');
+            note.className = 'demo-loaded-note';
+            var name = String(v || '').trim();
+            if(name.length > 60) name = name.slice(0,57) + '…';
+            note.textContent = 'Loaded from preset: ' + name;
+            // insert later with controls
+            controls._loadedNote = note;
+          }
+        }
+      }
+    } catch(e){ /* ignore query parsing errors */ }
+
     // Live cutoff: also moves the filter of every note still held down.
     cutoffInput.addEventListener('input', function(){
       var hz = cutoffOf(cutoffInput.value);
@@ -169,11 +198,17 @@
       });
     });
 
+    // If a cutoff was set via the URL parsing above, ensure the text reflects it
+    try { cutValue.textContent = cutoffOf(cutoffInput.value) + ' Hz'; } catch(e){}
+
     controls.appendChild(waveLabel);
     controls.appendChild(waveSelect);
     controls.appendChild(cutLabel);
     controls.appendChild(cutoffInput);
     controls.appendChild(cutValue);
+
+    // If a preset note was provided, append it now (after the control elements)
+    if(controls._loadedNote){ controls.appendChild(controls._loadedNote); }
 
     var keys = document.createElement('div');
     keys.className = 'demo-keys';
@@ -224,6 +259,10 @@
 
     slot.textContent = '';
     slot.appendChild(wrap);
+
+    // If the URL had a #demo hash, browsers scroll there before JS runs; make
+    // sure the rebuilt slot is visible.
+    try { if(location.hash === '#demo' && typeof slot.scrollIntoView === 'function') slot.scrollIntoView(); } catch(e){}
 
     return keys;
   }
