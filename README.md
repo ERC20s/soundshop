@@ -5,11 +5,12 @@ Website for a synth-plugin house - plugin pages, a playable in-browser Web Audio
 site/ is a static site scaffold added to host plugin pages and the playable demo without a build step.
 
 Structure added by the scaffold:
-- site/index.html — home page linking to plugin pages and changelog.
-- site/plugins/flagship.html — plugin page template for the flagship synth; probes for the playable demo and embeds it only if it exists, and has a small script that loads presets JSON.
+- site/index.html — home page linking to plugin pages, the presets gallery and changelog.
+- site/plugins/flagship.html — plugin page template for the flagship synth; probes for the playable demo and embeds it only if it exists, and has a small script that loads a short presets list (name and author only) plus a link to the full gallery.
+- site/presets/index.html — standalone presets gallery page; fetches flagship-presets.json from the same directory and renders every preset as a card with its full params object (not just name and author).
 - tools/check-links.js — zero-dependency Node script that fails when a page points at an internal file that is not in the repository.
-- site/assets/style.css — minimal styles for the scaffold.
-- site/presets/flagship-presets.json — sample presets metadata used by the plugin page UI.
+- site/assets/style.css — minimal styles for the scaffold, including the .preset-cards/.preset-card layout used by the gallery.
+- site/presets/flagship-presets.json — sample presets metadata used by both the plugin page's short list and the full gallery page.
 
 - site/changelog.html, site/changelog.css, site/changelog.js — changelog page; the JS renders data/changelog.json from the repository root.
 
