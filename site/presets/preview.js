@@ -32,12 +32,13 @@
     return 'sawtooth';
   }
 
-  // Cutoff in Hz, clamped to something audible. Non-numeric -> 2000.
+  // Cutoff in Hz: clamp to the same audible range as the flagship demo
+  // (site/plugins/demo-keys.js uses 200..8000). Non-numeric -> 2000.
   function cutoffOf(value){
     var n = parseFloat(value);
     if(!isFinite(n)) n = 2000;
-    if(n < 20) n = 20;
-    if(n > 20000) n = 20000;
+    if(n < 200) n = 200;
+    if(n > 8000) n = 8000;
     return n;
   }
 
