@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documentation — SOUNDSHOP</title>
+<meta name="description" content="Installation, authorisation, the complete VANTA parameter reference, preset management, MIDI and automation, CPU guidance, troubleshooting and licence terms for every SOUNDSHOP instrument.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2308090A'/%3E%3Crect x='5.5' y='5.5' width='21' height='21' rx='3.5' fill='none' stroke='%23363D44'/%3E%3Ccircle cx='16' cy='16' r='4.2' fill='%23F2A93B'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  /* Header: keep the theme toggle to the right of the nav on desktop and
+     beside the burger on mobile. */
+  .site-head > .theme-toggle { flex: none; }
+  @media (max-width: 899px) {
+    .site-head > .theme-toggle { margin-inline-start: auto; }
+    .site-head > .nav-toggle   { margin-inline-start: var(--sp-3); }
+  }
+  /* ---- docs.html page-local only ------------------------------------- */
+  .doc-body { max-width: none; }
+  .doc-body :is(h2, h3, h4)[id] { scroll-margin-top: calc(var(--head-h) + 28px); }
+  .doc-lede { max-width: 62ch; }
+
+  .doc-nav .doc-nav__sub { margin-block-start: var(--sp-1); }
+  .doc-nav .doc-nav__sub a {
+    padding-inline-start: var(--sp-6);
+    font-size: var(--fs-micro);
+    font-family: var(--font-mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* Parameter tables: keep the notes column readable, the data column tight. */
+  .p-table { min-width: 720px; }
+  .p-table th:nth-child(1), .p-table td:nth-child(1) { width: 15rem; }
+  .p-table th:nth-child(2), .p-table td:nth-child(2),
+  .p-table th:nth-child(3), .p-table td:nth-child(3) { white-space: nowrap; }
+  .p-table code {
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    letter-spacing: 0.04em;
+    color: var(--accent-text);
+  }
+  .path-table { min-width: 640px; }
+  .path-table td:last-child { font-family: var(--font-mono); word-break: break-all; color: var(--text); }
+
+  /* Computer-keyboard diagram for the browser demo. */
+  .keymap { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .keymap__row { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  .keymap__row--offset { padding-inline-start: 28px; }
+  .kc {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 52px;
+    padding: var(--sp-2) var(--sp-2) 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: linear-gradient(180deg, var(--panel-hi), var(--panel));
+    box-shadow: inset 0 1px 0 var(--hi-1), 0 2px 0 var(--sh-1);
+    font-family: var(--font-mono);
+  }
+  .kc__key { font-size: var(--fs-small); color: var(--text); text-transform: uppercase; letter-spacing: 0.08em; }
+  .kc__note { font-size: var(--fs-micro); color: var(--text-mute); letter-spacing: 0.08em; }
+  /* The black keycap uses the design system's --key-black surface, which is
+     dark in both themes — so its foreground is set once, with no theme-keyed
+     override to fall out of step. */
+  .kc--black { background: var(--key-black); border-color: var(--line-strong); }
+  .kc--black .kc__key { color: var(--accent); }
+  .kc--black .kc__note { color: #B9B2A8; }
+  .kc--util { min-width: 78px; }
+
+  .doc-toc-top { margin-block-end: var(--sp-6); }
+  .prose .accordion__body p + p { margin-block-start: var(--sp-3); }
+  .prose .accordion__body ul { margin-block-start: var(--sp-3); }
+  .doc-foot-links { margin-block-start: var(--sp-7); }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-head" data-head>
+  <a class="brand" href="index.html" aria-label="Soundshop home">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">SOUNDSHOP</span>
+  </a>
+  <nav class="site-nav" aria-label="Primary">
+    <a href="plugins/index.html">Plugins</a>
+    <a href="presets/index.html">Presets</a>
+    <a href="demo/flagship-demo.html">Demo</a>
+    <a href="docs.html">Docs</a>
+    <a href="changelog.html">Changelog</a>
+  </nav>
+  <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" aria-label="Switch to light theme" title="Switch to light theme">
+    <span data-theme-label>Dark</span>
+  </button>
+  <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" data-nav-toggle>
+    <span></span><span></span><span></span>
+  </button>
+</header>
+
+<main id="main">
+
+  <section class="section section--tight">
+    <div class="wrap">
+      <nav class="crumbs doc-toc-top" aria-label="Breadcrumb">
+        <ol>
+          <li><a href="index.html">Home</a></li>
+          <li>Documentation</li>
+        </ol>
+      </nav>
+      <div class="sec-head" data-reveal>
+        <p class="sec-head__eyebrow">Documentation</p>
+        <h1 class="sec-head__title">Everything we ship, written down</h1>
+        <p class="sec-head__sub doc-lede">Install paths, authorisation, every parameter in signal order, preset
+          file layout, host automation, and the licence in language a human wrote. Written by the people who
+          wrote the code — if something here is wrong, it is a bug and we want to hear about it.</p>
+      </div>
+      <div class="strip mt-5">
+        <span>VST3</span><span class="strip__sep" aria-hidden="true"></span>
+        <span>AU</span><span class="strip__sep" aria-hidden="true"></span>
+        <span>AAX</span><span class="strip__sep" aria-hidden="true"></span>
+        <span>CLAP</span><span class="strip__sep" aria-hidden="true"></span>
+        <span>macOS 11+ Universal</span><span class="strip__sep" aria-hidden="true"></span>
+        <span>Windows 10+ x64</span><span class="strip__sep" aria-hidden="true"></span>
+        <span>Linux x64</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section--flush">
+    <div class="wrap--wide">
+      <div class="doc-layout">
+
+        <aside class="doc-nav" data-doc-nav>
+          <h2>On this page</h2>
+          <nav aria-label="Documentation sections">
+            <ul>
+              <li><a href="#installation">Installation</a></li>
+              <li><a href="#requirements">System requirements</a></li>
+              <li><a href="#getting-started">Getting started with VANTA</a></li>
+              <li>
+                <a href="#parameters">VANTA parameter reference</a>
+                <ul class="doc-nav__sub">
+                  <li><a href="#param-osc">Oscillators</a></li>
+                  <li><a href="#param-filter">Filter</a></li>
+                  <li><a href="#param-feg">Filter envelope</a></li>
+                  <li><a href="#param-amp">Amp envelope</a></li>
+                  <li><a href="#param-lfo">LFO</a></li>
+                  <li><a href="#param-fx">Effects</a></li>
+                  <li><a href="#param-arp">Arpeggiator</a></li>
+                  <li><a href="#param-master">Master</a></li>
+                </ul>
+              </li>
+              <li><a href="#keyboard">Computer keyboard</a></li>
+              <li><a href="#presets">Preset management</a></li>
+              <li><a href="#midi">MIDI learn &amp; automation</a></li>
+              <li><a href="#performance">CPU &amp; latency</a></li>
+              <li><a href="#troubleshooting">Troubleshooting</a></li>
+              <li><a href="#licence">Licence terms</a></li>
+              <li><a href="#support">Support</a></li>
+            </ul>
+          </nav>
+        </aside>
+
+        <div class="prose doc-body" data-doc-content>
+
+          <!-- ============================================ INSTALLATION -->
+          <h2 id="installation">Installation and authorisation<a href="#installation" aria-label="Link to this section">#</a></h2>
+          <p>Every SOUNDSHOP installer contains all four formats for your platform and lets you deselect the ones
+            you do not use. Nothing is installed outside the standard plug-in directories and one small support
+            folder. There is no background service, no helper daemon, and nothing that phones home at load time.</p>
+
+          <h3 id="install-macos">macOS 11 or newer (Universal)</h3>
+          <p>Open the disk image and run <code>SOUNDSHOP Installer.pkg</code>. The installer is notarised, so
+            Gatekeeper will not prompt. Formats land in the system-wide locations, which means every user account
+            on the machine sees them:</p>
+          <div class="scroll-x">
+            <table class="table table--compact path-table">
+              <caption class="sr-only">macOS installation paths per format</caption>
+              <thead><tr><th scope="col">Format</th><th scope="col">Location</th></tr></thead>
+              <tbody>
+                <tr><td>VST3</td><td>/Library/Audio/Plug-Ins/VST3/VANTA.vst3</td></tr>
+                <tr><td>Audio Unit</td><td>/Library/Audio/Plug-Ins/Components/VANTA.component</td></tr>
+                <tr><td>AAX</td><td>/Library/Application Support/Avid/Audio/Plug-Ins/VANTA.aaxplugin</td></tr>
+                <tr><td>CLAP</td><td>/Library/Audio/Plug-Ins/CLAP/VANTA.clap</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Logic and GarageBand validate Audio Units on first launch after an install. That scan happens once
+            and takes a few seconds per plug-in; if you interrupt it, Logic remembers the failure and you will
+            need to re-run the scan from <em>Plug-in Manager → Reset &amp; Rescan Selection</em>.</p>
+
+          <h3 id="install-windows">Windows 10 or newer (x64)</h3>
+          <p>Run <code>SOUNDSHOP-Setup.exe</code>. It requires administrator rights only because the common
+            plug-in folders are machine-wide. There is no Audio Unit on Windows.</p>
+          <div class="scroll-x">
+            <table class="table table--compact path-table">
+              <caption class="sr-only">Windows installation paths per format</caption>
+              <thead><tr><th scope="col">Format</th><th scope="col">Location</th></tr></thead>
+              <tbody>
+                <tr><td>VST3</td><td>C:\Program Files\Common Files\VST3\VANTA.vst3</td></tr>
+                <tr><td>AAX</td><td>C:\Program Files\Common Files\Avid\Audio\Plug-Ins\VANTA.aaxplugin</td></tr>
+                <tr><td>CLAP</td><td>C:\Program Files\Common Files\CLAP\VANTA.clap</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>If your host is still looking at a legacy VST2 folder it will not find anything — we do not ship
+            VST2. Point the host at the VST3 folder above, or use CLAP if the host supports it.</p>
+
+          <h3 id="install-linux">Linux (x64, VST3 and CLAP)</h3>
+          <p>Download the tarball and copy the bundles into either the per-user or the system directory. There is
+            no installer binary and nothing needs root if you install per-user.</p>
+          <div class="scroll-x">
+            <table class="table table--compact path-table">
+              <caption class="sr-only">Linux installation paths per format</caption>
+              <thead><tr><th scope="col">Format</th><th scope="col">Per-user</th><th scope="col">System-wide</th></tr></thead>
+              <tbody>
+                <tr><td>VST3</td><td>~/.vst3/VANTA.vst3</td><td>/usr/lib/vst3/VANTA.vst3</td></tr>
+                <tr><td>CLAP</td><td>~/.clap/VANTA.clap</td><td>/usr/lib/clap/VANTA.clap</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Builds are linked against glibc 2.31 and expect a working ALSA or JACK stack from the host. We test
+            on Ubuntu 22.04 LTS and Fedora; other distributions of a similar vintage work, and if yours does not,
+            tell us which symbol is missing and we will look at it.</p>
+
+          <h3 id="authorisation">Authorisation</h3>
+          <p>There is no iLok, no dongle, no subscription and no account. Buying gets you a licence file named
+            <code>licence.sslic</code>. Drag it onto any open SOUNDSHOP plug-in window, or place it here by hand:</p>
+          <div class="scroll-x">
+            <table class="table table--compact path-table">
+              <caption class="sr-only">Licence file location per platform</caption>
+              <thead><tr><th scope="col">Platform</th><th scope="col">Licence file</th></tr></thead>
+              <tbody>
+                <tr><td>macOS</td><td>~/Library/Application Support/Soundshop/licence.sslic</td></tr>
+                <tr><td>Windows</td><td>%APPDATA%\Soundshop\licence.sslic</td></tr>
+                <tr><td>Linux</td><td>~/.config/soundshop/licence.sslic</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>The file is read once when the plug-in is instantiated. It is checked offline against the machine
+            fingerprint it was issued for — nothing is transmitted, and a session opened on a machine with no
+            network still loads instantly.</p>
+          <div class="note">
+            <p class="note__title">Before you buy</p>
+            <p>Every plug-in runs unauthorised in demo mode: full DSP, full preset library, with a short burst of
+              noise every ninety seconds and no state saved into the session. The demo never expires. See the
+              <a href="demo/flagship-demo.html">browser demo</a> if you would rather not install anything at all.</p>
+          </div>
+
+          <!-- ============================================ REQUIREMENTS -->
+          <h2 id="requirements">System requirements<a href="#requirements" aria-label="Link to this section">#</a></h2>
+          <p>These are the floors, not the recommendations. Everything we ship runs on a 2015 quad-core at a
+            256-sample buffer; the numbers below are where we stop testing.</p>
+          <div class="spec-table">
+            <div class="spec__group">Platforms</div>
+            <div class="spec__row"><span class="spec__key">macOS</span><span class="spec__val spec__val--wrap">11 Big Sur or newer, Universal (Apple silicon and Intel)</span></div>
+            <div class="spec__row"><span class="spec__key">Windows</span><span class="spec__val spec__val--wrap">10 or newer, x64 only</span></div>
+            <div class="spec__row"><span class="spec__key">Linux</span><span class="spec__val spec__val--wrap">x64, glibc 2.31+, VST3 and CLAP</span></div>
+            <div class="spec__group">Formats</div>
+            <div class="spec__row"><span class="spec__key">Plug-in</span><span class="spec__val spec__val--wrap">VST3, AU (macOS), AAX (Pro Tools 2021.3+), CLAP</span></div>
+            <div class="spec__row"><span class="spec__key">Sample rates</span><span class="spec__val num">44.1 – 192 kHz</span></div>
+            <div class="spec__row"><span class="spec__key">Buffer sizes</span><span class="spec__val num">32 – 2048 samples</span></div>
+            <div class="spec__group">Machine</div>
+            <div class="spec__row"><span class="spec__key">CPU</span><span class="spec__val spec__val--wrap">Any x64 with SSE4.2, or Apple silicon</span></div>
+            <div class="spec__row"><span class="spec__key">RAM</span><span class="spec__val num">4 GB</span></div>
+            <div class="spec__row"><span class="spec__key">Disk</span><span class="spec__val num">180 MB</span></div>
+            <div class="spec__row"><span class="spec__key">Network</span><span class="spec__val spec__val--wrap">Only to download. Never at load time.</span></div>
+          </div>
+
+          <h3 id="hosts">Tested hosts</h3>
+          <p>We run the full regression suite in these hosts on every release. Other hosts are not unsupported —
+            they are untested, and we fix what you report.</p>
+          <div class="scroll-x">
+            <table class="table table--compact">
+              <caption class="sr-only">Tested hosts by platform and format</caption>
+              <thead><tr><th scope="col">Host</th><th scope="col">Platforms</th><th scope="col">Formats used</th></tr></thead>
+              <tbody>
+                <tr><td>Ableton Live 11 / 12</td><td>macOS, Windows</td><td>VST3, AU</td></tr>
+                <tr><td>Logic Pro 10.7+</td><td>macOS</td><td>AU</td></tr>
+                <tr><td>Pro Tools 2021.3+</td><td>macOS, Windows</td><td>AAX</td></tr>
+                <tr><td>Cubase / Nuendo 12+</td><td>macOS, Windows</td><td>VST3</td></tr>
+                <tr><td>Studio One 6</td><td>macOS, Windows</td><td>VST3</td></tr>
+                <tr><td>REAPER 6.7+</td><td>macOS, Windows, Linux</td><td>VST3, CLAP</td></tr>
+                <tr><td>Bitwig Studio 5</td><td>macOS, Windows, Linux</td><td>CLAP, VST3</td></tr>
+                <tr><td>FL Studio 21</td><td>macOS, Windows</td><td>VST3</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- ============================================ GETTING STARTED -->
+          <h2 id="getting-started">Getting started with VANTA<a href="#getting-started" aria-label="Link to this section">#</a></h2>
+          <p>VANTA is an eight-voice virtual-analog polysynth. Two oscillators and a sub feed one filter block per
+            voice, then an amplifier, then a shared effects section. There is no hidden routing anywhere in the
+            instrument: what the panel shows is what the signal does, in that order.</p>
+          <p>The fastest way to understand it is to open the
+            <a href="demo/flagship-demo.html">playable demo</a>, which runs the same parameter set in your
+            browser, and follow along:</p>
+          <ol>
+            <li>Load the plug-in on an instrument track and play a held chord. The factory init patch is a
+              two-saw sound with a moderate filter envelope — deliberately plain, so you can hear what you change.</li>
+            <li>Pull <strong>Cutoff</strong> down until the chord goes dull, then raise <strong>Env Amount</strong>.
+              You are now hearing the filter envelope open each voice independently, not one shared filter.</li>
+            <li>Raise <strong>Detune</strong> from 12 to about 30 cents. The spread is split symmetrically between
+              oscillator 1 and oscillator 2, so the centre pitch does not move as you widen it.</li>
+            <li>Set <strong>LFO Target</strong> to Filter and give it a little depth. Rate is logarithmic, so the
+              bottom half of the control is where the slow movement lives.</li>
+            <li>Turn the <strong>Arpeggiator</strong> on and hold the same chord. Notes are scheduled ahead of
+              time against the audio clock rather than a timer, so the pattern does not drift under CPU load.</li>
+            <li>Save what you have. Presets are plain text — see <a href="#presets">Preset management</a>.</li>
+          </ol>
+          <p>The one thing worth knowing early: voices are stolen in a defined order when a ninth note arrives.
+            A free slot first, then the oldest voice that is already in its release tail, and only then the oldest
+            held voice. That is why a sustained chord keeps its tails while you play over the top of it.</p>
+
+          <!-- ============================================ PARAMETERS -->
+          <h2 id="parameters">VANTA parameter reference<a href="#parameters" aria-label="Link to this section">#</a></h2>
+          <p>Forty parameters, listed in signal order, with the exact range, step and default the engine uses.
+            The name in the left column is also the automation ID your host sees (see
+            <a href="#midi">MIDI learn &amp; automation</a>) and the key you use in a preset file.</p>
+          <p>Three parameters are mapped <strong>logarithmically</strong> — <code>cutoff</code>,
+            <code>lfoRate</code> and <code>delayDamp</code>. A linear control over those ranges would put nine
+            tenths of the useful travel in the first tenth of the sweep, so they are exponential end to end.</p>
+
+          <h3 id="param-osc">Oscillators<a href="#param-osc" aria-label="Link to this section">#</a></h3>
+          <div class="scroll-x">
+            <table class="table table--compact p-table">
+              <caption class="sr-only">Oscillator parameters</caption>
+              <thead><tr><th scope="col">Parameter</th><th scope="col">Range</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Osc 1 Wave <code>osc1wave</code></td>
+                  <td>Sine · Triangle · Saw · Square</td>
+                  <td class="num">Saw</td>
+                  <td>Waveform for the first oscillator. Saw and square carry the harmonics the ladder filter is designed to eat; sine and triangle are for layering under a bright second oscillator.</td>
+                </tr>
+                <tr>
+                  <td>Osc 1 Level <code>osc1Level</code></td>
+                  <td class="num">0 – 1.00, step 0.01</td>
+                  <td class="num">0.90</td>
+                  <td>Level into the filter. Oscillator levels sum <em>before</em> the filter, so two sources at full will push the ladder into its own nonlinearity. That is a tone control, not a mistake.</td>
+                </tr>
+                <tr>
+                  <td>Osc 2 Wave <code>osc2wave</code></td>
+                  <td>Sine · Triangle · Saw · Square</td>
+                  <td class="num">Saw</td>
+                  <td>Waveform for the second oscillator. Square against saw at a small detune is the classic wide-poly setting.</td>
+                </tr>
+                <tr>
+                  <td>Osc 2 Level <code>osc2Level</code></td>
+                  <td class="num">0 – 1.00, step 0.01</td>
+                  <td class="num">0.70</td>
+                  <td>Level of the second oscillator into the filter.</td>
+                </tr>
+                <tr>
+                  <td>Osc 2 Octave <code>osc2Oct</code></td>
+                  <td class="num">−2 – +2 oct, step 1</td>
+                  <td class="num">0</td>
+                  <td>Transposes oscillator 2 in exact octaves. Intervals are clean here — all tuning error comes from Detune and from the per-voice analog offsets.</td>
+                </tr>
+                <tr>
+                  <td>Detune <code>detune</code></td>
+                  <td class="num">0 – 60 cents, step 0.5</td>
+                  <td class="num">12 cents</td>
+                  <td>Total spread between the two oscillators, split ±half each way so the centre pitch never moves. 12 is a gentle beat, 30 is wide, 60 is falling apart on purpose.</td>
+                </tr>
+                <tr>
+                  <td>Sub Wave <code>subWave</code></td>
+                  <td>Sine · Triangle · Square</td>
+                  <td class="num">Sine</td>
+                  <td>Waveform of the sub oscillator, which always tracks one octave below the played note. Sine for weight, square for a second body an octave down.</td>
+                </tr>
+                <tr>
+                  <td>Sub Level <code>subLevel</code></td>
+                  <td class="num">0 – 1.00, step 0.01</td>
+                  <td class="num">0.40</td>
+                  <td>Sub level into the filter. The sub is filtered with everything else, so closing the cutoff removes it too.</td>
+                </tr>
+                <tr>
+                  <td>Glide <code>glide</code></td>
+                  <td class="num">0 – 1.000 s, step 0.005</td>
+                  <td class="num">0 s</td>
+                  <td>Portamento time from the previous note's pitch to the new one, applied to both oscillators and the sub. 0 disables it entirely.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 id="param-filter">Filter<a href="#param-filter" aria-label="Link to this section">#</a></h3>
+          <div class="scroll-x">
+            <table class="table table--compact p-table">
+              <caption class="sr-only">Filter parameters</caption>
+              <thead><tr><th scope="col">Parameter</th><th scope="col">Range</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Filter Type <code>filtType</code></td>
+                  <td>Low Pass · High Pass · Band Pass</td>
+                  <td class="num">Low Pass</td>
+                  <td>Response of the per-voice filter. Every voice has its own; nothing is shared across the polyphony.</td>
+                </tr>
+                <tr>
+                  <td>Cutoff <code>cutoff</code></td>
+                  <td class="num">30 – 18 000 Hz, step 1 <strong>(log)</strong></td>
+                  <td class="num">1 200 Hz</td>
+                  <td>Corner frequency. Mapped exponentially, so the bottom of the sweep has as much resolution as the top. Modulation from the envelope, key tracking and the LFO is summed on top of this value.</td>
+                </tr>
+                <tr>
+                  <td>Resonance <code>reso</code></td>
+                  <td class="num">0.10 – 24.0 Q, step 0.1</td>
+                  <td class="num">3.5 Q</td>
+                  <td>Feedback around the filter. Above roughly 18 the peak is loud enough to dominate the voice; pull oscillator levels back rather than reaching for the master.</td>
+                </tr>
+                <tr>
+                  <td>Env Amount <code>fegAmt</code></td>
+                  <td class="num">−4800 – +4800 cents, step 10</td>
+                  <td class="num">+2200 cents</td>
+                  <td>Bipolar depth of the filter envelope, applied through the filter's detune input so the sweep is exponential and musical rather than linear in Hz. Negative values invert the envelope, which is how you get a filter that closes on the attack.</td>
+                </tr>
+                <tr>
+                  <td>Key Track <code>keyTrack</code></td>
+                  <td class="num">0 – 1.00, step 0.01</td>
+                  <td class="num">0.35</td>
+                  <td>How much the played note moves the cutoff. 1.00 is full 1 V/oct tracking, so timbre is constant across the keyboard; 0 keeps the cutoff fixed and lets high notes get darker.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 id="param-feg">Filter envelope<a href="#param-feg" aria-label="Link to this section">#</a></h3>
+          <p>A four-stage envelope per voice, scaled by <code>fegAmt</code> and added to the cutoff. Attack is a
+            linear ramp; decay and release are exponential with a guaranteed hard landing, so nothing is left
+            ringing below the noise floor.</p>
+          <div class="scroll-x">
+            <table class="table table--compact p-table">
+              <caption class="sr-only">Filter envelope parameters</caption>
+              <thead><tr><th scope="col">Parameter</th><th scope="col">Range</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+              <tbody>
+                <tr><td>Filter Attack <code>fegA</code></td><td class="num">0 – 4.000 s, step 0.001</td><td class="num">0.020 s</td><td>Time from note-on to full envelope. At 0 the sweep is instantaneous and you hear the click of the filter opening, which is often what you want on a bass.</td></tr>
+                <tr><td>Filter Decay <code>fegD</code></td><td class="num">0.001 – 6.000 s, step 0.001</td><td class="num">0.550 s</td><td>Fall time from the peak down to the sustain level. This is the control that makes a pluck a pluck.</td></tr>
+                <tr><td>Filter Sustain <code>fegS</code></td><td class="num">0 – 1.00, step 0.01</td><td class="num">0.25</td><td>Held level as a fraction of Env Amount. 0 means the filter returns fully closed while the key is still down.</td></tr>
+                <tr><td>Filter Release <code>fegR</code></td><td class="num">0.005 – 8.000 s, step 0.005</td><td class="num">0.600 s</td><td>Fall time after note-off, starting from wherever the envelope actually was — releasing during the attack does not jump.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 id="param-amp">Amp envelope<a href="#param-amp" aria-label="Link to this section">#</a></h3>
+          <p>The same shape, controlling the voice amplifier. The amp envelope also decides when a voice is
+            returned to the pool: the slot is freed after the release tail has actually finished, not when the
+            key comes up.</p>
+          <div class="scroll-x">
+            <table class="table table--compact p-table">
+              <caption class="sr-only">Amp envelope parameters</caption>
+              <thead><tr><th scope="col">Parameter</th><th scope="col">Range</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+              <tbody>
+                <tr><td>Amp Attack <code>ampA</code></td><td class="num">0 – 4.000 s, step 0.001</td><td class="num">0.020 s</td><td>Fade-in time. Values under about 5 ms read as a transient rather than a fade.</td></tr>
+                <tr><td>Amp Decay <code>ampD</code></td><td class="num">0.001 – 6.000 s, step 0.001</td><td class="num">0.600 s</td><td>Fall from full level to the sustain level.</td></tr>
+                <tr><td>Amp Sustain <code>ampS</code></td><td class="num">0 – 1.00, step 0.01</td><td class="num">0.70</td><td>Held level while the key is down. At 0 the sound is percussive and the release control does nothing audible.</td></tr>
+                <tr><td>Amp Release <code>ampR</code></td><td class="num">0.005 – 8.000 s, step 0.005</td><td class="num">0.700 s</td><td>Tail after note-off. Long releases plus fast playing is the usual cause of voice stealing — see <a href="#performance">CPU &amp; latency</a>.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 id="param-lfo">LFO<a href="#param-lfo" aria-label="Link to this section">#</a></h3>
+          <p>One LFO, free-running, routed to a single destination. Depth is normalised, and the amount it
+            represents depends on where it is going: at full depth, pitch moves ±120 cents, the filter moves
+            ±3600 cents, and amplitude moves ±0.6. Amp modulation runs on a dedicated per-voice gain, so a
+            silent voice stays silent.</p>
+          <div class="scroll-x">
+            <table class="table table--compact p-table">
+              <caption class="sr-only">LFO parameters</caption>
+              <thead><tr><th scope="col">Parameter</th><th scope="col">Range</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+              <tbody>
+                <tr><td>LFO Wave <code>lfoWave</code></td><td>Sine · Triangle · Square · Sample and Hold</td><td class="num">Triangle</td><td>Modulation shape. Sample and hold re-randomises at the rate below, which on the filter is the fastest route to a broken-machine texture.</td></tr>
+                <tr><td>LFO Rate <code>lfoRate</code></td><td class="num">0.02 – 20.00 Hz, step 0.01 <strong>(log)</strong></td><td class="num">4.20 Hz</td><td>Speed. Exponential across the range: the lower half is 0.02–1 Hz for slow drift, the upper half runs into audible-rate territory.</td></tr>
+                <tr><td>LFO Depth <code>lfoDepth</code></td><td class="num">0 – 1.00, step 0.01</td><td class="num">0.08</td><td>Modulation amount, scaled per destination as described above.</td></tr>
+                <tr><td>LFO Target <code>lfoTarget</code></td><td>Off · Pitch · Filter · Amp</td><td class="num">Filter</td><td>Destination. Changing target releases the old destination cleanly rather than leaving it parked at its last modulated value.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 id="param-fx">Effects<a href="#param-fx" aria-label="Link to this section">#</a></h3>
+          <p>The effects run once on the summed voices, not per voice. Delay and reverb are parallel sends — the
+            dry path stays at unity, so raising a mix control adds signal instead of trading it away.</p>
+          <div class="scroll-x">
+            <table class="table table--compact p-table">
+              <caption class="sr-only">Effects parameters</caption>
+              <thead><tr><th scope="col">Parameter</th><th scope="col">Range</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+              <tbody>
+                <tr><td>Drive <code>drive</code></td><td class="num">0 – 1.00, step 0.01</td><td class="num">0.18</td><td>Pre-gain into a tanh waveshaper running at 4× oversampling, with a compensating post-gain. Turning it up changes the tone considerably more than the level.</td></tr>
+                <tr><td>Delay Time <code>delayTime</code></td><td class="num">0.020 – 1.500 s, step 0.005</td><td class="num">0.360 s</td><td>Time per repeat in the ping-pong delay. The two channels are offset from this value, which is why short settings widen rather than double.</td></tr>
+                <tr><td>Delay Feedback <code>delayFb</code></td><td class="num">0 – 0.92, step 0.01</td><td class="num">0.34</td><td>How much of the output is fed back in. Capped at 0.92 so the loop cannot run away, and damped every pass by the control below.</td></tr>
+                <tr><td>Delay Damping <code>delayDamp</code></td><td class="num">400 – 16 000 Hz, step 10 <strong>(log)</strong></td><td class="num">4 200 Hz</td><td>Low-pass inside the feedback path. Each repeat is darker than the last, which is the whole difference between a delay that sits behind the part and one that fights it.</td></tr>
+                <tr><td>Delay Mix <code>delayMix</code></td><td class="num">0 – 1.00, step 0.01</td><td class="num">0.18</td><td>Send level into the delay. Dry is unaffected.</td></tr>
+                <tr><td>Reverb Size <code>revSize</code></td><td class="num">0.05 – 1.00, step 0.01</td><td class="num">0.60</td><td>Length and density of the impulse response, which is generated procedurally — decaying noise plus early reflections, darkened and normalised. Changes are debounced, so dragging the control does not stutter the audio.</td></tr>
+                <tr><td>Reverb Mix <code>revMix</code></td><td class="num">0 – 1.00, step 0.01</td><td class="num">0.28</td><td>Send level into the reverb.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 id="param-arp">Arpeggiator<a href="#param-arp" aria-label="Link to this section">#</a></h3>
+          <p>With the arpeggiator on, held notes go into a pool instead of sounding directly. Steps are scheduled
+            ahead against the audio clock with a lookahead window, not fired from a timer, so the pattern stays
+            rigid under load. Turning it off re-sounds anything still held.</p>
+          <div class="scroll-x">
+            <table class="table table--compact p-table">
+              <caption class="sr-only">Arpeggiator parameters</caption>
+              <thead><tr><th scope="col">Parameter</th><th scope="col">Range</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+              <tbody>
+                <tr><td>Arpeggiator <code>arpOn</code></td><td>Off · On</td><td class="num">Off</td><td>Master switch. Releasing the last held note stops output and resets the step counter, so the next chord starts from the beginning of the pattern.</td></tr>
+                <tr><td>Arp Mode <code>arpMode</code></td><td>Up · Down · Up-Down · Random</td><td class="num">Up</td><td>Order the pool is walked in. Up-Down does not repeat the top and bottom notes.</td></tr>
+                <tr><td>Arp Rate <code>arpRate</code></td><td>Quarter · Eighth · Eighth Triplet · Sixteenth · Sixteenth Triplet · Thirty-second</td><td class="num">Sixteenth</td><td>Step length relative to the tempo below. In a host, this follows the host transport; in the browser demo it follows Arp Tempo.</td></tr>
+                <tr><td>Arp Tempo <code>arpBpm</code></td><td class="num">40 – 240 BPM, step 1</td><td class="num">112 BPM</td><td>Internal tempo, used when there is no host transport to sync to.</td></tr>
+                <tr><td>Arp Octaves <code>arpOct</code></td><td class="num">1 – 3 oct, step 1</td><td class="num">1</td><td>How many octaves the pattern climbs before repeating.</td></tr>
+                <tr><td>Arp Gate <code>arpGate</code></td><td class="num">0.05 – 1.00, step 0.01</td><td class="num">0.55</td><td>Note length as a fraction of the step. At 1.00 notes butt against each other and the amp release takes over the shape.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 id="param-master">Master<a href="#param-master" aria-label="Link to this section">#</a></h3>
+          <div class="scroll-x">
+            <table class="table table--compact p-table">
+              <caption class="sr-only">Master parameters</caption>
+              <thead><tr><th scope="col">Parameter</th><th scope="col">Range</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+              <tbody>
+                <tr><td>Master Volume <code>volume</code></td><td class="num">0 – 1.00, step 0.01</td><td class="num">0.75</td><td>Output gain, applied before the safety limiter on the master bus. The metering you see is tapped after the limiter, so it shows what actually leaves the plug-in.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- ============================================ KEYBOARD -->
+          <h2 id="keyboard">Computer keyboard (browser demo)<a href="#keyboard" aria-label="Link to this section">#</a></h2>
+          <p>The <a href="demo/flagship-demo.html">in-browser demo</a> maps your typing keyboard to two octaves,
+            laid out like a piano: the home row is the white keys, the row above it is the black keys. The
+            mapping is a QWERTY layout by position, so it is the same shape on any keyboard where those keys sit
+            where they normally sit.</p>
+          <div class="keymap" role="img" aria-label="Keyboard mapping: W is C sharp, E is D sharp, T is F sharp, Y is G sharp, U is A sharp, O is C sharp one octave up, P is D sharp one octave up. A is C, S is D, D is E, F is F, G is G, H is A, J is B, K is C one octave up, L is D one octave up, semicolon is E one octave up.">
+            <div class="keymap__row keymap__row--offset">
+              <span class="kc kc--black"><span class="kc__key">W</span><span class="kc__note">C♯</span></span>
+              <span class="kc kc--black"><span class="kc__key">E</span><span class="kc__note">D♯</span></span>
+              <span class="kc" style="visibility:hidden" aria-hidden="true"><span class="kc__key">·</span><span class="kc__note">·</span></span>
+              <span class="kc kc--black"><span class="kc__key">T</span><span class="kc__note">F♯</span></span>
+              <span class="kc kc--black"><span class="kc__key">Y</span><span class="kc__note">G♯</span></span>
+              <span class="kc kc--black"><span class="kc__key">U</span><span class="kc__note">A♯</span></span>
+              <span class="kc" style="visibility:hidden" aria-hidden="true"><span class="kc__key">·</span><span class="kc__note">·</span></span>
+              <span class="kc kc--black"><span class="kc__key">O</span><span class="kc__note">C♯+</span></span>
+              <span class="kc kc--black"><span class="kc__key">P</span><span class="kc__note">D♯+</span></span>
+            </div>
+            <div class="keymap__row">
+              <span class="kc"><span class="kc__key">A</span><span class="kc__note">C</span></span>
+              <span class="kc"><span class="kc__key">S</span><span class="kc__note">D</span></span>
+              <span class="kc"><span class="kc__key">D</span><span class="kc__note">E</span></span>
+              <span class="kc"><span class="kc__key">F</span><span class="kc__note">F</span></span>
+              <span class="kc"><span class="kc__key">G</span><span class="kc__note">G</span></span>
+              <span class="kc"><span class="kc__key">H</span><span class="kc__note">A</span></span>
+              <span class="kc"><span class="kc__key">J</span><span class="kc__note">B</span></span>
+              <span class="kc"><span class="kc__key">K</span><span class="kc__note">C+</span></span>
+              <span class="kc"><span class="kc__key">L</span><span class="kc__note">D+</span></span>
+              <span class="kc"><span class="kc__key">;</span><span class="kc__note">E+</span></span>
+            </div>
+            <div class="keymap__row mt-3">
+              <span class="kc kc--util"><span class="kc__key">Z</span><span class="kc__note">Octave −</span></span>
+              <span class="kc kc--util"><span class="kc__key">X</span><span class="kc__note">Octave +</span></span>
+            </div>
+          </div>
+          <p>Octave range is 0 to 8 and the default is 4, so <strong>A</strong> is middle C (MIDI note 60). Key
+            repeat is ignored, so holding a key sustains one note rather than retriggering it. Browsers will only
+            start audio inside a real click or keypress — the first thing you do in the demo has to be a
+            deliberate gesture, which is why there is a power button.</p>
+          <div class="note">
+            <p class="note__title">Browser demo</p>
+            <p>Audio quality and voice count are limited by the browser; the plug-in is not. The demo is the same
+              parameter set and the same architecture, running on Web Audio with an eight-voice ceiling.</p>
+          </div>
+
+          <!-- ============================================ PRESETS -->
+          <h2 id="presets">Preset management<a href="#presets" aria-label="Link to this section">#</a></h2>
+          <p>Presets are plain UTF-8 JSON, one file per patch, in a folder you choose. They are diffable, they
+            survive version control, and you can paste one into a chat window and have it load at the other end.
+            Nothing is stored in a database and nothing is indexed behind your back.</p>
+          <div class="scroll-x">
+            <table class="table table--compact path-table">
+              <caption class="sr-only">Default user preset folder per platform</caption>
+              <thead><tr><th scope="col">Platform</th><th scope="col">Default user preset folder</th></tr></thead>
+              <tbody>
+                <tr><td>macOS</td><td>~/Music/Soundshop/VANTA/Presets</td></tr>
+                <tr><td>Windows</td><td>%USERPROFILE%\Documents\Soundshop\VANTA\Presets</td></tr>
+                <tr><td>Linux</td><td>~/.config/soundshop/VANTA/presets</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Factory presets sit alongside the plug-in bundle and are never written to. Saving over a factory
+            name creates a user preset that shadows it; deleting yours brings the factory patch back.</p>
+
+          <h3 id="preset-format">The file shape</h3>
+          <p>A preset is an object with an identifier, a name, an author, an optional category and tag list,
+            and a <code>params</code> map. Every key in <code>params</code> is a parameter name from the
+            <a href="#parameters">reference table</a> above, and the value is that parameter's value — a number
+            for a range, the option string for an enum.</p>
+          <pre><code>{
+  "id": "falling-apart-slowly",
+  "name": "Falling Apart Slowly",
+  "author": "Soundshop",
+  "category": "Pad",
+  "tags": ["pad", "wide", "drift"],
+  "description": "Wide two-saw pad with the drift turned up.",
+  "params": {
+    "osc1wave": "sawtooth",
+    "osc2wave": "sawtooth",
+    "detune": 34,
+    "cutoff": 900,
+    "reso": 6.5,
+    "fegAmt": 1800,
+    "ampA": 0.42,
+    "ampR": 2.4,
+    "lfoTarget": "cutoff",
+    "lfoRate": 0.18,
+    "lfoDepth": 0.22,
+    "revMix": 0.44
+  }
+}</code></pre>
+          <p>Partial presets are legal and useful. Any key you leave out keeps its current value, unknown keys
+            are ignored, and out-of-range values are rejected rather than clamped into something surprising —
+            so a "filter only" preset that touches four parameters is a perfectly valid file.</p>
+          <p>The same shape drives the <a href="presets/index.html">preset gallery</a> on this site and the
+            browser demo, which reads a single JSON file holding an array of these objects. Copy any entry out
+            of that array, save it as its own <code>.json</code> file in the folder above, and the plug-in will
+            list it after a rescan.</p>
+
+          <h3 id="preset-transfer">Moving presets between machines</h3>
+          <ul>
+            <li><strong>Export:</strong> the preset folder <em>is</em> the export. Copy it.</li>
+            <li><strong>Import:</strong> drop <code>.json</code> files into the folder and hit rescan in the
+              preset browser. No import dialog, no library rebuild.</li>
+            <li><strong>Share one patch:</strong> the file is small enough to paste as text. It will load from a
+              paste as long as the JSON is intact.</li>
+            <li><strong>Version control:</strong> keys are written in a stable order, so a diff between two saves
+              shows only what you actually changed.</li>
+          </ul>
+
+          <!-- ============================================ MIDI -->
+          <h2 id="midi">MIDI learn and automation<a href="#midi" aria-label="Link to this section">#</a></h2>
+          <p>Right-click any control and choose <em>MIDI Learn</em>, then move a knob on your controller. The
+            binding is stored with the session, and a second entry in the same menu stores it as the global
+            default for every new instance. <em>Forget</em> removes it.</p>
+
+          <h3 id="automation-ids">Automation IDs</h3>
+          <p>Host-facing parameter IDs are the short names in the left column of the
+            <a href="#parameters">parameter reference</a> — <code>cutoff</code>, <code>fegAmt</code>,
+            <code>ampR</code>, <code>arpGate</code> and so on. They are stable: an ID has never been renamed or
+            reused between versions, and it will not be. Automation written against 1.0 still lands on the same
+            parameter in 1.4.0.</p>
+          <p>The display name your host shows is the human label ("Filter Attack"), and the value is formatted
+            with its unit — seconds, cents, Hz, Q, BPM. Ranges in automation are normalised 0–1 by the host, and
+            the two logarithmic parameters map exponentially across that range, so an automation line drawn
+            straight across <code>cutoff</code> sweeps by ear rather than by arithmetic.</p>
+
+          <h3 id="mpe">MPE and plain MIDI</h3>
+          <ul>
+            <li><strong>MPE:</strong> per-note pitch bend, pressure and slide reach the voice they belong to.
+              Enable it in the host; VANTA follows the zone configuration the host sends.</li>
+            <li><strong>Legacy mode:</strong> the same destinations are driven by the mod wheel (CC 1) and
+              channel aftertouch, so an ordinary keyboard reaches everything an MPE controller does, just not
+              per note.</li>
+            <li><strong>Sustain (CC 64):</strong> holds notes in the voice pool. With the arpeggiator on, held
+              notes stay in the pattern until the pedal comes up.</li>
+            <li><strong>All Notes Off (CC 123)</strong> and panic both stop every voice with a short ramp rather
+              than a hard cut, so a stuck note never turns into a click.</li>
+          </ul>
+
+          <!-- ============================================ PERFORMANCE -->
+          <h2 id="performance">CPU and latency<a href="#performance" aria-label="Link to this section">#</a></h2>
+          <p>Nothing we ship introduces latency you did not ask for. VANTA reports zero samples of latency in all
+            four formats. ANVIL reports zero in its zero-latency mode and the oversampler's group delay in its
+            oversampled mode, which the host compensates automatically. DRIFT and PRISM report zero.</p>
+          <h3 id="cpu-tips">Where the cycles go</h3>
+          <ul>
+            <li><strong>Voice count is the main cost.</strong> Eight voices with long releases and fast playing
+              means eight voices sounding almost all the time. Shortening Amp Release is the single biggest
+              saving available in the instrument.</li>
+            <li><strong>Drive oversamples ×4.</strong> If you are not using it, leave it low; if you are, it is
+              worth the cycles and there is no cheaper way to get that curve without aliasing.</li>
+            <li><strong>Resonance is not free</strong> at extreme settings, because the filter is solved with
+              more headroom to stay stable near self-oscillation.</li>
+            <li><strong>Reverb size changes rebuild the impulse response.</strong> The rebuild is debounced, so
+              automating it slowly is fine and automating it at audio rate is not — use the mix control instead.</li>
+            <li><strong>Buffer size beats everything else.</strong> Going from 64 to 256 samples typically halves
+              the per-block overhead across a whole session. Track at 64–128, mix at 256–512.</li>
+          </ul>
+          <h3 id="freeze">When the meter is red</h3>
+          <p>Freeze or bounce the track. Every parameter is automatable and every preset is a text file, so a
+            frozen track is trivially un-frozen later with nothing lost. If a single instance is pinning a core
+            on its own on modern hardware, that is a bug — tell us the patch and the host and we will look at it.</p>
+
+          <!-- ============================================ TROUBLESHOOTING -->
+          <h2 id="troubleshooting">Troubleshooting<a href="#troubleshooting" aria-label="Link to this section">#</a></h2>
+          <p>The six things people actually write to us about, in order of how often.</p>
+
+          <div class="accordion">
+            <details class="accordion__item">
+              <summary class="accordion__summary">My host does not see the plug-in after installing</summary>
+              <div class="accordion__body">
+                <p>Nine times out of ten the host is scanning a folder the installer did not write to. Check the
+                  paths under <a href="#installation">Installation</a> against your host's plug-in scan list, add
+                  the correct folder, and force a rescan.</p>
+                <p>On macOS, Logic caches Audio Unit validation results — if a scan was interrupted, the plug-in
+                  is remembered as failed. Open <em>Plug-in Manager</em>, select it, and choose
+                  <em>Reset &amp; Rescan Selection</em>. On Windows, check that you did not install to a VST2
+                  folder: we do not ship VST2, so a VST2-only host will never find us.</p>
+              </div>
+            </details>
+
+            <details class="accordion__item">
+              <summary class="accordion__summary">A burst of noise every ninety seconds</summary>
+              <div class="accordion__body">
+                <p>That is demo mode. The licence file has not been found. Drag <code>licence.sslic</code> onto
+                  the plug-in window, or place it at the path listed under
+                  <a href="#authorisation">Authorisation</a> and reopen the plug-in.</p>
+                <p>If the file is definitely there and demo mode persists, the licence was issued for a different
+                  machine fingerprint — that happens after a motherboard swap or a full OS reinstall. Send us the
+                  order reference and we will reissue.</p>
+              </div>
+            </details>
+
+            <details class="accordion__item">
+              <summary class="accordion__summary">Notes cut off when I play more than eight at once</summary>
+              <div class="accordion__body">
+                <p>Working as designed: VANTA has eight voices. The ninth note steals one, in this order — a free
+                  slot, then the oldest voice already in its release tail, then the oldest held voice.</p>
+                <p>If it happens sooner than you expect, look at Amp Release. A four-second release means a
+                  three-note phrase can be holding eight voices before you notice. Shorten the release, or use a
+                  second instance and split the part.</p>
+              </div>
+            </details>
+
+            <details class="accordion__item">
+              <summary class="accordion__summary">The arpeggiator drifts against the grid</summary>
+              <div class="accordion__body">
+                <p>In a host, the arpeggiator follows the host transport and cannot drift; <code>arpBpm</code> is
+                  only used when no transport is running. If your pattern sounds late, check that the track is
+                  not being delay-compensated against a plug-in further down the chain that reports latency.</p>
+                <p>In the browser demo there is no transport, so timing comes from <code>arpBpm</code>. Steps are
+                  scheduled ahead against the audio clock rather than fired from a timer, so a busy tab slows the
+                  animation but not the notes.</p>
+              </div>
+            </details>
+
+            <details class="accordion__item">
+              <summary class="accordion__summary">A preset loads but sounds wrong</summary>
+              <div class="accordion__body">
+                <p>Presets are partial by design: keys that are absent keep whatever value the instrument
+                  currently has. If you loaded a "filter only" patch on top of something else, that is exactly
+                  what you should hear.</p>
+                <p>Reset to the init patch first, then load. Values outside a parameter's range are rejected
+                  rather than clamped, so a hand-edited file with <code>"reso": 400</code> silently keeps the
+                  previous resonance instead of exploding — check the file against the
+                  <a href="#parameters">ranges table</a>.</p>
+              </div>
+            </details>
+
+            <details class="accordion__item">
+              <summary class="accordion__summary">Crackles and dropouts under load</summary>
+              <div class="accordion__body">
+                <p>Raise the buffer size before anything else; 64 to 256 samples is usually the whole fix. Then
+                  read <a href="#performance">CPU and latency</a> — long releases and heavy Drive are the two
+                  settings that cost the most.</p>
+                <p>On Windows, check that the audio interface is on its own USB controller and that power
+                  management is not parking cores. On macOS, an external display running at a high refresh rate
+                  shares bandwidth with some interfaces; unplugging it is a diagnostic, not a solution, but it
+                  tells you where to look.</p>
+              </div>
+            </details>
+          </div>
+
+          <!-- ============================================ LICENCE -->
+          <h2 id="licence">Licence terms, in plain language<a href="#licence" aria-label="Link to this section">#</a></h2>
+          <p>The full text ships with the installer. This is what it says, without the sentences that exist to
+            make lawyers comfortable.</p>
+          <ul>
+            <li><strong>You own a licence, not a subscription.</strong> One purchase, no recurring payment,
+              no expiry.</li>
+            <li><strong>Three machines at a time.</strong> Studio, laptop, and one more. Deauthorise a machine
+              from the plug-in's about panel to free the slot; you do not need to ask us.</li>
+            <li><strong>It works offline, forever.</strong> The licence is checked locally against the file on
+              disk. If we vanish tomorrow, everything you installed keeps loading.</li>
+            <li><strong>It is transferable.</strong> Sell it or give it away once; email us and we reissue the
+              licence to the new owner. We do not charge a transfer fee.</li>
+            <li><strong>Free updates within a major version.</strong> Every 1.x update is free to 1.x owners.
+              PRISM's 1.0 release is free to everyone who bought the 0.9.0 beta. ANVIL 2.0.1 is free to all 1.x
+              owners.</li>
+            <li><strong>Your music is yours.</strong> No royalties, no credit requirement, no restriction on
+              commercial use. We do not claim anything you make.</li>
+            <li><strong>What you may not do:</strong> redistribute the installers, share your licence file, or
+              try to strip the licence check. Presets are exempt — sell your preset packs, we do not want a cut.</li>
+            <li><strong>Refunds:</strong> fourteen days, no argument. The demo is unlimited precisely so that you
+              can decide before you pay, but if you buy and it does not work out, ask.</li>
+          </ul>
+
+          <!-- ============================================ SUPPORT -->
+          <h2 id="support">Support<a href="#support" aria-label="Link to this section">#</a></h2>
+          <p>Support is answered by the people who wrote the DSP. There is no tier-one script, no ticket
+            deflection bot, and nobody will ask you to reinstall as a first move.</p>
+          <p>When something is wrong, the fastest possible message contains four things: your host and version,
+            your OS and version, the plug-in and version (it is in the about panel), and the preset or a
+            description of what you were doing. If it is a crash, the crash log; if it is a sound, a bounce.
+            That is usually enough to reproduce it on our side the same day.</p>
+          <ul>
+            <li>Check <a href="changelog.html">the changelog</a> first — if you are one version behind, the fix
+              may already be out, and every entry says what it changed and why.</li>
+            <li>Beta reports for PRISM 0.9.0 are welcome and wanted. The DSP is stable and the preset format is
+              frozen; the interface is not, and that is the part we most want to hear about.</li>
+            <li>Licence problems — machine changes, transfers, reissues — are handled with an order reference and
+              usually resolved in one reply.</li>
+          </ul>
+          <div class="doc-foot-links cluster">
+            <a class="btn btn-primary" href="demo/flagship-demo.html">Play VANTA in the browser</a>
+            <a class="btn btn-ghost" href="plugins/index.html">See all four instruments</a>
+            <a class="btn btn-ghost" href="changelog.html">Read the changelog</a>
+          </div>
+
+        </div><!-- /.prose -->
+      </div><!-- /.doc-layout -->
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="foot-grid">
+    <div class="foot-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <p>SOUNDSHOP<br><span class="muted">Instruments for the deep end.</span></p>
+    </div>
+    <div><h3>Instruments</h3><ul>
+      <li><a href="plugins/flagship.html">VANTA</a></li>
+      <li><a href="plugins/drift.html">DRIFT</a></li>
+      <li><a href="plugins/prism.html">PRISM</a></li>
+      <li><a href="plugins/anvil.html">ANVIL</a></li>
+    </ul></div>
+    <div><h3>Resources</h3><ul>
+      <li><a href="presets/index.html">Preset library</a></li>
+      <li><a href="demo/flagship-demo.html">Playable demo</a></li>
+      <li><a href="docs.html">Documentation</a></li>
+      <li><a href="changelog.html">Changelog</a></li>
+    </ul></div>
+  </div>
+  <p class="foot-legal"><span class="muted">&copy; 2026 Soundshop. Every page here is static — no build step, no trackers.</span></p>
+</footer>
+
+<script src="assets/js/ui.js"></script>
+<script>
+/* docs.html — table-of-contents scrollspy. Page-local; does not touch ui.js. */
+(function () {
+  'use strict';
+
+  function init() {
+    var nav = document.querySelector('[data-doc-nav]');
+    var body = document.querySelector('[data-doc-content]');
+    if (!nav || !body) return;
+
+    var links = Array.prototype.slice.call(nav.getElementsByTagName('a'));
+    var entries = [];
+
+    for (var i = 0; i < links.length; i++) {
+      var raw = links[i].getAttribute('href') || '';
+      if (raw.charAt(0) !== '#' || raw.length < 2) continue;
+      var id = decodeURIComponent(raw.slice(1));
+      var target = document.getElementById(id);
+      if (target) entries.push({ link: links[i], target: target });
+    }
+    if (!entries.length) return;
+
+    var current = null;
+
+    function headerOffset() {
+      var head = document.querySelector('[data-head]') || document.querySelector('.site-head');
+      var h = head ? head.getBoundingClientRect().height : 64;
+      return h + 32;
+    }
+
+    function setActive(entry) {
+      if (entry === current) return;
+      if (current) current.link.removeAttribute('aria-current');
+      current = entry;
+      if (current) current.link.setAttribute('aria-current', 'true');
+    }
+
+    function update() {
+      var offset = headerOffset();
+      var best = entries[0];
+      for (var i = 0; i < entries.length; i++) {
+        if (entries[i].target.getBoundingClientRect().top - offset <= 0) best = entries[i];
+      }
+      // Pin the last item once the page is scrolled to the very bottom.
+      var scrolled = window.pageYOffset || document.documentElement.scrollTop || 0;
+      var docHeight = document.documentElement.scrollHeight;
+      if (scrolled + window.innerHeight >= docHeight - 4) best = entries[entries.length - 1];
+      setActive(best);
+    }
+
+    var ticking = false;
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(function () {
+        ticking = false;
+        try { update(); } catch (e) { /* never break the page for a highlight */ }
+      });
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    window.addEventListener('hashchange', onScroll);
+    update();
+  }
+
+  try {
+    if (window.SS && typeof window.SS.ready === 'function') window.SS.ready(init);
+    else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+  } catch (e) { /* documentation still reads fine without a highlight */ }
+})();
+</script>
+</body>
+</html>

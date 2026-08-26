@@ -1,105 +1,460 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Soundshop — Presets Gallery</title>
-  <link rel="stylesheet" href="../assets/style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VANTA Preset Library — SOUNDSHOP</title>
+<meta name="description" content="Browse the VANTA preset library: browser-playable presets across eight categories, each with its full parameter list, copyable JSON and a one-click audition.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2308090A'/%3E%3Crect x='5' y='7' width='22' height='1.5' fill='%23363D44'/%3E%3Crect x='5' y='12' width='22' height='1.5' fill='%23262B30'/%3E%3Crect x='5' y='17' width='14' height='1.5' fill='%23262B30'/%3E%3Ccircle cx='23' cy='23' r='3.5' fill='%23F2A93B'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+  /* Header: keep the theme toggle to the right of the nav on desktop and
+     beside the burger on mobile. */
+  .site-head > .theme-toggle { flex: none; }
+  @media (max-width: 899px) {
+    .site-head > .theme-toggle { margin-inline-start: auto; }
+    .site-head > .nav-toggle   { margin-inline-start: var(--sp-3); }
+  }
+  /* ------------------------------------------------------------------ *
+     Page-local styles for the preset gallery. Everything structural comes
+     from the shipped design system; this file only adds what the gallery
+     itself needs. Nothing here re-declares a token or a shared component.
+   * ------------------------------------------------------------------ */
+
+  /* --- intro ------------------------------------------------------- */
+
+  .presets-intro__stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--gap);
+    max-width: 620px;
+  }
+  @media (max-width: 519px) {
+    .presets-intro__stats { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  }
+
+  /* --- toolbar ----------------------------------------------------- */
+
+  .preset-toolbar {
+    position: sticky;
+    top: var(--head-h);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    margin-inline: calc(var(--gutter) * -1);
+    padding: var(--sp-4) var(--gutter);
+    background: var(--bg);
+    border-block-end: 1px solid var(--line);
+  }
+  .preset-toolbar__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  .preset-toolbar__row--meta { justify-content: space-between; }
+  .preset-toolbar .search { flex: 1 1 260px; min-width: 200px; }
+  .preset-toolbar .select {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 186px;
+  }
+  .preset-toolbar__stop { flex: none; margin-inline-start: auto; }
+  .preset-toolbar__cats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    flex: 1 1 auto;
+  }
+  .preset-toolbar__label {
+    flex: none;
+    padding-inline-end: var(--sp-2);
+    border-inline-end: 1px solid var(--line);
+  }
+  .preset-count {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+  }
+  @media (max-width: 899px) {
+    .preset-toolbar { position: static; margin-inline: 0; padding-inline: 0; }
+    .preset-toolbar__label { display: none; }
+  }
+
+  .preset-status {
+    margin: 0;
+    padding-block: var(--sp-6);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+  }
+  .preset-error { margin-block: var(--sp-6); }
+  .preset-error__detail { font-family: var(--font-mono); font-size: var(--fs-micro); }
+
+  /* --- grid + cards ------------------------------------------------- */
+
+  .preset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    gap: var(--gap);
+    margin-block-start: var(--sp-6);
+  }
+  @media (max-width: 639px) {
+    .preset-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  .card--preset {
+    /* so a "#preset-id" deep link never lands under the sticky header */
+    scroll-margin-block-start: calc(var(--head-h) + var(--sp-6));
+  }
+  .card--preset .card__body { gap: var(--sp-4); }
+
+  .preset-card__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sp-3);
+  }
+  .card--preset .card__title { font-size: 1.0625rem; }
+
+  .badge--cat {
+    flex: none;
+    color: var(--accent-2);
+    border-color: color-mix(in oklab, var(--accent-2) 45%, transparent);
+    background: color-mix(in oklab, var(--accent-2) 12%, transparent);
+  }
+
+  .preset-card__by {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+  }
+  .preset-card__by .label { color: var(--text-mute); }
+
+  .card--preset .card__sub { color: var(--text-dim); line-height: 1.6; }
+
+  .card--preset .preset__tags { margin-block-start: 0; }
+  .tag--sm { padding: 3px 8px; font-size: var(--fs-micro); letter-spacing: 0.1em; }
+
+  .preset-card__params {
+    border-block-start: 1px solid var(--line);
+    border-block-end: 0;
+  }
+  .preset-card__params .accordion__summary {
+    padding-block: var(--sp-3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+    cursor: pointer;
+    list-style: none;
+  }
+  .preset-card__params .accordion__summary::-webkit-details-marker { display: none; }
+  .preset-card__params .accordion__summary:hover { color: var(--accent-text); }
+  .preset-card__params .accordion__summary > .num { margin-inline-start: auto; }
+  .preset-card__params .accordion__body { padding-block: 0 var(--sp-4); }
+
+  .preset-params {
+    margin: 0;
+    max-height: 288px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-block-end: 1px solid var(--line);
+  }
+  .preset-params .spec__row { padding-block: var(--sp-2); }
+  .preset-params .spec__key { letter-spacing: 0.08em; text-transform: none; }
+  .preset-params .spec__group { padding-block: var(--sp-4) var(--sp-1); }
+  .preset-params dd { margin: 0; }
+  .preset-params::-webkit-scrollbar { width: 10px; }
+  .preset-params::-webkit-scrollbar-track { background: var(--bg-2); }
+  .preset-params::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: var(--r-pill);
+    border: 3px solid var(--bg-2);
+  }
+
+  .preset-card__actions { margin-block-start: auto; padding-block-start: var(--sp-1); }
+
+  .preset-card__glyph {
+    flex: none;
+    width: 9px;
+    height: 10px;
+    background: currentColor;
+    clip-path: polygon(0 0, 100% 50%, 0 100%);
+    transition: clip-path var(--dur-2) var(--ease-mech);
+  }
+  .preset-card__play[aria-pressed="true"] {
+    color: var(--accent-ink);
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: var(--glow);
+  }
+  .preset-card__play[aria-pressed="true"] .preset-card__glyph {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+
+  .card--preset.is-playing { border-color: var(--accent); }
+  .card--preset.is-playing::after {
+    content: "";
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    height: 2px;
+    background: var(--accent);
+    z-index: 2;
+    pointer-events: none;
+    animation: preset-signal 1.3s var(--ease-inout) infinite;
+  }
+  @keyframes preset-signal {
+    0%, 100% { opacity: 0.32; }
+    50%      { opacity: 1; }
+  }
+
+  /* --- closing sections --------------------------------------------- */
+
+  .format-note { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .format-note__key {
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-text);
+  }
+  .format-note p { margin: 0; color: var(--text-dim); }
+
+  @media (scripting: none) {
+    .preset-status { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card--preset.is-playing::after { animation: none; opacity: 1; }
+    .preset-card__glyph { transition: none; }
+  }
+</style>
 </head>
 <body>
-  <header>
-    <h1>Presets Gallery</h1>
-    <p>Every preset for the Flagship Synth, with its full parameters.</p>
-  </header>
-  <main>
-    <section id="gallery">
-      <h2>Presets</h2>
-      <div id="search-box">
-        <label for="preset-search">Search presets</label>
-        <input type="text" id="preset-search" placeholder="Search by name, author or param…" autocomplete="off">
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-head" data-head>
+  <a class="brand" href="../index.html" aria-label="Soundshop home">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">SOUNDSHOP</span>
+  </a>
+  <nav class="site-nav" aria-label="Primary">
+    <a href="../plugins/index.html">Plugins</a>
+    <a href="../presets/index.html">Presets</a>
+    <a href="../demo/flagship-demo.html">Demo</a>
+    <a href="../docs.html">Docs</a>
+    <a href="../changelog.html">Changelog</a>
+  </nav>
+  <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" aria-label="Switch to light theme" title="Switch to light theme">
+    <span data-theme-label>Dark</span>
+  </button>
+  <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" data-nav-toggle>
+    <span></span><span></span><span></span>
+  </button>
+</header>
+
+<main id="main">
+
+  <!-- ============================ INTRO ============================ -->
+  <section class="section section--tight">
+    <div class="wrap">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <ol>
+          <li><a href="../index.html">Home</a></li>
+          <li><a href="../plugins/flagship.html">VANTA</a></li>
+          <li><span aria-current="page">Presets</span></li>
+        </ol>
+      </nav>
+
+      <div class="sec-head mt-5" data-reveal>
+        <p class="sec-head__eyebrow">Presets</p>
+        <h1 class="sec-head__title">Two hundred starting points</h1>
+        <p class="sec-head__sub">
+          VANTA ships with two hundred presets. Listed below are the ones that also run
+          in the browser engine on this site — same plain-text format, same parameter
+          names, same values. Audition any of them here, copy the parameters straight
+          out of the page, and paste them into the plugin.
+        </p>
       </div>
-      <div id="presets-gallery">Loading presets…</div>
-    </section>
 
-    <section id="links">
-      <h2>More</h2>
-      <ul>
-        <li><a href="../index.html">Home</a></li>
-        <li><a href="../plugins/flagship.html">Flagship Synth</a></li>
-        <li><a href="../changelog.html">Changelog</a></li>
-      </ul>
-    </section>
-  </main>
-  <script>
-    // Load and render the full presets gallery, including params.
-    // Same defensive fetch/catch pattern as site/plugins/flagship.html.
-    (function(){
-      fetch('flagship-presets.json')
-        .then(function(r){ if(!r.ok) throw new Error('fetch failed'); return r.json(); })
-        .then(function(data){
-          var el = document.getElementById('presets-gallery');
-          if(!Array.isArray(data) || data.length === 0) { el.textContent = 'No presets found.'; return; }
-          var wrap = document.createElement('div');
-          wrap.className = 'preset-cards';
-          data.forEach(function(p){
-            var card = document.createElement('div');
-            card.className = 'preset-card';
+      <div class="presets-intro__stats mt-6" data-reveal data-reveal-delay="80">
+        <div class="stat">
+          <span class="stat__figure stat__figure--accent num" data-preset-total>&mdash;</span>
+          <span class="stat__label">In this library</span>
+        </div>
+        <div class="stat">
+          <span class="stat__figure num" data-preset-total-cats>&mdash;</span>
+          <span class="stat__label">Categories</span>
+        </div>
+        <div class="stat">
+          <span class="stat__figure num" data-preset-total-authors>&mdash;</span>
+          <span class="stat__label">Designers</span>
+        </div>
+      </div>
 
-            var name = document.createElement('h3');
-            name.textContent = p.name || 'Untitled preset';
-            card.appendChild(name);
+      <p class="disclaimer mt-5">
+        Browser demo. Audio quality and voice count are limited by the browser; the plugin is not.
+      </p>
+    </div>
+  </section>
 
-            var author = document.createElement('p');
-            author.textContent = 'By ' + (p.author || 'unknown');
-            card.appendChild(author);
+  <!-- ============================ GALLERY ============================ -->
+  <section class="section section--flush" data-preset-gallery data-src="flagship-presets.json">
+    <div class="wrap">
 
-            var params = p.params && typeof p.params === 'object' ? p.params : {};
-            var keys = Object.keys(params);
-            if(keys.length){
-              var dl = document.createElement('dl');
-              keys.forEach(function(k){
-                var dt = document.createElement('dt');
-                dt.textContent = k;
-                var dd = document.createElement('dd');
-                dd.textContent = String(params[k]);
-                dl.appendChild(dt);
-                dl.appendChild(dd);
-              });
-              card.appendChild(dl);
-            }
+      <h2 class="sr-only">Preset library</h2>
 
-            wrap.appendChild(card);
-          });
-          el.textContent = '';
-          el.appendChild(wrap);
+      <div class="preset-toolbar" data-preset-toolbar hidden>
+        <div class="preset-toolbar__row">
+          <div class="search">
+            <label class="sr-only" for="preset-search">Search presets</label>
+            <input class="input" id="preset-search" type="search" autocomplete="off"
+                   placeholder="Search names, tags, designers&hellip;" data-preset-search>
+          </div>
 
-          // Live search/filter: match card text (name, author, params) against
-          // the search box on every keystroke. Hides non-matching cards and
-          // shows a 'No presets found.' message when nothing matches.
-          var search = document.getElementById('preset-search');
-          if(search){
-            var cards = Array.prototype.slice.call(wrap.getElementsByClassName('preset-card'));
-            var empty = document.createElement('p');
-            empty.id = 'no-results';
-            empty.textContent = 'No presets found.';
-            empty.style.display = 'none';
-            wrap.parentNode.insertBefore(empty, wrap.nextSibling);
+          <label class="sr-only" for="preset-sort">Sort presets</label>
+          <select class="select" id="preset-sort" data-preset-sort>
+            <option value="name">Sort: Name A&ndash;Z</option>
+            <option value="category">Sort: Category</option>
+            <option value="author">Sort: Designer</option>
+          </select>
 
-            search.addEventListener('input', function(){
-              var q = search.value.trim().toLowerCase();
-              var visible = 0;
-              cards.forEach(function(card){
-                var match = !q || (card.textContent || '').toLowerCase().indexOf(q) !== -1;
-                card.style.display = match ? '' : 'none';
-                if(match) visible++;
-              });
-              empty.style.display = visible === 0 ? '' : 'none';
-            });
-          }
-        }).catch(function(){
-          document.getElementById('presets-gallery').textContent = 'Unable to load presets.';
-        });
-    })();
-  </script>
+          <button class="btn btn--sm btn-ghost preset-toolbar__stop" type="button" data-preset-stop>Stop audio</button>
+        </div>
+
+        <div class="preset-toolbar__row">
+          <span class="label preset-toolbar__label" id="preset-cats-label">Category</span>
+          <div class="preset-toolbar__cats" role="group" aria-labelledby="preset-cats-label" data-preset-cats></div>
+        </div>
+
+        <div class="preset-toolbar__row preset-toolbar__row--meta">
+          <p class="preset-count" role="status" aria-live="polite" data-preset-count>Loading the library&hellip;</p>
+          <button class="btn btn--sm btn-ghost" type="button" data-preset-reset hidden>Clear filters</button>
+        </div>
+      </div>
+
+      <div class="note note--warn mt-5" data-preset-audio-note hidden>
+        <p class="note__title">No audio in this browser</p>
+        <p>This browser has no Web Audio support, so the audition buttons are switched off.
+          Everything else on the page — parameters, tags and the JSON — still works.</p>
+      </div>
+
+      <p class="preset-status" data-preset-status>Loading the preset library&hellip;</p>
+
+      <div class="note note--warn preset-error" data-preset-error hidden></div>
+
+      <div class="preset-grid" data-preset-grid></div>
+
+      <div class="empty-state mt-6" data-preset-empty hidden>
+        <p class="empty-state__title">No results</p>
+        <p>No presets match that. Clear the filters or search by tag &mdash; try &ldquo;keys&rdquo;, &ldquo;pad&rdquo;, &ldquo;broken&rdquo;.</p>
+        <p class="mt-4">
+          <button class="btn btn--sm btn-ghost" type="button" data-preset-reset>Clear filters</button>
+        </p>
+      </div>
+
+      <noscript>
+        <div class="note note--warn mt-6">
+          <p class="note__title">JavaScript is switched off</p>
+          <p>The gallery renders its cards in the browser from a single JSON file.
+            With scripting disabled there is nothing to list here — the file itself is
+            plain text and can be read directly, and every preset also ships inside the plugin.</p>
+        </div>
+      </noscript>
+
+    </div>
+  </section>
+
+  <!-- ============================ FORMAT ============================ -->
+  <section class="section">
+    <div class="wrap">
+      <div class="sec-head" data-reveal>
+        <p class="sec-head__eyebrow">The format</p>
+        <h2 class="sec-head__title">Presets you can read</h2>
+        <p class="sec-head__sub">
+          Presets are plain text, tagged and diffable, stored in a folder you choose.
+          Copy one into a chat window and it still loads on the other end.
+        </p>
+      </div>
+
+      <div class="grid-3 mt-6">
+        <div class="panel" data-reveal>
+          <div class="panel__body format-note">
+            <p class="format-note__key">One object per preset</p>
+            <p>A name, an author, a category, a handful of tags and a flat map of parameter
+              values. No binary blobs, no database, nothing that needs the plugin open to inspect.</p>
+          </div>
+        </div>
+        <div class="panel" data-reveal>
+          <div class="panel__body format-note">
+            <p class="format-note__key">Parameter names are the API</p>
+            <p>The keys under <span class="num">params</span> are the same identifiers the
+              plugin automates and the browser engine reads. What you copy from this page is
+              what the instrument loads.</p>
+          </div>
+        </div>
+        <div class="panel" data-reveal>
+          <div class="panel__body format-note">
+            <p class="format-note__key">Partial presets are legal</p>
+            <p>Leave a key out and that control keeps its current value. It is how a
+              &ldquo;filter only&rdquo; or &ldquo;effects only&rdquo; preset is written, and it
+              survives a copy-paste through anything.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="bundle mt-7" data-reveal>
+        <div class="stack stack--sm">
+          <p class="label">Hear them in context</p>
+          <p class="lead">VANTA runs in this tab. Load a preset, play it, then change your mind.</p>
+        </div>
+        <div class="cluster">
+          <a class="btn btn-primary" href="../demo/flagship-demo.html">Play VANTA in the browser</a>
+          <a class="btn btn-ghost" href="../plugins/flagship.html">About VANTA</a>
+          <a class="btn btn-ghost" href="../docs.html">Documentation</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="foot-grid">
+    <div class="foot-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <p>SOUNDSHOP<br><span class="muted">Instruments for the deep end.</span></p>
+    </div>
+    <div><h3>Instruments</h3><ul>
+      <li><a href="../plugins/flagship.html">VANTA</a></li>
+      <li><a href="../plugins/drift.html">DRIFT</a></li>
+      <li><a href="../plugins/prism.html">PRISM</a></li>
+      <li><a href="../plugins/anvil.html">ANVIL</a></li>
+    </ul></div>
+    <div><h3>Resources</h3><ul>
+      <li><a href="../presets/index.html">Preset library</a></li>
+      <li><a href="../demo/flagship-demo.html">Playable demo</a></li>
+      <li><a href="../docs.html">Documentation</a></li>
+      <li><a href="../changelog.html">Changelog</a></li>
+    </ul></div>
+  </div>
+  <p class="foot-legal"><span class="muted">&copy; 2026 Soundshop. Every page here is static — no build step, no trackers.</span></p>
+</footer>
+
+<script src="../assets/js/ui.js"></script>
+<script src="../assets/js/synth.js"></script>
+<script src="../assets/js/presets.js"></script>
 </body>
 </html>

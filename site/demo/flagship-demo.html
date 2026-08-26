@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VANTA — playable browser demo | SOUNDSHOP</title>
+<meta name="description" content="Play VANTA, the SOUNDSHOP 8-voice virtual-analog polysynth, in your browser. Real DSP, real presets, an oscilloscope and a full rack of controls — no download and no account.">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%2316191C'/%3E%3Crect x='6' y='7' width='20' height='1.6' fill='%23363D44'/%3E%3Crect x='6' y='11' width='20' height='1.6' fill='%23363D44'/%3E%3Ccircle cx='10' cy='23' r='4' fill='%23F2A93B'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+/* =========================================================================
+   Page-local styles for the VANTA demo rack. Everything structural comes
+   from assets/style.css; this file only lays the rack out and adds the
+   components the design system does not ship (segmented enums, the power
+   overlay, the framed/standalone chrome switch).
+   ========================================================================= */
+
+.demo { display: flex; flex-direction: column; min-height: 100vh; }
+@supports (min-height: 100dvh) { .demo { min-height: 100dvh; } }
+
+/* --- top bar -------------------------------------------------------- */
+.demo-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 8px clamp(12px, 3vw, 26px);
+  border-block-end: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
+  box-shadow: inset 0 1px 0 var(--hi-1), 0 14px 30px -30px var(--sh-2);
+}
+.demo-bar__name {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.demo-bar__sep { width: 1px; height: 14px; background: var(--line); flex: none; }
+.demo-bar__tag { display: none; }
+.demo-bar__state { display: inline-flex; align-items: center; gap: 8px; }
+.demo-bar .btn, .demo-bar .theme-toggle { flex: none; }
+.demo-bar__name { flex: none; }
+@media (max-width: 519px) {
+  .demo-bar .badge--version { display: none; }
+  .demo-bar__sep { display: none; }
+}
+@media (min-width: 880px) { .demo-bar__tag { display: inline; } }
+
+/* Chrome that only makes sense outside the flagship page's iframe. */
+.demo [data-frameless] { display: none; }
+html[data-standalone] .demo [data-frameless] { display: inline-flex; }
+
+/* --- main shell ------------------------------------------------------ */
+.demo-main {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: var(--maxw-wide);
+  margin-inline: auto;
+  padding: clamp(14px, 2.2vw, 26px) var(--gutter) clamp(18px, 3vw, 40px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(14px, 1.8vw, 24px);
+}
+.demo[data-unsupported] .demo-main { display: none; }
+
+/* --- screen row ------------------------------------------------------ */
+.demo-screen__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(230px, 0.82fr);
+  gap: var(--gap);
+  align-items: start;
+  padding: var(--sp-4);
+}
+@media (max-width: 900px) { .demo-screen__body { grid-template-columns: minmax(0, 1fr); } }
+
+.scope canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.scope__readout { flex-wrap: wrap; gap: var(--sp-3); }
+
+.demo-side { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.demo-side__block {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, var(--hi-2), transparent);
+}
+.demo-metering { display: flex; flex-direction: column; gap: 9px; flex: 1 1 auto; min-width: 0; }
+.demo-metering .label { color: var(--text-mute); }
+.demo-voices { display: flex; gap: 5px; }
+.demo-transport { display: flex; flex-wrap: wrap; gap: 8px; }
+.demo-transport .btn { flex: 1 1 auto; }
+
+/* --- preset bar ------------------------------------------------------ */
+.demo-presets__body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+}
+.demo-presets__select { width: auto; min-width: 190px; max-width: 100%; padding-block: 7px; }
+.demo-presets__meta {
+  margin: 0;
+  flex: 1 1 240px;
+  min-width: 0;
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-mute);
+}
+.demo-presets__meta .label { display: block; color: var(--accent-text); }
+
+/* --- rack ------------------------------------------------------------ */
+.demo-rack {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 322px), 1fr));
+  gap: clamp(14px, 1.8vw, 24px);
+  align-items: start;
+}
+.rack-sec__head { padding: 10px var(--sp-4); gap: var(--sp-3); }
+.rack-sec__head .rack__group-label { color: var(--accent-text); }
+.rack-sec__head .rack-sec__title {
+  margin: 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+}
+.rack-sec__body { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-4); }
+.rack-sec__group {
+  border-inline-end: 0;
+  padding-inline-end: 0;
+  gap: var(--sp-3);
+}
+.rack-sec__group + .rack-sec__group {
+  padding-block-start: var(--sp-4);
+  border-block-start: 1px solid var(--line-soft);
+}
+.rack-sec__segs { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.rack-sec__note {
+  margin: 0;
+  max-width: 48ch;
+  font-size: var(--fs-micro);
+  line-height: 1.55;
+  color: var(--text-mute);
+}
+.rack-sec--env .fader__track { height: 108px; }
+.rack-sec--env .rack__row { gap: var(--sp-3); }
+.rack-sec--env .fader { width: 48px; }
+
+/* --- segmented enum control ------------------------------------------ */
+.seg { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.seg__label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+.seg__opts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-self: flex-start;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, var(--well), var(--well-hi));
+  box-shadow: var(--shadow-well);
+  overflow: hidden;
+}
+.seg__btn {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 7px 11px;
+  border: 0;
+  border-inline-start: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--dur-2) var(--ease-mech),
+              background-color var(--dur-2) var(--ease-mech);
+}
+.seg__btn:first-child { border-inline-start: 0; }
+.seg__btn:hover { color: var(--text); background: var(--accent-a12); }
+.seg__btn[aria-checked="true"] {
+  color: var(--accent-ink);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 92%, #FFF), var(--accent));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3);
+}
+
+/* --- knob / fader tuning for this page -------------------------------- */
+.demo-rack .knob__value, .demo-rack .fader__value { color: var(--text-dim); }
+.knob:focus-visible, .fader:focus-visible { border-radius: var(--r-sm); }
+@media (max-width: 400px) {
+  /* keep the pointer centred when the design system shrinks the ring */
+  .knob__indicator { top: 10px; transform-origin: 50% 16px; }
+}
+
+/* --- keybed ----------------------------------------------------------- */
+.demo-keys__head { padding: 10px var(--sp-4); }
+.demo-keys__body { padding: var(--sp-4); }
+.demo-keys .keybed { height: clamp(96px, 12.5vw, 148px); }
+.keybed__key.is-oob { opacity: .28; pointer-events: none; }
+.keybed__key.is-c .keybed__key-name { bottom: 19px; }
+.keybed__key .keybed__octave-mark { left: 0; right: 0; text-align: center; color: rgba(0, 0, 0, .45); }
+.demo-oct { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.demo-oct__range { color: var(--text-dim); }
+.demo-hint {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-micro);
+  line-height: 1.7;
+  color: var(--text-mute);
+}
+.demo-hint kbd {
+  display: inline-block;
+  min-width: 16px;
+  padding: 1px 5px;
+  margin-inline: 1px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  background: var(--bg-2);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  text-align: center;
+}
+
+/* --- power overlay ---------------------------------------------------- */
+.power {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: clamp(16px, 4vw, 40px);
+  background: color-mix(in oklab, var(--bg) 76%, transparent);
+  backdrop-filter: blur(12px) saturate(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
+  transition: opacity var(--dur-3) var(--ease-out), visibility var(--dur-3) var(--ease-out);
+}
+.demo[data-on] .power { opacity: 0; visibility: hidden; pointer-events: none; }
+.demo[data-unsupported] .power { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--bg); }
+.power__card { width: min(540px, 100%); }
+.power__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: clamp(18px, 3.4vw, 34px);
+}
+.power__title { margin: 0; font-size: var(--fs-h2); line-height: 1.08; letter-spacing: -0.022em; }
+.power__sub { margin: 0; max-width: 46ch; font-size: var(--fs-small); color: var(--text-dim); }
+.power__note { margin: 0; font-size: var(--fs-micro); color: var(--text-mute); }
+.power__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-block-start: var(--sp-2);
+  padding: 10px 22px 10px 10px;
+  border: 1px solid var(--accent-a35);
+  border-radius: var(--r);
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform var(--dur-2) var(--ease-mech), box-shadow var(--dur-2) var(--ease-mech);
+}
+.power__btn:hover { transform: translateY(-1px); box-shadow: var(--glow); }
+.power__btn:active { transform: translateY(0); }
+.power__glyph {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  color: var(--accent-text);
+  background:
+    radial-gradient(circle at 34% 28%, var(--hi-1), transparent 58%),
+    var(--knob-metal);
+  box-shadow: 0 2px 0 var(--sh-1), inset 0 1px 0 var(--hi-1);
+  animation: demo-standby 2.6s var(--ease-inout) infinite;
+}
+.power__glyph svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+@keyframes demo-standby {
+  0%, 100% { box-shadow: 0 2px 0 var(--sh-1), inset 0 1px 0 var(--hi-1), 0 0 0 0 var(--accent-a35); }
+  50%      { box-shadow: 0 2px 0 var(--sh-1), inset 0 1px 0 var(--hi-1), 0 0 26px -6px var(--accent-a35); }
+}
+
+/* --- footer strip ----------------------------------------------------- */
+.demo-foot {
+  border-block-start: 1px solid var(--line);
+  background: var(--bg-elev);
+  padding: 12px var(--gutter);
+}
+.demo-foot p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  color: var(--text-mute);
+}
+.demo-foot .demo-bar__sep { height: 10px; }
+
+/* --- short viewports (the 360px-tall iframe on the flagship page) ------ */
+@media (max-height: 620px) {
+  .demo-main { gap: 12px; padding-block: 12px; }
+  .scope { aspect-ratio: 16 / 5; }
+  .demo-keys .keybed { height: 92px; }
+}
+@media (max-height: 460px) {
+  .power__sub, .power__note { display: none; }
+  .power__inner { gap: var(--sp-2); padding: 18px; }
+}
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="demo" data-demo>
+
+  <header class="demo-bar">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <h1 class="demo-bar__name">VANTA<span class="sr-only"> — playable browser demo</span></h1>
+    <span class="badge badge--version num">v1.4.0</span>
+    <span class="demo-bar__sep" aria-hidden="true"></span>
+    <span class="label demo-bar__tag">8-voice virtual-analog polysynth</span>
+    <span class="demo-bar__state push">
+      <span class="led" data-power-led aria-hidden="true"></span>
+      <span class="label" data-power-state>Standby</span>
+    </span>
+    <a class="btn btn-ghost btn--sm btn--mono" href="../index.html" data-frameless>Soundshop</a>
+    <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false"
+            aria-label="Switch colour theme" data-frameless><span data-theme-label>Dark</span></button>
+  </header>
+
+  <main class="demo-main" id="main">
+
+    <noscript>
+      <div class="note note--warn">
+        <p class="note__title">JavaScript required</p>
+        <p>VANTA's browser build is a live audio engine, so this page needs JavaScript to run.
+          Everything else on the site — the reference documentation, the preset library and the
+          changelog — reads fine without it.</p>
+      </div>
+    </noscript>
+
+    <!-- screen: scope + spectrum, master, metering, transport -->
+    <section class="panel demo-screen" aria-label="Oscilloscope and transport">
+      <div class="panel__body demo-screen__body">
+
+        <div class="scope" data-scope>
+          <canvas data-layer="grid" aria-hidden="true"></canvas>
+          <canvas data-layer="spectrum" aria-hidden="true"></canvas>
+          <canvas data-layer="trace" role="img"
+                  aria-label="Oscilloscope and spectrum analyser for the VANTA output bus"></canvas>
+          <div class="scope__readout num" aria-hidden="true">
+            <span data-read-level>-inf dB</span>
+            <span data-read-voices>0/8 voices</span>
+            <span data-read-note>—</span>
+            <span data-read-rate>standby</span>
+          </div>
+        </div>
+
+        <div class="demo-side">
+          <div class="demo-side__block">
+            <div data-master-slot></div>
+            <div class="demo-metering">
+              <span class="label label--micro">Output</span>
+              <span class="meter meter--vu">
+                <span class="meter__bar" data-meter-bar></span>
+                <span class="meter__scale"></span>
+                <span class="meter__peak" data-meter-peak></span>
+                <span class="meter__clip" data-meter-clip></span>
+              </span>
+              <span class="label label--micro">Voices</span>
+              <span class="demo-voices" data-voices aria-hidden="true"></span>
+            </div>
+          </div>
+
+          <div class="demo-transport">
+            <button class="btn btn--sm btn--mono" type="button" data-standby aria-pressed="false">Power on</button>
+            <button class="btn btn--sm btn--mono" type="button" data-panic>Panic</button>
+            <button class="btn btn--sm btn--mono" type="button" data-copy-patch>Copy patch</button>
+            <button class="btn btn--sm btn--mono" type="button" data-scope-motion aria-pressed="false" hidden>Animate scope</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- presets -->
+    <section class="panel demo-presets" id="presets" data-presets
+             data-presets-src="../presets/flagship-presets.json" aria-label="Presets">
+      <div class="panel__body demo-presets__body">
+        <span class="rack__group-label">Presets</span>
+        <label class="sr-only" for="preset-select">Preset</label>
+        <select class="select demo-presets__select" id="preset-select" data-preset-select></select>
+        <button class="btn btn--sm btn--mono" type="button" data-preset-prev aria-label="Previous preset">Prev</button>
+        <button class="btn btn--sm btn--mono" type="button" data-preset-next aria-label="Next preset">Next</button>
+        <button class="btn btn--sm btn--mono" type="button" data-preset-random>Random</button>
+        <button class="btn btn--sm btn--mono" type="button" data-preset-init>Init</button>
+        <p class="demo-presets__meta" aria-live="polite">
+          <span class="label label--micro" data-preset-source>Loading patch bank</span>
+          <span data-preset-desc></span>
+        </p>
+      </div>
+    </section>
+
+    <!-- the rack itself, rendered from SSSynth.PARAM_SPEC -->
+    <div class="demo-rack" id="rack" data-rack></div>
+
+    <!-- keyboard -->
+    <section class="panel demo-keys" id="keys">
+      <div class="panel__head demo-keys__head">
+        <span class="rack__group-label">Keyboard</span>
+        <span class="demo-oct push">
+          <button class="btn btn--sm btn--mono" type="button" data-oct-down aria-label="Octave down">Oct −</button>
+          <span class="num demo-oct__range" data-oct-display>C4–F6</span>
+          <button class="btn btn--sm btn--mono" type="button" data-oct-up aria-label="Octave up">Oct +</button>
+        </span>
+      </div>
+      <div class="panel__body demo-keys__body">
+        <div class="keybed" data-keybed role="group"
+             aria-label="Two and a half octave keybed. Play it with the pointer, or with the computer keys listed below.">
+          <div class="keybed__keys" data-keys></div>
+        </div>
+        <p class="demo-hint">
+          Play with the computer keyboard —
+          <kbd>A</kbd><kbd>W</kbd><kbd>S</kbd><kbd>E</kbd><kbd>D</kbd><kbd>F</kbd><kbd>T</kbd><kbd>G</kbd><kbd>Y</kbd><kbd>H</kbd><kbd>U</kbd><kbd>J</kbd><kbd>K</kbd><kbd>O</kbd><kbd>L</kbd><kbd>P</kbd><kbd>;</kbd>
+          run chromatically up from the leftmost C. <kbd>Z</kbd> and <kbd>X</kbd> shift the octave.
+          Drag any knob, or scroll it, or focus it and use the arrow keys; hold
+          <kbd>Shift</kbd> for fine adjustment and double-click to reset a control to its default.
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="demo-foot">
+    <p>
+      <span>Browser demo — audio quality and voice count are limited by the browser; the plugin is not.</span>
+      <span class="demo-bar__sep" aria-hidden="true"></span>
+      <span>VANTA 1.4.0 · VST3 · AU · AAX · CLAP</span>
+    </p>
+  </footer>
+
+  <!-- power overlay: the AudioContext needs a gesture before it will make sound -->
+  <div class="power" data-overlay role="dialog" aria-modal="true" aria-labelledby="power-title">
+    <div class="panel panel--chamfer power__card">
+      <div class="power__inner">
+        <p class="eyebrow">VANTA / 1.4.0 / browser build</p>
+        <h2 class="power__title" id="power-title" data-power-title>Click to power on</h2>
+        <p class="power__sub" data-power-sub>
+          Browsers keep audio silent until someone asks for it. One click builds the eight-voice
+          engine in this tab — two oscillators and a sub per voice, a resonant filter, two
+          envelopes, an LFO, delay, reverb and an arpeggiator.
+        </p>
+        <button class="power__btn" type="button" data-power-btn>
+          <span class="power__glyph" aria-hidden="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M12 3.5v8.5"></path>
+              <path d="M6.6 7.1a7.6 7.6 0 1 0 10.8 0"></path>
+            </svg>
+          </span>
+          <span>Power on VANTA</span>
+        </button>
+        <p class="power__note" data-power-note>
+          Nothing is downloaded, nothing is installed, and no account is required.
+        </p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="../assets/js/ui.js"></script>
+<script src="../assets/js/synth.js"></script>
+<script src="../assets/js/demo.js"></script>
+<script>
+/* Keep the rack out of the tab order while the power overlay is up.
+   The overlay is a modal (role="dialog" aria-modal="true"), so everything
+   behind it must be inert until the engine is running — or until the demo
+   declares itself unsupported, at which point the overlay is the only
+   content and the page behind it is just static copy. */
+(function () {
+  var root = document.querySelector('[data-demo]');
+  var overlay = document.querySelector('[data-overlay]');
+  if (!root || !overlay) return;
+
+  var behind = [];
+  var main = document.querySelector('.demo-main');
+  var bar = document.querySelector('.demo-bar');
+  var foot = document.querySelector('.demo-foot');
+  if (main) behind.push(main);
+  if (bar) behind.push(bar);
+  if (foot) behind.push(foot);
+
+  var focused = false;
+
+  function blocked() {
+    return !root.hasAttribute('data-on') && !root.hasAttribute('data-unsupported');
+  }
+
+  function apply() {
+    var off = blocked();
+    for (var i = 0; i < behind.length; i++) {
+      if (off) {
+        behind[i].setAttribute('inert', '');
+        behind[i].setAttribute('aria-hidden', 'true');
+      } else {
+        behind[i].removeAttribute('inert');
+        behind[i].removeAttribute('aria-hidden');
+      }
+    }
+    if (off && !focused) {
+      var btn = overlay.querySelector('[data-power-btn]');
+      var idle = !document.activeElement || document.activeElement === document.body;
+      if (btn && idle && document.hasFocus()) {
+        focused = true;
+        try { btn.focus({ preventScroll: true }); } catch (e) { btn.focus(); }
+      }
+    }
+  }
+
+  try {
+    new MutationObserver(apply).observe(root, { attributes: true, attributeFilter: ['data-on', 'data-unsupported'] });
+  } catch (e) { /* no observer: the initial state below still applies */ }
+
+  apply();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,226 @@
+[
+  {
+    "version": "2026.8",
+    "date": "2026-08-12",
+    "product": "Soundshop",
+    "title": "The shop, rebuilt",
+    "type": "release",
+    "notes": [
+      "Rebuilt soundshop.example as a static site with no build step, no external assets and no trackers — every page works offline from the filesystem.",
+      "VANTA now runs in the browser: the playable demo drives a real eight-voice Web Audio engine from the same 40-parameter contract the plug-in uses, so a preset copied out of the plug-in loads in the tab.",
+      "Documentation replaced wholesale. Install paths per format and platform, the complete parameter reference with ranges and defaults, preset file layout, automation IDs, and the licence in plain language.",
+      "Preset gallery is searchable and tag-filtered, and every preset is plain text you can read before you load it."
+    ],
+    "links": {
+      "Home": "/index.html",
+      "Play the demo": "/demo/flagship-demo.html",
+      "Documentation": "/docs.html"
+    }
+  },
+  {
+    "version": "1.4.0",
+    "date": "2026-07-28",
+    "product": "VANTA",
+    "title": "Per-voice analog error, and a matrix you can read",
+    "type": "feature",
+    "notes": [
+      "New Drift control scales independent per-voice offsets for tuning, envelope timing and filter cutoff, from dead-accurate to visibly falling apart. Offsets are re-rolled per voice at allocation, not shared from one global LFO.",
+      "Modulation matrix redrawn as twenty-four flat rows — source, destination, depth, curve. No submenus, no hidden routing, and every source now reaches every destination at audio rate.",
+      "Filter envelope amount is applied through the filter's detune input rather than as a linear offset in Hz, so a sweep of a given depth sounds the same at the bottom of the keyboard as at the top.",
+      "Voice stealing reworked: free slot, then oldest released voice, then oldest held voice. A sustained chord keeps its tails when you play over it.",
+      "Preset format extended with tags. Older presets load unchanged; keys that are absent keep their current value."
+    ],
+    "links": {
+      "VANTA": "/plugins/flagship.html",
+      "Parameter reference": "/docs.html",
+      "Presets": "/presets/index.html"
+    }
+  },
+  {
+    "version": "2.0.1",
+    "date": "2026-06-09",
+    "product": "ANVIL",
+    "title": "Oversampled-mode latency reporting",
+    "type": "fix",
+    "notes": [
+      "Fixed the oversampled mode reporting its group delay one block late on the first instantiation, which left the first bounce of a session a few samples early in hosts that trust the initial report.",
+      "Transient stage no longer re-triggers on the release of a note whose attack was still inside the detector window — audible on hi-hats at very short attack settings.",
+      "Gain-reduction meter now reads the same value in both zero-latency and oversampled modes; previously the oversampled path was metered before the make-up gain.",
+      "Free update for every 1.x and 2.x owner."
+    ],
+    "links": {
+      "ANVIL": "/plugins/anvil.html"
+    }
+  },
+  {
+    "version": "0.9.0",
+    "date": "2026-04-21",
+    "product": "PRISM",
+    "title": "Public beta",
+    "type": "beta",
+    "notes": [
+      "First public build. Four spectral bands with independent move, tilt and resonance, plus formant dragging from one band onto another.",
+      "The DSP is stable and the preset format is frozen — presets saved against 0.9.0 will load in 1.0 without conversion.",
+      "The interface is not frozen. Panel layout, band handles and the formant display will change before 1.0, and that is the part we most want reports about.",
+      "Buy at $69 during the beta; the 1.0 release is a free update.",
+      "Known: band edges above 12 kHz can chirp when two bands are dragged across each other in the same gesture. Fix is in progress, not in this build."
+    ],
+    "links": {
+      "PRISM": "/plugins/prism.html",
+      "Report something": "/docs.html"
+    }
+  },
+  {
+    "version": "2.0.0",
+    "date": "2026-02-17",
+    "product": "ANVIL",
+    "title": "Saturation after the gain element",
+    "type": "release",
+    "notes": [
+      "Signal path reordered: the saturation stage now runs after the gain element instead of before it, so compression no longer feeds the distortion its own gain pumping. This is the change 2.0 exists for.",
+      "Program-dependent release replaces the fixed two-stage release. Fast material recovers fast, sustained material recovers slowly, with no control to ride.",
+      "Transient stage rebuilt without a detector to fight — attack and sustain are separated by envelope difference rather than by threshold, so it works on material that is already compressed.",
+      "New zero-latency mode for tracking and an oversampled mode for mixdown, switchable without dropping the session.",
+      "Free update for all 1.x owners. 1.x presets convert on load; the converter maps the old saturation amount onto the new post-gain curve by ear, not by number."
+    ],
+    "links": {
+      "ANVIL": "/plugins/anvil.html",
+      "All four": "/plugins/index.html"
+    }
+  },
+  {
+    "version": "1.3.2",
+    "date": "2025-11-25",
+    "product": "VANTA",
+    "title": "Release-tail and glide fixes",
+    "type": "fix",
+    "notes": [
+      "Fixed voices being returned to the pool when the key came up rather than when the release tail finished, which truncated long releases during fast playing.",
+      "Glide no longer applies to the first note after silence — portamento from an unplayed pitch was audible as a swoop into every phrase.",
+      "Sample-and-hold LFO re-seeded per instance instead of per process block, so two instances no longer step in lockstep.",
+      "Filter self-oscillation at resonance above 22 Q could produce a DC offset at very low cutoff settings on Apple silicon. Fixed."
+    ],
+    "links": {
+      "VANTA": "/plugins/flagship.html"
+    }
+  },
+  {
+    "version": "1.1.0",
+    "date": "2025-09-30",
+    "product": "DRIFT",
+    "title": "Freeze, and correlated wow",
+    "type": "feature",
+    "notes": [
+      "New Freeze holds the loop without re-recording into it, so the frozen material does not decay, degrade or accumulate the input while it is held.",
+      "Wow and flutter are now correlated: a slow low-frequency drift modulates the flutter rate rather than the two running independently, which is what makes a real machine sound like one machine and not two.",
+      "Head-gap loss modelled on repeats — each pass loses high end as a function of tape speed, not as a fixed filter.",
+      "Transport speed is now a continuous control and repeats bend with it in real time instead of crossfading to a new rate.",
+      "Free update for all 1.x owners."
+    ],
+    "links": {
+      "DRIFT": "/plugins/drift.html"
+    }
+  },
+  {
+    "version": "1.3.0",
+    "date": "2025-06-18",
+    "product": "VANTA",
+    "title": "MPE, and a legacy mode that means it",
+    "type": "feature",
+    "notes": [
+      "Full MPE: per-note pitch bend, pressure and slide reach the voice they belong to, following the zone configuration the host sends rather than a fixed assumption.",
+      "Legacy mode maps the same destinations to mod wheel and channel aftertouch, so an ordinary keyboard reaches everything an MPE controller does — just not per note.",
+      "Sustain (CC 64) now holds notes inside the arpeggiator's pool instead of only at the voice allocator.",
+      "All Notes Off and panic ramp voices to silence over 15 ms rather than cutting, so a stuck note can never turn into a click.",
+      "Parameter IDs published in the documentation and frozen. An ID has never been renamed or reused, and will not be."
+    ],
+    "links": {
+      "VANTA": "/plugins/flagship.html",
+      "MIDI and automation": "/docs.html"
+    }
+  },
+  {
+    "version": "2025.3",
+    "date": "2025-03-11",
+    "product": "Soundshop",
+    "title": "CLAP everywhere, and Linux builds",
+    "type": "release",
+    "notes": [
+      "CLAP added across the whole shop. Every instrument and effect now ships VST3, AU, AAX and CLAP from the same codebase and the same parameter IDs.",
+      "First Linux builds: x64, VST3 and CLAP, linked against glibc 2.31 and tested on Ubuntu 22.04 and Fedora.",
+      "Licensing moved fully offline. The licence file is checked locally against a machine fingerprint — nothing is transmitted, and a session on a machine with no network loads instantly.",
+      "Three-machine limit with self-service deauthorisation from the about panel. You no longer have to email us to move a licence between machines.",
+      "The Full Shop bundle introduced at $299."
+    ],
+    "links": {
+      "Instruments": "/plugins/index.html",
+      "Licensing": "/docs.html"
+    }
+  },
+  {
+    "version": "1.0.1",
+    "date": "2024-12-05",
+    "product": "DRIFT",
+    "title": "Tempo-sync rounding",
+    "type": "fix",
+    "notes": [
+      "Fixed dotted and triplet divisions rounding to the nearest sample at the block boundary instead of at the delay line read, which drifted by up to a millisecond over a long take.",
+      "Freeze-adjacent bug: changing the division while feedback was above 0.8 could momentarily double the loop gain. The feedback path now crossfades across the change.",
+      "Record-path saturation curve corrected at input levels below −30 dBFS, where it was applying more colour than it should have on quiet material."
+    ],
+    "links": {
+      "DRIFT": "/plugins/drift.html"
+    }
+  },
+  {
+    "version": "1.2.0",
+    "date": "2024-09-24",
+    "product": "VANTA",
+    "title": "Arpeggiator rewritten against the audio clock",
+    "type": "feature",
+    "notes": [
+      "Arpeggiator steps are scheduled ahead of time against the audio clock with a lookahead window, instead of being fired from a timer. Patterns no longer drift under CPU load or in a background window.",
+      "Four modes — up, down, up-down and random — with up-down no longer repeating the top and bottom notes.",
+      "Gate is now a fraction of the step rather than a fixed millisecond value, so it stays musical when you change the rate.",
+      "Turning the arpeggiator off re-sounds any notes still held, instead of leaving the chord silent until you release and repress it.",
+      "Up to three octaves of pattern range."
+    ],
+    "links": {
+      "VANTA": "/plugins/flagship.html"
+    }
+  },
+  {
+    "version": "1.0.0",
+    "date": "2024-07-16",
+    "product": "DRIFT",
+    "title": "First release",
+    "type": "release",
+    "notes": [
+      "Tape-modelled delay and pitch-warping echo. Wow and flutter, head-gap loss on repeats, and a record path that saturates before it distorts.",
+      "Tempo-sync and free-run, with the transport speed control that bends repeats the way a machine does.",
+      "VST3, AU and AAX at launch. macOS 11+ Universal and Windows 10+ x64.",
+      "$79, no subscription, no iLok."
+    ],
+    "links": {
+      "DRIFT": "/plugins/drift.html"
+    }
+  },
+  {
+    "version": "1.0.0",
+    "date": "2024-06-04",
+    "product": "VANTA",
+    "title": "First release",
+    "type": "release",
+    "notes": [
+      "Eight independent voices, two oscillators and a sub each, a four-pole ladder filter and a state-variable filter with continuous LP–BP–HP morph, in series or parallel with one blend control.",
+      "Sixteen-slot modulation matrix, per-voice envelopes, and a filter envelope with a bipolar amount.",
+      "Presets are plain text, tagged and diffable, stored in a folder you choose.",
+      "VST3, AU and AAX at launch. macOS 11+ Universal and Windows 10+ x64.",
+      "$149, no subscription, no iLok, no account required to demo."
+    ],
+    "links": {
+      "VANTA": "/plugins/flagship.html",
+      "Presets": "/presets/index.html"
+    }
+  }
+]
