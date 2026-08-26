@@ -10,7 +10,7 @@ Structure added by the scaffold:
 - site/presets/index.html — standalone presets gallery page; fetches flagship-presets.json from the same directory and renders every preset as a card with its full params object (not just name and author).
 - tools/check-links.js — zero-dependency Node script that fails when a page points at an internal file that is not in the repository.
 - site/assets/style.css — minimal styles for the scaffold, including the .preset-cards/.preset-card layout used by the gallery.
-- site/presets/flagship-presets.json — sample presets metadata used by both the plugin page's short list and the full gallery page.
+- site/presets/flagship-presets.json — sample presets metadata used by both the plugin page's short list and the full gallery page. Each entry has "name", "author", "params" and an optional "tags" array (lower-case category words such as pad, lead, bass); the gallery builds its tag filter chips from the tags it finds, and a preset with no "tags" key still renders normally.
 
 - site/changelog.html, site/changelog.css, site/changelog.js — changelog page; the JS renders data/changelog.json from the repository root.
 

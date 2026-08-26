@@ -186,6 +186,19 @@
             a.textContent = p.name || 'Untitled preset';
             li.appendChild(a);
             li.appendChild(document.createTextNode(' — ' + (p.author || 'unknown')));
+
+            // Tags are optional in flagship-presets.json: a preset without them
+            // renders exactly as it did before.
+            var tags = (Array.isArray(p.tags) ? p.tags : [])
+              .map(function(t){ return String(t || '').trim().toLowerCase(); })
+              .filter(function(t){ return t !== ''; });
+            if(tags.length){
+              var span = document.createElement('span');
+              span.className = 'preset-tags-inline';
+              span.textContent = ' · ' + tags.join(', ');
+              li.appendChild(span);
+            }
+
             ul.appendChild(li);
           });
           el.textContent = '';

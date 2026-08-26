@@ -23,6 +23,14 @@ ul{margin:0.5rem 0;padding-left:1.25rem}
 #preset-clear[hidden]{display:none}
 #preset-count{margin:0.4rem 0 0;color:#666;font-size:0.9rem}
 #preset-count[hidden]{display:none}
+.tag-filter{display:flex;flex-wrap:wrap;gap:0.35rem;margin:0.5rem 0 0}
+.tag-filter[hidden]{display:none}
+.tag-chip{display:inline-block;padding:0.1rem 0.5rem;margin:0 0.25rem 0.25rem 0;border:1px solid #ddd;border-radius:999px;background:#f6f6f6;color:#555;font-size:0.8rem;line-height:1.6}
+.tag-button{margin:0;font:inherit;font-size:0.8rem;cursor:pointer}
+.tag-button:hover,.tag-button:focus{border-color:#5b7cfa;background:#eef2ff;color:#243}
+.tag-button.is-active{border-color:#5b7cfa;background:#5b7cfa;color:#fff;font-weight:600}
+.preset-tags{margin:0.35rem 0 0}
+#presets-list .preset-tags-inline{color:#777;font-size:0.85rem}
 .preset-cards{display:flex;flex-wrap:wrap;gap:1rem}
 .preset-card{border:1px solid #ddd;border-radius:6px;padding:0.75rem 1rem;min-width:220px;flex:1 1 220px}
 .preset-card h3{margin:0 0 0.25rem}

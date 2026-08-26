@@ -37,6 +37,10 @@
                page never shows dead controls. -->
           <button type="button" id="preset-clear" hidden>Clear</button>
         </div>
+        <!-- Tag chips are built from the tags in flagship-presets.json after the
+             gallery renders; the container stays hidden until then (same rule as
+             the Clear button) so no-JS visitors never see an empty control. -->
+        <div id="preset-tags" class="tag-filter" role="group" aria-label="Filter presets by tag" hidden></div>
         <p id="preset-count" role="status" aria-live="polite" hidden></p>
       </div>
       <div id="presets-gallery">Loading presets…</div>
@@ -64,6 +68,9 @@
           var wrap = document.createElement('div');
           wrap.className = 'preset-cards';
           var seen = {};
+          // Unique tag vocabulary, in order of first appearance in the JSON.
+          var allTags = [];
+          var tagSeen = {};
           data.forEach(function(p){
             var card = document.createElement('div');
             card.className = 'preset-card';
@@ -83,6 +90,27 @@
             var author = document.createElement('p');
             author.textContent = 'By ' + (p.author || 'unknown');
             card.appendChild(author);
+
+            // Tags are optional: a preset without a "tags" array renders
+            // exactly as before and simply never matches a tag filter.
+            var tags = Array.isArray(p.tags) ? p.tags : [];
+            tags = tags.map(function(t){ return String(t || '').trim().toLowerCase(); })
+                       .filter(function(t){ return t !== ''; });
+            if(tags.length){
+              var tagList = document.createElement('p');
+              tagList.className = 'preset-tags';
+              tags.forEach(function(t){
+                var chip = document.createElement('span');
+                chip.className = 'tag-chip';
+                chip.textContent = t;
+                tagList.appendChild(chip);
+                if(!tagSeen[t]){ tagSeen[t] = true; allTags.push(t); }
+              });
+              card.appendChild(tagList);
+            }
+            // Exact-match key for the tag filter: '|pad|warm|' contains '|pad|'
+            // but never matches a tag that is only a substring of another.
+            card.setAttribute('data-tags', tags.length ? '|' + tags.join('|') + '|' : '');
 
             var params = p.params && typeof p.params === 'object' ? p.params : {};
             var keys = Object.keys(params);
@@ -123,7 +151,13 @@
           var search = document.getElementById('preset-search');
           var clearBtn = document.getElementById('preset-clear');
           var count = document.getElementById('preset-count');
+          var tagBar = document.getElementById('preset-tags');
           var cards = Array.prototype.slice.call(wrap.getElementsByClassName('preset-card'));
+
+          // The one active tag, or '' for "all tags". One tag at a time keeps
+          // the two-dimensional filter (text AND tag) easy to reason about.
+          var activeTag = '';
+          var tagButtons = [];
 
           function plural(n){ return n === 1 ? 'preset' : 'presets'; }
 
@@ -134,14 +168,28 @@
             var q = raw.toLowerCase();
             var visible = 0;
             cards.forEach(function(card){
-              var match = !q || (card.getAttribute('data-search') || '').indexOf(q) !== -1;
+              var textMatch = !q || (card.getAttribute('data-search') || '').indexOf(q) !== -1;
+              var tagMatch = !activeTag ||
+                (card.getAttribute('data-tags') || '').indexOf('|' + activeTag + '|') !== -1;
+              var match = textMatch && tagMatch;
               card.style.display = match ? '' : 'none';
               if(match) visible++;
             });
+            // Keep the chips' pressed state in step with activeTag.
+            tagButtons.forEach(function(btn){
+              var on = btn.getAttribute('data-tag') === activeTag;
+              btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+              btn.className = on ? 'tag-chip tag-button is-active' : 'tag-chip tag-button';
+            });
             if(count){
               var msg;
-              if(visible === 0) msg = q ? 'No presets match “' + raw + '”.' : 'No presets found.';
-              else if(q) msg = 'Showing ' + visible + ' of ' + cards.length + ' ' + plural(cards.length) + '.';
+              // Describe whichever filters are actually on, so "no results"
+              // never looks like the gallery is empty.
+              var what = q && activeTag ? '“' + raw + '” in ' + activeTag
+                       : q ? '“' + raw + '”'
+                       : activeTag ? 'tag ' + activeTag : '';
+              if(visible === 0) msg = what ? 'No presets match ' + what + '.' : 'No presets found.';
+              else if(what) msg = 'Showing ' + visible + ' of ' + cards.length + ' ' + plural(cards.length) + '.';
               else msg = 'Showing all ' + cards.length + ' ' + plural(cards.length) + '.';
               // Only write when the text actually changes: this is a polite
               // live region, and rewriting it on every keystroke would make
@@ -149,8 +197,29 @@
               if(msg !== count.textContent) count.textContent = msg;
               count.hidden = false;
             }
-            if(clearBtn) clearBtn.hidden = !raw;
+            // Clear is offered whenever *either* filter is on.
+            if(clearBtn) clearBtn.hidden = !raw && !activeTag;
             return visible;
+          }
+
+          // Build one toggle chip per tag found in the data. Clicking the
+          // active chip again turns the tag filter off.
+          if(tagBar && allTags.length){
+            allTags.forEach(function(t){
+              var btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'tag-chip tag-button';
+              btn.setAttribute('data-tag', t);
+              btn.setAttribute('aria-pressed', 'false');
+              btn.textContent = t;
+              btn.addEventListener('click', function(){
+                activeTag = (activeTag === t) ? '' : t;
+                applyFilter();
+              });
+              tagBar.appendChild(btn);
+              tagButtons.push(btn);
+            });
+            tagBar.hidden = false;
           }
 
           if(search){
@@ -159,25 +228,27 @@
             search.addEventListener('input', function(){ applyFilter(); });
             search.addEventListener('keydown', function(e){
               var key = e.key || e.keyCode;
-              if((key === 'Escape' || key === 'Esc' || key === 27) && search.value !== ''){
+              if((key === 'Escape' || key === 'Esc' || key === 27) && (search.value !== '' || activeTag)){
                 if(typeof e.preventDefault === 'function') e.preventDefault();
                 clearSearch();
               }
             });
           }
 
+          // Clears both filters at once — the query and the active tag — so the
+          // page can never sit in a half-cleared state.
           function clearSearch(){
-            if(!search) return;
-            search.value = '';
+            activeTag = '';
+            if(search) search.value = '';
             applyFilter();
-            if(typeof search.focus === 'function') search.focus();
+            if(search && typeof search.focus === 'function') search.focus();
           }
 
           if(clearBtn) clearBtn.addEventListener('click', clearSearch);
 
           // Deep links: when the URL carries #preset-<slug>, make sure that
-          // card is visible and scroll it into view. If an active query has
-          // filtered the card out, clear the query and re-run the filter — the
+          // card is visible and scroll it into view. If an active query or tag
+          // has filtered the card out, clear both and re-run the filter — the
           // page then shows a consistent state (empty box, full list) instead
           // of one force-shown card under a query that excludes it.
           function applyHash(){
@@ -186,6 +257,7 @@
             var target = document.getElementById(id);
             if(!target || target.className.indexOf('preset-card') === -1) return;
             if(target.style.display === 'none'){
+              activeTag = '';
               if(search) search.value = '';
               applyFilter();
             }
