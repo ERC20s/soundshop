@@ -11,5 +11,17 @@
       "plugin": "/plugins/flagship.html",
       "demo": "/plugins/flagship.html#demo"
     }
+  },
+  {
+    "version": "0.0.9",
+    "date": "2026-07-15",
+    "title": "[test fixture] Pre-release preview build",
+    "notes": [
+      "Sort-order test fixture: this entry is dated before 0.1.0 above but is stored after it in this file.",
+      "It exists to prove site/changelog.js sorts entries newest-first by date instead of by file order — remove it once verified, or keep it as a template for real pre-release notes."
+    ],
+    "links": {
+      "plugin": "/plugins/flagship.html"
+    }
   }
 ]

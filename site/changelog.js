@@ -66,6 +66,29 @@
     ROOT.appendChild(p);
   }
 
+  function parseDate(item){
+    const t = item && typeof item.date === 'string' ? Date.parse(item.date) : NaN;
+    return Number.isNaN(t) ? null : t;
+  }
+
+  // Sort entries newest-first by item.date (YYYY-MM-DD), independent of the
+  // order they happen to appear in data/changelog.json. Entries with a
+  // missing or unparseable date sink to the bottom but keep their original
+  // relative order (and each other's), so a bad date never throws or hides
+  // an entry — it just can't be dated with confidence.
+  function sortNewestFirst(items){
+    return items
+      .map((item, index) => ({ item, index, time: parseDate(item) }))
+      .sort((a, b) => {
+        if(a.time === null && b.time === null) return a.index - b.index;
+        if(a.time === null) return 1;
+        if(b.time === null) return -1;
+        if(b.time !== a.time) return b.time - a.time;
+        return a.index - b.index;
+      })
+      .map(entry => entry.item);
+  }
+
   fetchFirst(JSON_PATHS).then(data=>{
     ROOT.innerHTML='';
     const list = Array.isArray(data) ? data : (data.entries || []);
@@ -73,7 +96,7 @@
       showError('No changelog entries found.');
       return;
     }
-    list.forEach(item=>{
+    sortNewestFirst(list).forEach(item=>{
       ROOT.appendChild(renderEntry(item));
     });
   }).catch(err=>{
