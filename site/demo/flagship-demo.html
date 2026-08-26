@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Flagship Synth — Playable demo</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    body{padding:0.75rem}
+    #demo-root{max-width:100%}
+    #demo-controls{display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:0.75rem}
+    #demo-controls fieldset{border:1px solid #ddd;border-radius:6px;padding:0.5rem 0.75rem}
+    #demo-controls legend{font-weight:600;font-size:0.85rem;color:#444}
+    #demo-controls label{display:block;font-size:0.85rem;margin:0.35rem 0}
+    #demo-controls input[type=range]{width:130px;vertical-align:middle}
+    #demo-status{font-size:0.85rem;color:#666;margin:0 0 0.5rem}
+    #keyboard{display:flex;gap:2px;user-select:none}
+    .key{border:1px solid #999;border-radius:0 0 4px 4px;background:#fff;min-width:34px;height:90px;
+      display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px;font-size:0.7rem;
+      color:#555;cursor:pointer}
+    .key.active{background:#cfe8ff;border-color:#4a90d9}
+    .key.sharp{background:#222;color:#eee;min-width:24px;height:56px;margin-left:-14px;margin-right:-14px;
+      z-index:1;position:relative}
+    .key.sharp.active{background:#4a90d9}
+  </style>
+</head>
+<body>
+  <div id="demo-root">
+    <p id="demo-status">Click a key or press a mapped computer key (A W S E D F T G Y H U J K) to start audio.</p>
+
+    <div id="demo-controls">
+      <fieldset>
+        <legend>Oscillator</legend>
+        <label>Waveform
+          <select id="waveform">
+            <option value="sine">Sine</option>
+            <option value="sawtooth" selected>Saw</option>
+            <option value="triangle">Triangle</option>
+            <option value="square">Square</option>
+          </select>
+        </label>
+        <label>Load preset
+          <select id="preset-select"><option value="">— none —</option></select>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Filter</legend>
+        <label>Cutoff (<span id="cutoff-value">1200</span> Hz)
+          <input type="range" id="cutoff" min="100" max="8000" step="10" value="1200">
+        </label>
+        <label>Resonance (Q = <span id="resonance-value">1.0</span>)
+          <input type="range" id="resonance" min="0.1" max="20" step="0.1" value="1">
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Amp envelope (ADSR)</legend>
+        <label>Attack (<span id="attack-value">0.02</span>s)
+          <input type="range" id="attack" min="0" max="2" step="0.01" value="0.02">
+        </label>
+        <label>Decay (<span id="decay-value">0.15</span>s)
+          <input type="range" id="decay" min="0" max="2" step="0.01" value="0.15">
+        </label>
+        <label>Sustain (<span id="sustain-value">0.6</span>)
+          <input type="range" id="sustain" min="0" max="1" step="0.01" value="0.6">
+        </label>
+        <label>Release (<span id="release-value">0.3</span>s)
+          <input type="range" id="release" min="0" max="3" step="0.01" value="0.3">
+        </label>
+      </fieldset>
+    </div>
+
+    <div id="keyboard"></div>
+  </div>
+
+  <script>
+    (function(){
+      'use strict';
+
+      // ---- Note layout: two octaves, C4..C6, white + sharp keys ----
+      // key: computer-keyboard character, sharp: whether it renders as a black key
+      var LAYOUT = [
+        { note: 'C4', key: 'a' }, { note: 'C#4', key: 'w', sharp: true },
+        { note: 'D4', key: 's' }, { note: 'D#4', key: 'e', sharp: true },
+        { note: 'E4', key: 'd' },
+        { note: 'F4', key: 'f' }, { note: 'F#4', key: 't', sharp: true },
+        { note: 'G4', key: 'g' }, { note: 'G#4', key: 'y', sharp: true },
+        { note: 'A4', key: 'h' }, { note: 'A#4', key: 'u', sharp: true },
+        { note: 'B4', key: 'j' },
+        { note: 'C5', key: 'k' }
+      ];
+
+      function noteToFreq(note) {
+        var m = /^([A-G])(#?)(\d)$/.exec(note);
+        var semis = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+        var n = semis[m[1]] + (m[2] ? 1 : 0);
+        var octave = parseInt(m[3], 10);
+        var midi = (octave + 1) * 12 + n;
+        return 440 * Math.pow(2, (midi - 69) / 12);
+      }
+
+      // ---- Audio graph, created lazily on first user gesture ----
+      var audioCtx = null;
+      var voices = {}; // note -> { osc, gain }
+
+      function ensureContext() {
+        if (!audioCtx) {
+          var Ctx = window.AudioContext || window.webkitAudioContext;
+          audioCtx = new Ctx();
+        }
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        return audioCtx;
+      }
+
+      function currentSettings() {
+        return {
+          waveform: document.getElementById('waveform').value,
+          cutoff: parseFloat(document.getElementById('cutoff').value),
+          resonance: parseFloat(document.getElementById('resonance').value),
+          attack: parseFloat(document.getElementById('attack').value),
+          decay: parseFloat(document.getElementById('decay').value),
+          sustain: parseFloat(document.getElementById('sustain').value),
+          release: parseFloat(document.getElementById('release').value)
+        };
+      }
+
+      function noteOn(note) {
+        if (voices[note]) return;
+        var ctx = ensureContext();
+        var s = currentSettings();
+
+        var osc = ctx.createOscillator();
+        osc.type = s.waveform;
+        osc.frequency.value = noteToFreq(note);
+
+        var filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = s.cutoff;
+        filter.Q.value = s.resonance;
+
+        var amp = ctx.createGain();
+        amp.gain.value = 0;
+
+        osc.connect(filter);
+        filter.connect(amp);
+        amp.connect(ctx.destination);
+
+        var now = ctx.currentTime;
+        amp.gain.cancelScheduledValues(now);
+        amp.gain.setValueAtTime(0, now);
+        amp.gain.linearRampToValueAtTime(1, now + Math.max(s.attack, 0.001));
+        amp.gain.linearRampToValueAtTime(s.sustain, now + s.attack + Math.max(s.decay, 0.001));
+
+        osc.start(now);
+        voices[note] = { osc: osc, amp: amp };
+        setKeyVisual(note, true);
+      }
+
+      function noteOff(note) {
+        var v = voices[note];
+        if (!v) return;
+        var ctx = audioCtx;
+        var s = currentSettings();
+        var now = ctx.currentTime;
+        v.amp.gain.cancelScheduledValues(now);
+        v.amp.gain.setValueAtTime(v.amp.gain.value, now);
+        v.amp.gain.linearRampToValueAtTime(0, now + Math.max(s.release, 0.001));
+        v.osc.stop(now + Math.max(s.release, 0.001) + 0.05);
+        delete voices[note];
+        setKeyVisual(note, false);
+      }
+
+      function setKeyVisual(note, on) {
+        var el = document.querySelector('.key[data-note="' + note + '"]');
+        if (el) el.classList.toggle('active', on);
+      }
+
+      // ---- Build the on-screen keyboard ----
+      var keyboard = document.getElementById('keyboard');
+      var keyToNote = {};
+      LAYOUT.forEach(function(k){
+        var el = document.createElement('div');
+        el.className = 'key' + (k.sharp ? ' sharp' : '');
+        el.setAttribute('data-note', k.note);
+        el.textContent = k.key.toUpperCase();
+        el.addEventListener('mousedown', function(){ noteOn(k.note); });
+        el.addEventListener('mouseup', function(){ noteOff(k.note); });
+        el.addEventListener('mouseleave', function(){ noteOff(k.note); });
+        el.addEventListener('touchstart', function(ev){ ev.preventDefault(); noteOn(k.note); }, { passive: false });
+        el.addEventListener('touchend', function(ev){ ev.preventDefault(); noteOff(k.note); });
+        keyboard.appendChild(el);
+        keyToNote[k.key] = k.note;
+      });
+
+      document.addEventListener('keydown', function(ev){
+        if (ev.repeat) return;
+        var note = keyToNote[ev.key.toLowerCase()];
+        if (note) noteOn(note);
+      });
+      document.addEventListener('keyup', function(ev){
+        var note = keyToNote[ev.key.toLowerCase()];
+        if (note) noteOff(note);
+      });
+
+      // ---- Live-update readouts for the sliders ----
+      [
+        ['cutoff', 'cutoff-value', function(v){ return Math.round(v); }],
+        ['resonance', 'resonance-value', function(v){ return v.toFixed(1); }],
+        ['attack', 'attack-value', function(v){ return v.toFixed(2); }],
+        ['decay', 'decay-value', function(v){ return v.toFixed(2); }],
+        ['sustain', 'sustain-value', function(v){ return v.toFixed(2); }],
+        ['release', 'release-value', function(v){ return v.toFixed(2); }]
+      ].forEach(function(pair){
+        var input = document.getElementById(pair[0]);
+        var out = document.getElementById(pair[1]);
+        input.addEventListener('input', function(){
+          out.textContent = pair[2](parseFloat(input.value));
+        });
+      });
+
+      // ---- Optional preset loader (reads waveform + filter cutoff) ----
+      fetch('../presets/flagship-presets.json')
+        .then(function(r){ if (!r.ok) throw new Error('fetch failed'); return r.json(); })
+        .then(function(data){
+          if (!Array.isArray(data)) return;
+          var select = document.getElementById('preset-select');
+          data.forEach(function(p, i){
+            var opt = document.createElement('option');
+            opt.value = String(i);
+            opt.textContent = p.name || ('Preset ' + (i + 1));
+            select.appendChild(opt);
+          });
+          select.addEventListener('change', function(){
+            if (select.value === '') return;
+            var p = data[parseInt(select.value, 10)];
+            var params = p && p.params;
+            if (!params) return;
+            if (params.osc1) {
+              var waveMap = { sine: 'sine', saw: 'sawtooth', triangle: 'triangle', square: 'square' };
+              var wave = waveMap[params.osc1] || params.osc1;
+              var waveformEl = document.getElementById('waveform');
+              if ([].slice.call(waveformEl.options).some(function(o){ return o.value === wave; })) {
+                waveformEl.value = wave;
+              }
+            }
+            if (typeof params.filter === 'number') {
+              var cutoffEl = document.getElementById('cutoff');
+              cutoffEl.value = String(params.filter);
+              document.getElementById('cutoff-value').textContent = Math.round(params.filter);
+            }
+          });
+        })
+        .catch(function(){ /* preset loader is optional; demo still works without it */ });
+    })();
+  </script>
+</body>
+</html>
