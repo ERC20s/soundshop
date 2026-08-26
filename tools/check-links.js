@@ -18,9 +18,11 @@
  *  - a fallback list passes when at least one of its candidates resolves;
  *  - also walks every *.json file under data/ (recursively), finds any
  *    "links": { ... } object anywhere inside the parsed JSON (e.g. the
- *    per-entry links in data/changelog.json) and checks each value the same
- *    way — leading '/' resolves against site/, everything else resolves
- *    relative to the JSON file's own directory. A data/ file that fails to
+ *    per-entry links in data/changelog.json) and checks each value — those
+ *    values are rendered as href on a page under site/, never fetched
+ *    relative to the JSON file, so BOTH relative and leading-'/' targets
+ *    resolve against site/ (the directory of the page that renders them; the
+ *    changelog page lives at site/changelog.html). A data/ file that fails to
  *    parse as JSON is reported as a warning, not a fatal error;
  *  - prints every missing target as  file:line  target -> resolved path  and
  *    exits with status 1 when anything is missing, 0 otherwise.
@@ -101,12 +103,30 @@ function stripQueryAndHash(target) {
   return target.replace(/[?#].*$/, '');
 }
 
-function resolveTarget(target, file) {
+function cleanTarget(target) {
   let clean = stripQueryAndHash(target.trim());
   try { clean = decodeURIComponent(clean); } catch (e) { /* keep as is */ }
+  return clean;
+}
+
+function resolveTarget(target, file) {
+  const clean = cleanTarget(target);
   if (clean === '') return null; // "page.html#section" style self-links
   if (clean.startsWith('/')) return path.join(SITE_DIR, clean);
   return path.resolve(path.dirname(file), clean);
+}
+
+// Links stored in data/*.json are never loaded relative to the JSON file: they
+// are handed to the browser as href values by a page under site/ (see
+// renderEntry in site/changelog.js, which does el('a',{href:href},[k])). So a
+// relative target there is resolved by the browser against the page's own
+// directory under site/, not against data/. Resolve both relative and
+// leading-'/' targets against SITE_DIR so the checker validates what the
+// browser actually loads.
+function resolveDataTarget(target) {
+  const clean = cleanTarget(target);
+  if (clean === '') return null;
+  return path.join(SITE_DIR, clean.replace(/^\/+/, ''));
 }
 
 function existsOnDisk(resolved) {
@@ -218,7 +238,7 @@ function main() {
         const target = links[key];
         if (typeof target !== 'string' || isExternal(target)) continue;
         checked++;
-        const resolved = resolveTarget(target, file);
+        const resolved = resolveDataTarget(target);
         if (!existsOnDisk(resolved)) {
           const idx = text.indexOf('"' + target + '"');
           const line = idx >= 0 ? lineOf(text, idx) : 1;

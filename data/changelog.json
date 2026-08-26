@@ -8,8 +8,8 @@
       "Added sample changelog JSON and a static changelog page that reads it in the browser."
     ],
     "links": {
-      "plugin": "/plugins/flagship.html",
-      "demo": "/plugins/flagship.html#demo"
+      "plugin": "plugins/flagship.html",
+      "demo": "plugins/flagship.html#demo"
     }
   },
   {
@@ -21,7 +21,7 @@
       "It exists to prove site/changelog.js sorts entries newest-first by date instead of by file order — remove it once verified, or keep it as a template for real pre-release notes."
     ],
     "links": {
-      "plugin": "/plugins/flagship.html"
+      "plugin": "plugins/flagship.html"
     }
   }
 ]
