@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Soundshop — Presets Gallery</title>
   <link rel="stylesheet" href="../assets/style.css">
+  <!-- Audio engine for the per-preset preview button. Deferred, so the gallery
+       script below can test window.PresetPreview once the document is parsed;
+       if this file fails to load, no preview button is ever added. -->
+  <script src="preview.js" defer></script>
 </head>
 <body>
   <header>
@@ -127,6 +131,25 @@
             // Snapshot the searchable text BEFORE the permalink is added, so
             // the permalink's '#' never matches a search query.
             card.setAttribute('data-search', (card.textContent || '').toLowerCase());
+
+            // Preview button — added AFTER the data-search snapshot, so the
+            // word "preview" is never searchable. Class is "tag-chip preview-btn":
+            // it inherits the chip styling, and the delegated chip handler above
+            // tests className !== 'tag-chip' exactly, so it skips this button.
+            // Its own click listener is bound directly, here.
+            if(window.PresetPreview && window.PresetPreview.supported() && (params.osc1 != null || params.filter != null)){
+              var btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'tag-chip preview-btn';
+              btn.textContent = 'preview';
+              btn.setAttribute('aria-pressed', 'false');
+              btn.setAttribute('data-osc', String(params.osc1 == null ? '' : params.osc1));
+              btn.setAttribute('data-cutoff', String(params.filter == null ? '' : params.filter));
+              btn.title = 'Short approximation of this preset, played in your browser';
+              btn.setAttribute('aria-label', 'Preview ' + (p.name || 'this preset'));
+              btn.addEventListener('click', function(){ window.PresetPreview.toggle(this); });
+              card.appendChild(btn);
+            }
 
             var permalink = document.createElement('a');
             permalink.className = 'preset-permalink';
