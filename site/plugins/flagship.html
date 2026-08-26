@@ -12,6 +12,13 @@
     <p>Playable Web Audio demo, specs, presets and docs.</p>
   </header>
   <main>
+    <!--
+      Filled in by the script below from data/changelog.json when that file is
+      reachable (repository root served as the web root). Hidden otherwise, so
+      the page never shows an error or an empty label.
+    -->
+    <p id="latest-release" hidden></p>
+
     <section id="specs">
       <h2>Specifications</h2>
       <ul>
@@ -70,6 +77,66 @@
           slot.appendChild(iframe);
         })
         .catch(function(){ /* keep the fallback message */ });
+    })();
+
+    // Latest release line, read from data/changelog.json.
+    // The JSON lives in the repository root, not inside site/, so it is only
+    // reachable when the repository root is the web root. When the fetch fails
+    // (site/ served as the root, or file://) the paragraph simply stays hidden —
+    // same silently-degrading pattern as the demo probe above.
+    (function(){
+      var slot = document.getElementById('latest-release');
+      if(!slot || typeof window.fetch !== 'function') return;
+
+      // Same slug rule as entryId() in site/changelog.js: lowercase,
+      // non-alphanumerics to '-', trimmed. Duplicated on purpose (no build
+      // step) — keep the copies in sync.
+      function slugify(s){
+        return String(s == null ? '' : s)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+      }
+
+      // Same newest-first ordering as sortNewestFirst() in site/changelog.js:
+      // sort by parsed date, undated entries last, ties keep file order.
+      function newest(list){
+        var dated = list.map(function(item, index){
+          var t = item && typeof item.date === 'string' ? Date.parse(item.date) : NaN;
+          return { item: item, index: index, time: isNaN(t) ? null : t };
+        }).sort(function(a, b){
+          if(a.time === null && b.time === null) return a.index - b.index;
+          if(a.time === null) return 1;
+          if(b.time === null) return -1;
+          if(b.time !== a.time) return b.time - a.time;
+          return a.index - b.index;
+        });
+        return dated.length ? dated[0].item : null;
+      }
+
+      fetch('../../data/changelog.json')
+        .then(function(r){ if(!r.ok) throw new Error('fetch failed'); return r.json(); })
+        .then(function(data){
+          var list = Array.isArray(data) ? data : (data && data.entries) || [];
+          var item = newest(list);
+          if(!item) return;
+
+          var slug = slugify(item.version) || slugify(item.date);
+          var text = (item.version || 'Unversioned') + ' — ' + (item.date || 'unknown date');
+          if(item.title) text += ' (' + item.title + ')';
+
+          var a = document.createElement('a');
+          // Built by concatenation so tools/check-links.js does not try to
+          // resolve the fragment; the changelog page itself is checked by the
+          // static link in the "More" section below.
+          a.href = slug ? '../changelog.html' + '#release-' + slug : '../changelog.html';
+          a.textContent = text;
+
+          slot.textContent = 'Latest release: ';
+          slot.appendChild(a);
+          slot.hidden = false;
+        })
+        .catch(function(){ /* leave the line hidden */ });
     })();
 
     // Load and render presets JSON
