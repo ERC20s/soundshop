@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Flagship Synth — Playable Demo</title>
+<style>
+  body{font:13px/1.4 system-ui,sans-serif;margin:0;padding:8px;background:#fafafa;color:#222}
+  #controls{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px}
+  #controls label{display:flex;flex-direction:column;font-size:11px;gap:2px}
+  #keys{display:flex;gap:2px;user-select:none}
+  .key{width:28px;height:70px;background:#fff;border:1px solid #999;border-radius:3px;
+       display:flex;align-items:flex-end;justify-content:center;font-size:10px;cursor:pointer}
+  .key.active{background:#9cf}
+  select,input[type=range]{width:110px}
+</style>
+</head>
+<body>
+  <div id="controls">
+    <label>Waveform
+      <select id="waveform">
+        <option value="sine">sine</option>
+        <option value="sawtooth">saw</option>
+        <option value="triangle">triangle</option>
+        <option value="square">square</option>
+      </select>
+    </label>
+    <label>Cutoff (Hz)<input id="cutoff" type="range" min="80" max="8000" value="1200"></label>
+    <label>Resonance (Q)<input id="resonance" type="range" min="0" max="20" value="4" step="0.5"></label>
+    <label>Attack (s)<input id="attack" type="range" min="0" max="2" value="0.02" step="0.01"></label>
+    <label>Decay (s)<input id="decay" type="range" min="0" max="2" value="0.15" step="0.01"></label>
+    <label>Sustain<input id="sustain" type="range" min="0" max="1" value="0.6" step="0.01"></label>
+    <label>Release (s)<input id="release" type="range" min="0" max="3" value="0.3" step="0.01"></label>
+    <label>Preset
+      <select id="preset"><option value="">(none)</option></select>
+    </label>
+  </div>
+  <div id="keys"></div>
+  <p style="font-size:11px;color:#666">Click keys or use computer keys A W S E D F T G Y H U J K. Audio starts on first interaction (browser autoplay policy).</p>
+  <script>
+    // --- audio graph pieces -------------------------------------------------
+    var ctx = null;
+    var voices = {}; // note -> { osc, filt, gain }
+
+    function getContext(){
+      if(!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      return ctx;
+    }
+
+    function createOscillator(freq){
+      var osc = getContext().createOscillator();
+      osc.type = document.getElementById('waveform').value;
+      osc.frequency.value = freq;
+      return osc;
+    }
+
+    function createFilter(){
+      var f = getContext().createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = Number(document.getElementById('cutoff').value);
+      f.Q.value = Number(document.getElementById('resonance').value);
+      return f;
+    }
+
+    function createEnvelopeGain(){
+      var g = getContext().createGain();
+      g.gain.value = 0;
+      return g;
+    }
+
+    function applyAttackDecaySustain(gainParam){
+      var now = getContext().currentTime;
+      var a = Number(document.getElementById('attack').value);
+      var d = Number(document.getElementById('decay').value);
+      var s = Number(document.getElementById('sustain').value);
+      gainParam.cancelScheduledValues(now);
+      gainParam.setValueAtTime(0, now);
+      gainParam.linearRampToValueAtTime(1, now + a);
+      gainParam.linearRampToValueAtTime(s, now + a + d);
+    }
+
+    function applyRelease(gainParam){
+      var now = getContext().currentTime;
+      var r = Number(document.getElementById('release').value);
+      gainParam.cancelScheduledValues(now);
+      gainParam.setValueAtTime(gainParam.value, now);
+      gainParam.linearRampToValueAtTime(0, now + r);
+    }
+
+    // --- notes ---------------------------------------------------------------
+    function midiToFreq(m){ return 440 * Math.pow(2, (m - 69) / 12); }
+
+    function noteOn(note){
+      if(voices[note]) return;
+      var osc = createOscillator(midiToFreq(note));
+      var filt = createFilter();
+      var gain = createEnvelopeGain();
+      osc.connect(filt);
+      filt.connect(gain);
+      gain.connect(getContext().destination);
+      osc.start();
+      applyAttackDecaySustain(gain.gain);
+      voices[note] = { osc: osc, filt: filt, gain: gain };
+      var el = document.querySelector('[data-note="' + note + '"]');
+      if(el) el.classList.add('active');
+    }
+
+    function noteOff(note){
+      var v = voices[note];
+      if(!v) return;
+      applyRelease(v.gain.gain);
+      var r = Number(document.getElementById('release').value);
+      v.osc.stop(getContext().currentTime + r + 0.05);
+      delete voices[note];
+      var el = document.querySelector('[data-note="' + note + '"]');
+      if(el) el.classList.remove('active');
+    }
+
+    // --- keyboard UI -----------------------------------------------------
+    var NOTES = [60,61,62,63,64,65,66,67,68,69,70,71,72];
+    var KEY_MAP = { a:60,w:61,s:62,e:63,d:64,f:65,t:66,g:67,y:68,h:69,u:70,j:71,k:72 };
+
+    function buildKeys(){
+      var wrap = document.getElementById('keys');
+      NOTES.forEach(function(n){
+        var b = document.createElement('div');
+        b.className = 'key';
+        b.setAttribute('data-note', n);
+        b.textContent = n;
+        b.addEventListener('mousedown', function(){ noteOn(n); });
+        b.addEventListener('mouseup', function(){ noteOff(n); });
+        b.addEventListener('mouseleave', function(){ noteOff(n); });
+        wrap.appendChild(b);
+      });
+    }
+
+    function setupComputerKeyboard(){
+      window.addEventListener('keydown', function(e){
+        var n = KEY_MAP[e.key.toLowerCase()];
+        if(n && !e.repeat) noteOn(n);
+      });
+      window.addEventListener('keyup', function(e){
+        var n = KEY_MAP[e.key.toLowerCase()];
+        if(n) noteOff(n);
+      });
+    }
+
+    // --- presets -----------------------------------------------------------
+    function applyPreset(preset){
+      if(!preset || !preset.params) return;
+      if(preset.params.osc1) document.getElementById('waveform').value = preset.params.osc1;
+      if(preset.params.filter) document.getElementById('cutoff').value = preset.params.filter;
+    }
+
+    function loadPresets(){
+      fetch('../presets/flagship-presets.json')
+        .then(function(r){ if(!r.ok) throw new Error('fetch failed'); return r.json(); })
+        .then(function(list){
+          if(!Array.isArray(list)) return;
+          var sel = document.getElementById('preset');
+          list.forEach(function(p, i){
+            var o = document.createElement('option');
+            o.value = String(i);
+            o.textContent = p.name + ' — ' + p.author;
+            sel.appendChild(o);
+          });
+          sel.addEventListener('change', function(){
+            if(sel.value === '') return;
+            applyPreset(list[Number(sel.value)]);
+          });
+        })
+        .catch(function(){ /* preset list stays empty; sliders still work */ });
+    }
+
+    buildKeys();
+    setupComputerKeyboard();
+    loadPresets();
+  </script>
+</body>
+</html>
