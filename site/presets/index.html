@@ -30,7 +30,14 @@
       <h2>Presets</h2>
       <div id="search-box">
         <label for="preset-search">Search presets</label>
-        <input type="text" id="preset-search" placeholder="Search by name, author or param…" autocomplete="off">
+        <div class="search-row">
+          <input type="text" id="preset-search" placeholder="Search by name, author or param…" autocomplete="off">
+          <!-- Clear control and result count are hidden until the gallery has
+               rendered and the filter is wired, so a no-JS (or failed fetch)
+               page never shows dead controls. -->
+          <button type="button" id="preset-clear" hidden>Clear</button>
+        </div>
+        <p id="preset-count" role="status" aria-live="polite" hidden></p>
       </div>
       <div id="presets-gallery">Loading presets…</div>
     </section>
@@ -109,40 +116,79 @@
           el.appendChild(wrap);
 
           // Live search/filter: match card text (name, author, params) against
-          // the search box on every keystroke. Hides non-matching cards and
-          // shows a 'No presets found.' message when nothing matches.
+          // the search box. The whole filter lives in applyFilter() so it can
+          // run at load as well as on every keystroke — browsers that restore
+          // form values on reload or back/forward (Firefox does) would
+          // otherwise show a query in the box above the full, unfiltered list.
           var search = document.getElementById('preset-search');
-          if(search){
-            var cards = Array.prototype.slice.call(wrap.getElementsByClassName('preset-card'));
-            var empty = document.createElement('p');
-            empty.id = 'no-results';
-            empty.textContent = 'No presets found.';
-            empty.style.display = 'none';
-            wrap.parentNode.insertBefore(empty, wrap.nextSibling);
+          var clearBtn = document.getElementById('preset-clear');
+          var count = document.getElementById('preset-count');
+          var cards = Array.prototype.slice.call(wrap.getElementsByClassName('preset-card'));
 
-            search.addEventListener('input', function(){
-              var q = search.value.trim().toLowerCase();
-              var visible = 0;
-              cards.forEach(function(card){
-                var match = !q || (card.getAttribute('data-search') || '').indexOf(q) !== -1;
-                card.style.display = match ? '' : 'none';
-                if(match) visible++;
-              });
-              empty.style.display = visible === 0 ? '' : 'none';
+          function plural(n){ return n === 1 ? 'preset' : 'presets'; }
+
+          // Filters the cards against the current query, updates the status
+          // line and the clear button, and returns how many cards are visible.
+          function applyFilter(){
+            var raw = search ? search.value.trim() : '';
+            var q = raw.toLowerCase();
+            var visible = 0;
+            cards.forEach(function(card){
+              var match = !q || (card.getAttribute('data-search') || '').indexOf(q) !== -1;
+              card.style.display = match ? '' : 'none';
+              if(match) visible++;
+            });
+            if(count){
+              var msg;
+              if(visible === 0) msg = q ? 'No presets match “' + raw + '”.' : 'No presets found.';
+              else if(q) msg = 'Showing ' + visible + ' of ' + cards.length + ' ' + plural(cards.length) + '.';
+              else msg = 'Showing all ' + cards.length + ' ' + plural(cards.length) + '.';
+              // Only write when the text actually changes: this is a polite
+              // live region, and rewriting it on every keystroke would make
+              // screen readers chatter.
+              if(msg !== count.textContent) count.textContent = msg;
+              count.hidden = false;
+            }
+            if(clearBtn) clearBtn.hidden = !raw;
+            return visible;
+          }
+
+          if(search){
+            // Filter once now, so a restored query is honoured immediately.
+            applyFilter();
+            search.addEventListener('input', function(){ applyFilter(); });
+            search.addEventListener('keydown', function(e){
+              var key = e.key || e.keyCode;
+              if((key === 'Escape' || key === 'Esc' || key === 27) && search.value !== ''){
+                if(typeof e.preventDefault === 'function') e.preventDefault();
+                clearSearch();
+              }
             });
           }
 
+          function clearSearch(){
+            if(!search) return;
+            search.value = '';
+            applyFilter();
+            if(typeof search.focus === 'function') search.focus();
+          }
+
+          if(clearBtn) clearBtn.addEventListener('click', clearSearch);
+
           // Deep links: when the URL carries #preset-<slug>, make sure that
-          // card is visible (a stale filter may have hidden it) and scroll it
-          // into view. Runs once now, and again on every hash change.
+          // card is visible and scroll it into view. If an active query has
+          // filtered the card out, clear the query and re-run the filter — the
+          // page then shows a consistent state (empty box, full list) instead
+          // of one force-shown card under a query that excludes it.
           function applyHash(){
             var id = (location.hash || '').replace(/^#/, '');
             if(!id) return;
             var target = document.getElementById(id);
             if(!target || target.className.indexOf('preset-card') === -1) return;
-            target.style.display = '';
-            var noResults = document.getElementById('no-results');
-            if(noResults) noResults.style.display = 'none';
+            if(target.style.display === 'none'){
+              if(search) search.value = '';
+              applyFilter();
+            }
             if(typeof target.scrollIntoView === 'function') target.scrollIntoView();
           }
           applyHash();
