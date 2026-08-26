@@ -56,6 +56,28 @@
           .replace(/^-+|-+$/g, '') || 'preset';
       }
 
+      // Web Audio support is checked once. When it is missing the gallery
+      // simply renders no Preview buttons — the same silently-degrading
+      // pattern the page already uses when a fetch fails.
+      var AudioCtx = window.AudioContext || window.webkitAudioContext;
+
+      // Map a preset's osc1 value onto an OscillatorNode type. Anything the
+      // browser cannot play falls back to 'sawtooth'.
+      function waveFor(v){
+        var w = String(v == null ? '' : v).trim().toLowerCase();
+        if(w === 'saw' || w === 'sawtooth') return 'sawtooth';
+        if(w === 'sine' || w === 'square' || w === 'triangle') return w;
+        return 'sawtooth';
+      }
+
+      // Map a preset's filter value onto a low-pass cutoff in Hz, clamped to
+      // the audible range so a stray value cannot produce silence or a screech.
+      function cutoffFor(v){
+        var n = Number(v);
+        if(!isFinite(n) || n <= 0) return 2000;
+        return Math.min(20000, Math.max(20, n));
+      }
+
       fetch('flagship-presets.json')
         .then(function(r){ if(!r.ok) throw new Error('fetch failed'); return r.json(); })
         .then(function(data){
@@ -128,6 +150,25 @@
             // the permalink's '#' never matches a search query.
             card.setAttribute('data-search', (card.textContent || '').toLowerCase());
 
+            // Per-preset preview button. Added AFTER the search snapshot above
+            // so the word "Preview" never becomes a search match — the same
+            // reason the permalink is appended here. The button carries the two
+            // values the preview needs, so the click handler never has to look
+            // the preset up again. No button when Web Audio is unavailable or
+            // when the preset has no osc1/filter to sound.
+            if(AudioCtx && params.osc1 != null && params.filter != null){
+              var play = document.createElement('button');
+              play.type = 'button';
+              play.className = 'preset-play';
+              play.textContent = 'Preview';
+              play.setAttribute('data-osc', waveFor(params.osc1));
+              play.setAttribute('data-cutoff', String(cutoffFor(params.filter)));
+              play.setAttribute('aria-pressed', 'false');
+              play.title = 'Approximate preview: one note through this preset’s waveform and filter';
+              play.setAttribute('aria-label', 'Preview ' + (p.name || 'Untitled preset') + ' (approximate)');
+              card.appendChild(play);
+            }
+
             var permalink = document.createElement('a');
             permalink.className = 'preset-permalink';
             permalink.href = '#' + card.id;
@@ -175,15 +216,101 @@
               count.hidden = false;
             }
             if(clearBtn) clearBtn.hidden = !raw;
+            // A preview whose card has just been filtered away should not keep
+            // sounding from an invisible card.
+            if(current && current.btn.parentNode && current.btn.parentNode.style.display === 'none') stopCurrent();
             return visible;
           }
 
-          // One delegated click handler for every tag chip: a chip simply puts
-          // its word in the existing search box and re-runs the same filter, so
-          // there is no second filter dimension and no extra state to keep.
+          // Preview audio. One AudioContext for the whole page, created lazily
+          // on the first click so browser autoplay policy is satisfied, and one
+          // voice at a time: starting a preview stops whatever is sounding.
+          var audioCtx = null;
+          var current = null; // { btn, osc, filter, gain, timer }
+          var DUR = 1.2;      // seconds of tone per preview
+
+          function release(entry){
+            if(!entry) return;
+            if(entry.timer){ clearTimeout(entry.timer); entry.timer = null; }
+            try { entry.osc.disconnect(); entry.filter.disconnect(); entry.gain.disconnect(); } catch(err){}
+            entry.btn.setAttribute('aria-pressed', 'false');
+            if(current === entry) current = null;
+          }
+
+          function stopCurrent(){
+            var entry = current;
+            if(!entry) return;
+            current = null;
+            try {
+              var now = audioCtx.currentTime;
+              entry.gain.gain.cancelScheduledValues(now);
+              entry.gain.gain.setValueAtTime(entry.gain.gain.value || 0.0001, now);
+              entry.gain.gain.linearRampToValueAtTime(0.0001, now + 0.03);
+              entry.osc.stop(now + 0.05);
+            } catch(err){}
+            entry.btn.setAttribute('aria-pressed', 'false');
+            // Let the short release ramp finish before the nodes are torn down,
+            // so stopping a preview fades out instead of clicking.
+            if(entry.timer) clearTimeout(entry.timer);
+            entry.timer = setTimeout(function(){ release(entry); }, 200);
+          }
+
+          function preview(btn){
+            var again = !!(current && current.btn === btn);
+            stopCurrent();
+            if(again) return; // clicking a sounding preview stops it
+            if(!AudioCtx) return;
+            if(!audioCtx){
+              try { audioCtx = new AudioCtx(); } catch(err){ return; }
+            }
+            if(audioCtx.state === 'suspended' && typeof audioCtx.resume === 'function'){
+              try { audioCtx.resume(); } catch(err){}
+            }
+            try {
+              var t0 = audioCtx.currentTime;
+              var osc = audioCtx.createOscillator();
+              osc.type = btn.getAttribute('data-osc') || 'sawtooth';
+              osc.frequency.setValueAtTime(220, t0);
+
+              var filter = audioCtx.createBiquadFilter();
+              filter.type = 'lowpass';
+              filter.frequency.setValueAtTime(cutoffFor(btn.getAttribute('data-cutoff')), t0);
+
+              // Short attack and release so the note neither clicks nor sits
+              // loud: peak is 0.15, well under full scale.
+              var gain = audioCtx.createGain();
+              gain.gain.setValueAtTime(0.0001, t0);
+              gain.gain.linearRampToValueAtTime(0.15, t0 + 0.02);
+              gain.gain.setValueAtTime(0.15, t0 + DUR - 0.15);
+              gain.gain.linearRampToValueAtTime(0.0001, t0 + DUR);
+
+              osc.connect(filter);
+              filter.connect(gain);
+              gain.connect(audioCtx.destination);
+              osc.start(t0);
+              osc.stop(t0 + DUR);
+
+              var entry = { btn: btn, osc: osc, filter: filter, gain: gain, timer: null };
+              osc.onended = function(){ release(entry); };
+              // Fallback for engines that do not fire onended reliably.
+              entry.timer = setTimeout(function(){ release(entry); }, (DUR + 0.2) * 1000);
+              btn.setAttribute('aria-pressed', 'true');
+              current = entry;
+            } catch(err){
+              current = null;
+              btn.setAttribute('aria-pressed', 'false');
+            }
+          }
+
+          // One delegated click handler for the cards. A tag chip puts its word
+          // in the existing search box and re-runs the same filter, so there is
+          // no second filter dimension and no extra state to keep; a Preview
+          // button plays that preset's short approximation.
           wrap.addEventListener('click', function(e){
             var t = e.target;
-            if(!t || t.className !== 'tag-chip') return;
+            if(!t) return;
+            if(t.className === 'preset-play'){ preview(t); return; }
+            if(t.className !== 'tag-chip') return;
             if(!search) return;
             search.value = t.getAttribute('data-tag') || '';
             applyFilter();
