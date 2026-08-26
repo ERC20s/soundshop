@@ -34,5 +34,9 @@ ul{margin:0.5rem 0;padding-left:1.25rem}
 .preset-permalink{position:absolute;top:0.5rem;right:0.6rem;color:#999;text-decoration:none;font-weight:700;line-height:1}
 .preset-permalink:hover,.preset-permalink:focus{color:#5b7cfa}
 .preset-card:target .preset-permalink{color:#5b7cfa}
+/* Tag chips: buttons that type their word into the gallery search box. */
+.preset-tags{display:flex;flex-wrap:wrap;gap:.3rem;margin:.35rem 0 0;padding:0}
+.tag-chip{padding:.1rem .55rem;border:1px solid #e0e0e6;border-radius:999px;background:#f6f6f9;color:#334;font:inherit;font-size:.85rem;line-height:1.4;cursor:pointer}
+.tag-chip:hover,.tag-chip:focus{border-color:#5b7cfa;background:#eef2ff;color:#243}
 iframe{background:#fafafa}
 footer{border-top:1px solid #eee;margin-top:2rem;padding-top:0.5rem;color:#666;font-size:0.9rem}
