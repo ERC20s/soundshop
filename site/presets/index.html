@@ -49,7 +49,7 @@
   <script>
     // Load and render the full presets gallery, including params.
     // Same defensive fetch/catch pattern as site/plugins/flagship.html.
-    (function(){
+    document.addEventListener('DOMContentLoaded', function(){
       // Slug helper: turns a preset name into a stable, URL-safe id fragment.
       // Duplicated (identically) in site/plugins/flagship.html so both pages
       // stay standalone with no build step. Keep the two copies in sync.
@@ -274,7 +274,7 @@
           var el = document.getElementById('presets-gallery');
           if(el) el.textContent = 'Failed to load presets.';
         });
-    })();
+    });
   </script>
 </body>
 </html>
