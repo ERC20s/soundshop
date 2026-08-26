@@ -17,6 +17,7 @@
       <div id="search-box">
         <label for="preset-search">Search presets</label>
         <input type="text" id="preset-search" placeholder="Search by name, author or param…" autocomplete="off">
+        <p id="preset-count" aria-live="polite"></p>
       </div>
       <div id="presets-gallery">Loading presets…</div>
     </section>
@@ -33,7 +34,35 @@
   <script>
     // Load and render the full presets gallery, including params.
     // Same defensive fetch/catch pattern as site/plugins/flagship.html.
+    //
+    // Every card gets a stable id ("preset-" + slug of its name, with -2/-3
+    // suffixes when two presets share a name) so a card can be linked to
+    // directly; the search box is mirrored into the URL as ?q=... so a filtered
+    // view can be copied and reopened. Both pieces degrade quietly under
+    // file:// (history.replaceState throws there and is caught).
     (function(){
+      // Slug helper. The same five lines are duplicated inline in
+      // site/plugins/flagship.html so the two pages agree on anchors without a
+      // build step — change one, change the other.
+      function slugify(s){
+        return String(s == null ? '' : s).toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '') || 'preset';
+      }
+
+      // Read ?q= without depending on URLSearchParams.
+      function queryParam(name){
+        var m = new RegExp('[?&]' + name + '=([^&]*)').exec(location.search || '');
+        if(!m) return '';
+        try { return decodeURIComponent(m[1].replace(/\+/g, ' ')); }
+        catch(e){ return m[1]; }
+      }
+
+      function currentHashId(){
+        var h = location.hash || '';
+        return h.charAt(0) === '#' ? h.slice(1) : '';
+      }
+
       fetch('flagship-presets.json')
         .then(function(r){ if(!r.ok) throw new Error('fetch failed'); return r.json(); })
         .then(function(data){
@@ -41,12 +70,31 @@
           if(!Array.isArray(data) || data.length === 0) { el.textContent = 'No presets found.'; return; }
           var wrap = document.createElement('div');
           wrap.className = 'preset-cards';
+          var usedIds = {};
           data.forEach(function(p){
+            p = p && typeof p === 'object' ? p : {};
             var card = document.createElement('div');
             card.className = 'preset-card';
 
+            var label = p.name || 'Untitled preset';
+
+            // Stable, collision-free anchor id.
+            var base = 'preset-' + slugify(p.name);
+            var id = base, n = 1;
+            while(usedIds[id]){ n++; id = base + '-' + n; }
+            usedIds[id] = true;
+            card.id = id;
+
             var name = document.createElement('h3');
-            name.textContent = p.name || 'Untitled preset';
+            name.textContent = label;
+
+            var permalink = document.createElement('a');
+            permalink.className = 'preset-permalink';
+            permalink.href = '#' + id;
+            permalink.textContent = '#';
+            permalink.title = 'Permalink to ' + label;
+            permalink.setAttribute('aria-label', 'Permalink to ' + label);
+            name.appendChild(permalink);
             card.appendChild(name);
 
             var author = document.createElement('p');
@@ -55,6 +103,7 @@
 
             var params = p.params && typeof p.params === 'object' ? p.params : {};
             var keys = Object.keys(params);
+            var haystack = [label, p.author || 'unknown'];
             if(keys.length){
               var dl = document.createElement('dl');
               keys.forEach(function(k){
@@ -64,38 +113,88 @@
                 dd.textContent = String(params[k]);
                 dl.appendChild(dt);
                 dl.appendChild(dd);
+                haystack.push(k, String(params[k]));
               });
               card.appendChild(dl);
             }
+
+            // Searchable text kept on the card so the permalink's own "#"
+            // never takes part in matching.
+            card.setAttribute('data-search', haystack.join(' ').toLowerCase());
 
             wrap.appendChild(card);
           });
           el.textContent = '';
           el.appendChild(wrap);
 
-          // Live search/filter: match card text (name, author, params) against
-          // the search box on every keystroke. Hides non-matching cards and
-          // shows a 'No presets found.' message when nothing matches.
+          // Live search/filter: match the card's data-search text (name, author,
+          // params) against the search box on every keystroke. Hides
+          // non-matching cards, shows a 'No presets found.' message when nothing
+          // matches, keeps a running count and mirrors the query into ?q=.
           var search = document.getElementById('preset-search');
-          if(search){
-            var cards = Array.prototype.slice.call(wrap.getElementsByClassName('preset-card'));
-            var empty = document.createElement('p');
-            empty.id = 'no-results';
-            empty.textContent = 'No presets found.';
-            empty.style.display = 'none';
-            wrap.parentNode.insertBefore(empty, wrap.nextSibling);
+          var count = document.getElementById('preset-count');
+          var cards = Array.prototype.slice.call(wrap.getElementsByClassName('preset-card'));
 
+          var empty = document.createElement('p');
+          empty.id = 'no-results';
+          empty.textContent = 'No presets found.';
+          empty.style.display = 'none';
+          wrap.parentNode.insertBefore(empty, wrap.nextSibling);
+
+          // pinnedId: a card named by location.hash stays visible even when the
+          // current query would hide it, so a deep link always lands somewhere.
+          function apply(query, pinnedId){
+            var q = String(query || '').trim().toLowerCase();
+            var visible = 0;
+            cards.forEach(function(card){
+              var hay = card.getAttribute('data-search') || (card.textContent || '').toLowerCase();
+              var match = !q || hay.indexOf(q) !== -1;
+              if(!match && pinnedId && card.id === pinnedId) match = true;
+              card.style.display = match ? '' : 'none';
+              if(match) visible++;
+            });
+            empty.style.display = visible === 0 ? '' : 'none';
+            if(count){
+              count.textContent = 'Showing ' + visible + ' of ' + cards.length +
+                ' preset' + (cards.length === 1 ? '' : 's');
+            }
+            return visible;
+          }
+
+          function syncUrl(q){
+            // Under file:// (and in very old browsers) replaceState throws;
+            // filtering must keep working, so swallow it.
+            try {
+              var url = location.pathname +
+                (q ? '?q=' + encodeURIComponent(q) : '') +
+                (location.hash || '');
+              history.replaceState(null, '', url);
+            } catch(e){ /* ignore */ }
+          }
+
+          function focusHash(){
+            var id = currentHashId();
+            if(!id) return;
+            var target = document.getElementById(id);
+            if(!target || target.className.indexOf('preset-card') === -1) return;
+            apply(search ? search.value : '', id);
+            if(typeof target.scrollIntoView === 'function') target.scrollIntoView();
+          }
+
+          // First paint: honour ?q= from the URL before anything is shown.
+          var initial = queryParam('q');
+          if(search && initial) search.value = initial;
+          apply(initial, currentHashId());
+
+          if(search){
             search.addEventListener('input', function(){
-              var q = search.value.trim().toLowerCase();
-              var visible = 0;
-              cards.forEach(function(card){
-                var match = !q || (card.textContent || '').toLowerCase().indexOf(q) !== -1;
-                card.style.display = match ? '' : 'none';
-                if(match) visible++;
-              });
-              empty.style.display = visible === 0 ? '' : 'none';
+              apply(search.value, currentHashId());
+              syncUrl(search.value.trim());
             });
           }
+
+          focusHash();
+          window.addEventListener('hashchange', focusHash);
         }).catch(function(){
           document.getElementById('presets-gallery').textContent = 'Unable to load presets.';
         });

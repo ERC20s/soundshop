@@ -10,9 +10,15 @@ ul{margin:0.5rem 0;padding-left:1.25rem}
 #search-box label{display:block;font-weight:600;margin-bottom:0.25rem}
 #preset-search{width:100%;max-width:320px;padding:0.4rem 0.5rem;border:1px solid #ccc;border-radius:4px;font:inherit;box-sizing:border-box}
 #no-results{color:#666}
+#preset-count{color:#555;font-size:0.9rem;margin:0.4rem 0 0}
 .preset-cards{display:flex;flex-wrap:wrap;gap:1rem}
-.preset-card{border:1px solid #ddd;border-radius:6px;padding:0.75rem 1rem;min-width:220px;flex:1 1 220px}
+.preset-card{border:1px solid #ddd;border-radius:6px;padding:0.75rem 1rem;min-width:220px;flex:1 1 220px;scroll-margin-top:1rem}
+/* Highlight the card a deep link (…/presets/index.html#preset-slug) points at. */
+.preset-card:target{border-color:#3b6ea5;background:#f5f9ff;box-shadow:0 0 0 2px rgba(59,110,165,0.25)}
 .preset-card h3{margin:0 0 0.25rem}
+.preset-permalink{margin-left:0.35rem;font-size:0.85em;font-weight:400;color:#3b6ea5;opacity:0.45;text-decoration:none}
+.preset-permalink:hover,.preset-permalink:focus{opacity:1;text-decoration:underline}
+.preset-card:target .preset-permalink{opacity:1}
 .preset-card dl{margin:0.5rem 0 0;display:grid;grid-template-columns:auto 1fr;gap:0.15rem 0.5rem}
 .preset-card dt{font-weight:600;color:#444}
 .preset-card dd{margin:0}
