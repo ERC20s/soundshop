@@ -24,8 +24,15 @@
 
     <section id="demo">
       <h2>Playable demo</h2>
-      <p>An embedded demo will appear here once the demo file is added.</p>
-      <iframe src="../demo/flagship-demo.html" title="Flagship demo" style="width:100%;height:360px;border:1px solid #ccc"></iframe>
+      <!--
+        The demo page is optional and may not be published. Its path lives in a
+        data-* attribute (not src=) so tools/check-links.js does not flag it as a
+        required target; the script below probes it and only embeds an iframe when
+        the file actually exists, so visitors never see a 404 inside the page.
+      -->
+      <div id="demo-slot" data-demo-src="../demo/flagship-demo.html">
+        <p>The playable demo is not published yet — see the specs above and the presets below.</p>
+      </div>
     </section>
 
     <section id="presets">
@@ -43,6 +50,27 @@
     </section>
   </main>
   <script>
+    // Probe for the playable demo and embed it only if it is really there.
+    // Under file:// (or when the file is missing) the probe fails and the
+    // fallback message in #demo-slot stays in place.
+    (function(){
+      var slot = document.getElementById('demo-slot');
+      if(!slot || typeof window.fetch !== 'function') return;
+      var src = slot.getAttribute('data-demo-src');
+      if(!src) return;
+      fetch(src)
+        .then(function(r){
+          if(!r.ok) return;
+          var iframe = document.createElement('iframe');
+          iframe.src = src;
+          iframe.title = 'Flagship demo';
+          iframe.setAttribute('style', 'width:100%;height:360px;border:1px solid #ccc');
+          slot.textContent = '';
+          slot.appendChild(iframe);
+        })
+        .catch(function(){ /* keep the fallback message */ });
+    })();
+
     // Load and render presets JSON
     (function(){
       fetch('../presets/flagship-presets.json')

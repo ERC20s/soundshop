@@ -6,7 +6,8 @@ site/ is a static site scaffold added to host plugin pages and the playable demo
 
 Structure added by the scaffold:
 - site/index.html — home page linking to plugin pages and changelog.
-- site/plugins/flagship.html — plugin page template for the flagship synth; includes an iframe placeholder for the playable demo and a small script that loads presets JSON.
+- site/plugins/flagship.html — plugin page template for the flagship synth; probes for the playable demo and embeds it only if it exists, and has a small script that loads presets JSON.
+- tools/check-links.js — zero-dependency Node script that fails when a page points at an internal file that is not in the repository.
 - site/assets/style.css — minimal styles for the scaffold.
 - site/presets/flagship-presets.json — sample presets metadata used by the plugin page UI.
 
@@ -16,7 +17,10 @@ Paths:
 All pages use relative, root-agnostic links, so the site works whether the repository root or site/ is served as the web root. Nothing hard-codes a leading "/site/" prefix any more. If you deploy under a fixed path prefix, re-test the links rather than reintroducing absolute paths.
 
 Demo integration:
-The flagship demo will be added under site/demo/ (not included here). flagship.html embeds the demo as an iframe: "<iframe src=\"../demo/flagship-demo.html\">" and loads presets from "../presets/flagship-presets.json" so demo PRs can target those paths.
+The flagship demo will be added under site/demo/ (not included here). flagship.html does not hard-code an iframe to it any more: the section "<div id=\"demo-slot\" data-demo-src=\"../demo/flagship-demo.html\">" shows a plain "not published yet" message, and an inline script fetches that path and swaps in an iframe (title "Flagship demo", 360px tall) only when the response is ok. A demo PR only has to add site/demo/flagship-demo.html at that path and the page picks it up. Presets are still loaded from "../presets/flagship-presets.json".
+
+Checking links:
+Run "node tools/check-links.js" (Node 18+, no packages) from anywhere in the repository. It scans every .html and .js file under site/ for href/src attributes, fetch('...') literals and fallback lists such as JSON_PATHS in site/changelog.js, resolves each relative to the file it appears in, and exits non-zero listing anything that is not on disk. A fallback list passes when at least one of its candidates exists. Optional, runtime-probed targets belong in data-* attributes (like data-demo-src), which the checker deliberately ignores; bare "#" placeholders and external http(s)/mailto links are skipped too.
 
 Serving:
 Serve either the repository root or site/ over http with any static server, for example "python -m http.server" from one of those directories. Opening the pages with file:// shows the styling but leaves the presets and changelog empty, because browsers block fetch() for file:// URLs. Serving the repository root is the only layout where the changelog JSON at data/changelog.json is reachable; site/changelog.js tries "data/changelog.json" and then "../data/changelog.json" so both layouts are attempted before the error message is shown.
