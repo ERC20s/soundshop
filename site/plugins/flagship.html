@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Soundshop — Flagship Synth</title>
-  <link rel="stylesheet" href="/site/assets/style.css">
+  <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
   <header>
@@ -25,7 +25,7 @@
     <section id="demo">
       <h2>Playable demo</h2>
       <p>An embedded demo will appear here once the demo file is added.</p>
-      <iframe src="/site/demo/flagship-demo.html" title="Flagship demo" style="width:100%;height:360px;border:1px solid #ccc"></iframe>
+      <iframe src="../demo/flagship-demo.html" title="Flagship demo" style="width:100%;height:360px;border:1px solid #ccc"></iframe>
     </section>
 
     <section id="presets">
@@ -36,7 +36,7 @@
     <section id="links">
       <h2>More</h2>
       <ul>
-        <li><a href="/site/changelog.html">Changelog</a></li>
+        <li><a href="../changelog.html">Changelog</a></li>
         <li><a href="#">Documentation (coming)</a></li>
         <li><a href="#">Download (stub)</a></li>
       </ul>
@@ -45,7 +45,7 @@
   <script>
     // Load and render presets JSON
     (function(){
-      fetch('/site/presets/flagship-presets.json')
+      fetch('../presets/flagship-presets.json')
         .then(function(r){ if(!r.ok) throw new Error('fetch failed'); return r.json(); })
         .then(function(data){
           var el = document.getElementById('presets-list');
