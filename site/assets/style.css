@@ -38,5 +38,21 @@ ul{margin:0.5rem 0;padding-left:1.25rem}
 .preset-tags{display:flex;flex-wrap:wrap;gap:.3rem;margin:.35rem 0 0;padding:0}
 .tag-chip{padding:.1rem .55rem;border:1px solid #e0e0e6;border-radius:999px;background:#f6f6f9;color:#334;font:inherit;font-size:.85rem;line-height:1.4;cursor:pointer}
 .tag-chip:hover,.tag-chip:focus{border-color:#5b7cfa;background:#eef2ff;color:#243}
+/* Playable one-octave demo keyboard, built into #demo-slot by
+   site/plugins/demo-keys.js. Nothing here applies until that script runs. */
+.demo-keys-wrap{border:1px solid #ddd;border-radius:6px;padding:.75rem;background:#fafafb}
+.demo-controls{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .7rem;margin-bottom:.7rem;font-size:.9rem}
+.demo-controls label{font-weight:600;color:#444}
+.demo-controls select{padding:.2rem .4rem;border:1px solid #ccc;border-radius:4px;font:inherit}
+.demo-controls input[type=range]{width:180px;max-width:50vw}
+.demo-cutoff-value{color:#666;font-variant-numeric:tabular-nums}
+.demo-keys{display:flex;flex-wrap:wrap;gap:.25rem}
+.demo-key{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:.15rem;width:2.6rem;height:5.5rem;padding:.3rem .2rem;border:1px solid #c8c8d0;border-radius:0 0 5px 5px;background:#fff;color:#334;font:inherit;font-size:.8rem;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none}
+.demo-key-sharp{background:#2b2b33;border-color:#2b2b33;color:#f2f2f6}
+.demo-key:hover,.demo-key:focus{border-color:#5b7cfa;outline:none}
+.demo-key.is-held{background:#eef2ff;border-color:#5b7cfa;color:#243;transform:translateY(1px)}
+.demo-key-sharp.is-held{background:#5b7cfa;border-color:#5b7cfa;color:#fff}
+.demo-key-hint{opacity:.55;font-size:.7rem;text-transform:uppercase}
+.demo-hint{margin:.6rem 0 0;color:#666;font-size:.85rem}
 iframe{background:#fafafa}
 footer{border-top:1px solid #eee;margin-top:2rem;padding-top:0.5rem;color:#666;font-size:0.9rem}
