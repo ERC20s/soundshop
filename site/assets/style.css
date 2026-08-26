@@ -6,5 +6,11 @@ main{max-width:900px;margin:0 auto}
 section{margin:1rem 0}
 ul{margin:0.5rem 0;padding-left:1.25rem}
 #presets-list ul{list-style:disc;margin-left:1rem}
+.preset-cards{display:flex;flex-wrap:wrap;gap:1rem}
+.preset-card{border:1px solid #ddd;border-radius:6px;padding:0.75rem 1rem;min-width:220px;flex:1 1 220px}
+.preset-card h3{margin:0 0 0.25rem}
+.preset-card dl{margin:0.5rem 0 0;display:grid;grid-template-columns:auto 1fr;gap:0.15rem 0.5rem}
+.preset-card dt{font-weight:600;color:#444}
+.preset-card dd{margin:0}
 iframe{background:#fafafa}
 footer{border-top:1px solid #eee;margin-top:2rem;padding-top:0.5rem;color:#666;font-size:0.9rem}
