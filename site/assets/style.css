@@ -16,5 +16,10 @@ ul{margin:0.5rem 0;padding-left:1.25rem}
 .preset-card dl{margin:0.5rem 0 0;display:grid;grid-template-columns:auto 1fr;gap:0.15rem 0.5rem}
 .preset-card dt{font-weight:600;color:#444}
 .preset-card dd{margin:0}
+.preset-card{position:relative;scroll-margin-top:1rem}
+.preset-card:target{border-color:#5b7cfa;box-shadow:0 0 0 2px rgba(91,124,250,.25);background:#f6f8ff}
+.preset-permalink{position:absolute;top:0.5rem;right:0.6rem;color:#999;text-decoration:none;font-weight:700;line-height:1}
+.preset-permalink:hover,.preset-permalink:focus{color:#5b7cfa}
+.preset-card:target .preset-permalink{color:#5b7cfa}
 iframe{background:#fafafa}
 footer{border-top:1px solid #eee;margin-top:2rem;padding-top:0.5rem;color:#666;font-size:0.9rem}

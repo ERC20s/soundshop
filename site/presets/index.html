@@ -34,6 +34,16 @@
     // Load and render the full presets gallery, including params.
     // Same defensive fetch/catch pattern as site/plugins/flagship.html.
     (function(){
+      // Slug helper: turns a preset name into a stable, URL-safe id fragment.
+      // Duplicated (identically) in site/plugins/flagship.html so both pages
+      // stay standalone with no build step. Keep the two copies in sync.
+      function slugify(s){
+        return String(s || 'untitled preset')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '') || 'preset';
+      }
+
       fetch('flagship-presets.json')
         .then(function(r){ if(!r.ok) throw new Error('fetch failed'); return r.json(); })
         .then(function(data){
@@ -41,9 +51,18 @@
           if(!Array.isArray(data) || data.length === 0) { el.textContent = 'No presets found.'; return; }
           var wrap = document.createElement('div');
           wrap.className = 'preset-cards';
+          var seen = {};
           data.forEach(function(p){
             var card = document.createElement('div');
             card.className = 'preset-card';
+
+            // Stable per-card id: 'preset-<slug>', with -2/-3 suffixes when two
+            // presets slugify to the same value. Both pages walk
+            // flagship-presets.json in the same order, so the suffixes match.
+            var base = slugify(p.name);
+            seen[base] = (seen[base] || 0) + 1;
+            var slug = seen[base] > 1 ? base + '-' + seen[base] : base;
+            card.id = 'preset-' + slug;
 
             var name = document.createElement('h3');
             name.textContent = p.name || 'Untitled preset';
@@ -68,6 +87,17 @@
               card.appendChild(dl);
             }
 
+            // Snapshot the searchable text BEFORE the permalink is added, so
+            // the permalink's '#' never matches a search query.
+            card.setAttribute('data-search', (card.textContent || '').toLowerCase());
+
+            var permalink = document.createElement('a');
+            permalink.className = 'preset-permalink';
+            permalink.href = '#' + card.id;
+            permalink.textContent = '#';
+            permalink.setAttribute('aria-label', 'Permalink to ' + (p.name || 'Untitled preset'));
+            card.appendChild(permalink);
+
             wrap.appendChild(card);
           });
           el.textContent = '';
@@ -89,13 +119,29 @@
               var q = search.value.trim().toLowerCase();
               var visible = 0;
               cards.forEach(function(card){
-                var match = !q || (card.textContent || '').toLowerCase().indexOf(q) !== -1;
+                var match = !q || (card.getAttribute('data-search') || '').indexOf(q) !== -1;
                 card.style.display = match ? '' : 'none';
                 if(match) visible++;
               });
               empty.style.display = visible === 0 ? '' : 'none';
             });
           }
+
+          // Deep links: when the URL carries #preset-<slug>, make sure that
+          // card is visible (a stale filter may have hidden it) and scroll it
+          // into view. Runs once now, and again on every hash change.
+          function applyHash(){
+            var id = (location.hash || '').replace(/^#/, '');
+            if(!id) return;
+            var target = document.getElementById(id);
+            if(!target || target.className.indexOf('preset-card') === -1) return;
+            target.style.display = '';
+            var noResults = document.getElementById('no-results');
+            if(noResults) noResults.style.display = 'none';
+            if(typeof target.scrollIntoView === 'function') target.scrollIntoView();
+          }
+          applyHash();
+          window.addEventListener('hashchange', applyHash);
         }).catch(function(){
           document.getElementById('presets-gallery').textContent = 'Unable to load presets.';
         });
