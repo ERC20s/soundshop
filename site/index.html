@@ -11,6 +11,20 @@
     <h1>Soundshop</h1>
     <p>Plugin pages, demo, presets, changelog and docs for the flagship synth.</p>
   </header>
+
+  <!-- Shared site navigation. The same block appears on all four pages with
+       paths relative to that page's directory, so both serving roots (the
+       repository root and site/) keep working. The current page is marked
+       statically with class="current" + aria-current="page" — no JavaScript. -->
+  <nav class="site-nav" aria-label="Site">
+    <ul>
+      <li><a class="current" aria-current="page" href="index.html">Home</a></li>
+      <li><a href="plugins/flagship.html">Flagship Synth</a></li>
+      <li><a href="presets/index.html">Presets</a></li>
+      <li><a href="changelog.html">Changelog</a></li>
+    </ul>
+  </nav>
+
   <main>
     <section>
       <h2>Plugins</h2>

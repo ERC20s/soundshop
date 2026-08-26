@@ -1,6 +1,14 @@
 :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;line-height:1.5;color:#111;background:#fff}
 body{margin:0;padding:1.25rem;max-width:900px;margin-left:auto;margin-right:auto}
 header h1{margin:.25rem 0}
+/* Shared site navigation bar. An identical copy lives in site/assets/style.css
+   (the other three pages load that one) — keep the two copies in sync. */
+.site-nav{max-width:900px;margin:0 auto 1rem}
+.site-nav ul{list-style:none;display:flex;flex-wrap:wrap;gap:.4rem .6rem;margin:0;padding:0}
+.site-nav li{margin:0}
+.site-nav a{display:inline-block;padding:.2rem .6rem;border:1px solid #e0e0e6;border-radius:999px;color:#334;text-decoration:none;font-size:.9rem;white-space:nowrap}
+.site-nav a:hover,.site-nav a:focus{border-color:#5b7cfa;color:#5b7cfa}
+.site-nav a.current{border-color:#5b7cfa;background:#eef2ff;color:#243;font-weight:600}
 #changelog-root{margin-top:1rem}
 #release-index{margin-top:1rem;padding:.75rem 1rem;border:1px solid #e6e6e6;border-radius:6px;background:#fbfbfd}
 #release-index[hidden]{display:none}
@@ -19,4 +27,4 @@ header h1{margin:.25rem 0}
 .entry h2{margin:.25rem 0 0.5rem}
 .entry ul{margin:.5rem 0 0 1.25rem}
 .loading{color:#666}
-@media (prefers-color-scheme:dark){:root{color:#ddd;background:#0b0b0d} .entry{background:#071018;border-color:#123} .entry:target{background:#0d1626;border-color:#5b7cfa} #release-index{background:#071018;border-color:#123} .release-index-title{color:#9aa} .release-index-list a{border-color:#1c2b3a;color:#cdd} .release-index-list a.current{background:#0d1626;border-color:#5b7cfa;color:#dde}}
+@media (prefers-color-scheme:dark){:root{color:#ddd;background:#0b0b0d} .entry{background:#071018;border-color:#123} .entry:target{background:#0d1626;border-color:#5b7cfa} #release-index{background:#071018;border-color:#123} .release-index-title{color:#9aa} .release-index-list a{border-color:#1c2b3a;color:#cdd} .release-index-list a.current{background:#0d1626;border-color:#5b7cfa;color:#dde} .site-nav a{border-color:#1c2b3a;color:#cdd} .site-nav a.current{background:#0d1626;border-color:#5b7cfa;color:#dde}}

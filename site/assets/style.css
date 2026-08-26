@@ -3,6 +3,14 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
 header{border-bottom:1px solid #eee;padding-bottom:0.5rem;margin-bottom:1rem}
 h1{margin:.2rem 0}
 main{max-width:900px;margin:0 auto}
+/* Shared site navigation bar. An identical copy lives in site/changelog.css
+   (that page loads only changelog.css) — keep the two copies in sync. */
+.site-nav{max-width:900px;margin:0 auto 1rem}
+.site-nav ul{list-style:none;display:flex;flex-wrap:wrap;gap:.4rem .6rem;margin:0;padding:0}
+.site-nav li{margin:0}
+.site-nav a{display:inline-block;padding:.2rem .6rem;border:1px solid #e0e0e6;border-radius:999px;color:#334;text-decoration:none;font-size:.9rem;white-space:nowrap}
+.site-nav a:hover,.site-nav a:focus{border-color:#5b7cfa;color:#5b7cfa}
+.site-nav a.current{border-color:#5b7cfa;background:#eef2ff;color:#243;font-weight:600}
 section{margin:1rem 0}
 ul{margin:0.5rem 0;padding-left:1.25rem}
 #presets-list ul{list-style:disc;margin-left:1rem}

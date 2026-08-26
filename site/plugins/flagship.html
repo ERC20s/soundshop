@@ -11,6 +11,20 @@
     <h1>Flagship Synth</h1>
     <p>Playable Web Audio demo, specs, presets and docs.</p>
   </header>
+
+  <!-- Shared site navigation. The same block appears on all four pages with
+       paths relative to that page's directory, so both serving roots (the
+       repository root and site/) keep working. The current page is marked
+       statically with class="current" + aria-current="page" — no JavaScript. -->
+  <nav class="site-nav" aria-label="Site">
+    <ul>
+      <li><a href="../index.html">Home</a></li>
+      <li><a class="current" aria-current="page" href="flagship.html">Flagship Synth</a></li>
+      <li><a href="../presets/index.html">Presets</a></li>
+      <li><a href="../changelog.html">Changelog</a></li>
+    </ul>
+  </nav>
+
   <main>
     <!--
       Filled in by the script below from data/changelog.json when that file is
@@ -50,8 +64,6 @@
     <section id="links">
       <h2>More</h2>
       <ul>
-        <li><a href="../presets/index.html">Presets gallery</a></li>
-        <li><a href="../changelog.html">Changelog</a></li>
         <li><a href="#">Documentation (coming)</a></li>
         <li><a href="#">Download (stub)</a></li>
       </ul>
@@ -128,7 +140,7 @@
           var a = document.createElement('a');
           // Built by concatenation so tools/check-links.js does not try to
           // resolve the fragment; the changelog page itself is checked by the
-          // static link in the "More" section below.
+          // static link in the site navigation at the top of this file.
           a.href = slug ? '../changelog.html' + '#release-' + slug : '../changelog.html';
           a.textContent = text;
 
@@ -169,7 +181,7 @@
             var a = document.createElement('a');
             // Built by concatenation, so tools/check-links.js does not treat
             // the fragment as a target to resolve; the page itself is checked
-            // by the static link in the "More" section above.
+            // by the static link in the site navigation at the top of this file.
             a.href = '../presets/index.html' + '#preset-' + slug;
             a.textContent = p.name || 'Untitled preset';
             li.appendChild(a);
