@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Soundshop — Presets Gallery</title>
   <link rel="stylesheet" href="../assets/style.css">
+  <!-- Per-preset audio preview. Loaded with defer so window.PresetPreview
+       exists before the inline gallery script runs its fetch callback. -->
+  <script src="preview.js" defer></script>
 </head>
 <body>
   <header>
@@ -54,6 +57,16 @@
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/^-+|-+$/g, '') || 'preset';
+      }
+
+      // The preview engine lives in preview.js (loaded with defer). Every use
+      // is guarded so the gallery renders exactly as before if that file is
+      // missing, blocked, or the browser has no Web Audio at all.
+      function global_preview_supported(){
+        return !!(window.PresetPreview && window.PresetPreview.supported());
+      }
+      function previewStop(){
+        if(window.PresetPreview) window.PresetPreview.stop();
       }
 
       fetch('flagship-presets.json')
@@ -128,6 +141,25 @@
             // the permalink's '#' never matches a search query.
             card.setAttribute('data-search', (card.textContent || '').toLowerCase());
 
+            // Preview button. Added AFTER the data-search snapshot so the word
+            // "preview" is never searchable, and only when the browser has Web
+            // Audio and the preset actually describes a sound. The class name
+            // stays exactly 'preset-play' — the delegated handler below matches
+            // className by exact string — so the sounding state is carried by
+            // data-playing="true", not by a second class.
+            var canPreview = global_preview_supported();
+            if(canPreview && (params.osc1 != null || params.filter != null)){
+              var play = document.createElement('button');
+              play.type = 'button';
+              play.className = 'preset-play';
+              play.textContent = 'Preview';
+              play.setAttribute('data-osc', String(params.osc1 == null ? '' : params.osc1));
+              play.setAttribute('data-cutoff', String(params.filter == null ? '' : params.filter));
+              play.title = 'Hear an approximation of this preset in the browser — not the plugin itself';
+              play.setAttribute('aria-label', 'Preview ' + (p.name || 'Untitled preset'));
+              card.appendChild(play);
+            }
+
             var permalink = document.createElement('a');
             permalink.className = 'preset-permalink';
             permalink.href = '#' + card.id;
@@ -161,6 +193,10 @@
             cards.forEach(function(card){
               var match = !q || (card.getAttribute('data-search') || '').indexOf(q) !== -1;
               card.style.display = match ? '' : 'none';
+              // If the card that is currently sounding gets filtered out, stop
+              // it: a hidden Stop button the visitor cannot reach would leave
+              // sound with no way to end it.
+              if(!match && card.querySelector('.preset-play[data-playing="true"]')) previewStop();
               if(match) visible++;
             });
             if(count){
@@ -183,6 +219,15 @@
           // there is no second filter dimension and no extra state to keep.
           wrap.addEventListener('click', function(e){
             var t = e.target;
+            // Preview branch: one button at a time. A second click on the
+            // sounding button stops it; a click on another card's button stops
+            // the old voice (play() does that itself) and starts the new one.
+            if(t && t.className === 'preset-play'){
+              if(!window.PresetPreview) return;
+              if(t.getAttribute('data-playing') === 'true') window.PresetPreview.stop();
+              else window.PresetPreview.play(t);
+              return;
+            }
             if(!t || t.className !== 'tag-chip') return;
             if(!search) return;
             search.value = t.getAttribute('data-tag') || '';
