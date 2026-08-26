@@ -16,12 +16,20 @@
  *  - resolves everything else against the directory of the file it appears in
  *    (a leading '/' resolves against site/) and checks that it exists on disk;
  *  - a fallback list passes when at least one of its candidates resolves;
+ *  - also walks every *.json file under data/ (recursively), finds any
+ *    "links": { ... } object anywhere inside the parsed JSON (e.g. the
+ *    per-entry links in data/changelog.json) and checks each value the same
+ *    way — leading '/' resolves against site/, everything else resolves
+ *    relative to the JSON file's own directory. A data/ file that fails to
+ *    parse as JSON is reported as a warning, not a fatal error;
  *  - prints every missing target as  file:line  target -> resolved path  and
  *    exits with status 1 when anything is missing, 0 otherwise.
  *
  * Deliberately NOT checked: data-* attributes (used for optional targets that a
- * page probes at runtime, e.g. data-demo-src on the flagship page) and URLs that
- * are built dynamically at runtime.
+ * page probes at runtime, e.g. data-demo-src on the flagship page), URLs that
+ * are built dynamically at runtime, and whether a "#fragment" on a checked
+ * target actually exists in the target file (only the file's existence is
+ * verified).
  */
 
 const fs = require('fs');
@@ -29,6 +37,7 @@ const path = require('path');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SITE_DIR = path.join(REPO_ROOT, 'site');
+const DATA_DIR = path.join(REPO_ROOT, 'data');
 
 // href= / src= but not data-src=, data-demo-src=, etc.
 const ATTR_RE = /(?<![\w-])(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
@@ -47,6 +56,32 @@ function walk(dir, out) {
     else if (/\.(html|js)$/i.test(name)) out.push(full);
   }
   return out;
+}
+
+function walkJson(dir, out) {
+  out = out || [];
+  if (!fs.existsSync(dir)) return out;
+  for (const name of fs.readdirSync(dir)) {
+    const full = path.join(dir, name);
+    const st = fs.statSync(full);
+    if (st.isDirectory()) walkJson(full, out);
+    else if (/\.json$/i.test(name)) out.push(full);
+  }
+  return out;
+}
+
+// Collect every {"links": {...}} object found anywhere inside a parsed JSON
+// value — works whether the file is a single object or (like
+// data/changelog.json) an array of entries, and however deep it is nested.
+function findLinkObjects(node, out) {
+  if (Array.isArray(node)) {
+    for (const item of node) findLinkObjects(item, out);
+  } else if (node && typeof node === 'object') {
+    if (node.links && typeof node.links === 'object' && !Array.isArray(node.links)) {
+      out.push(node.links);
+    }
+    for (const v of Object.values(node)) findLinkObjects(v, out);
+  }
 }
 
 function isExternal(target) {
@@ -132,6 +167,7 @@ function main() {
 
   const files = walk(SITE_DIR).sort();
   const missing = [];
+  const warnings = [];
   let checked = 0;
 
   for (const file of files) {
@@ -163,6 +199,35 @@ function main() {
     }
   }
 
+  const dataFiles = walkJson(DATA_DIR).sort();
+  for (const file of dataFiles) {
+    const text = fs.readFileSync(file, 'utf8');
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      warnings.push(rel(file) + ': could not parse as JSON (' + e.message + ')');
+      continue;
+    }
+
+    const linkObjects = [];
+    findLinkObjects(data, linkObjects);
+
+    for (const links of linkObjects) {
+      for (const key of Object.keys(links)) {
+        const target = links[key];
+        if (typeof target !== 'string' || isExternal(target)) continue;
+        checked++;
+        const resolved = resolveTarget(target, file);
+        if (!existsOnDisk(resolved)) {
+          const idx = text.indexOf('"' + target + '"');
+          const line = idx >= 0 ? lineOf(text, idx) : 1;
+          missing.push({ file, line, target, resolved });
+        }
+      }
+    }
+  }
+
   for (const miss of missing) {
     const resolved = typeof miss.resolved === 'string' && miss.resolved.includes(' | ')
       ? miss.resolved
@@ -170,9 +235,13 @@ function main() {
     console.log(rel(miss.file) + ':' + miss.line + '  ' + miss.target + ' -> ' + resolved);
   }
 
+  for (const w of warnings) {
+    console.log('warning: ' + w);
+  }
+
   console.log(
-    'check-links: ' + files.length + ' file(s), ' + checked + ' internal target(s), ' +
-    missing.length + ' missing'
+    'check-links: ' + files.length + ' site file(s), ' + dataFiles.length + ' data file(s), ' +
+    checked + ' internal target(s), ' + missing.length + ' missing, ' + warnings.length + ' warning(s)'
   );
   process.exit(missing.length > 0 ? 1 : 0);
 }
