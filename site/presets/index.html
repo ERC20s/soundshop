@@ -224,10 +224,31 @@
           // its word in the existing search box and re-runs the same filter, so
           // there is no second filter dimension and no extra state to keep.
           wrap.addEventListener('click', function(e){
-            var t = e.target;
-            if(!t || t.className !== 'tag-chip') return;
+            // Find the nearest ancestor element (including the target) that
+            // has the "tag-chip" class. Use Element.closest when available
+            // and fall back to walking parentNode for older environments.
+            if(!e) return;
+            var target = e.target;
+            var chip = null;
+            if(target && typeof target.closest === 'function'){
+              try { chip = target.closest('.tag-chip'); } catch(x) { chip = null; }
+            } else {
+              var node = target;
+              while(node && node.nodeType === 1){
+                var cn = node.className || '';
+                // className may be a string with multiple classes; check for
+                // a word boundary match for 'tag-chip'.
+                if((' ' + cn + ' ').indexOf(' tag-chip ') !== -1){ chip = node; break; }
+                node = node.parentNode;
+              }
+            }
+            if(!chip) return;
+            // Preserve the intent to skip preview buttons which have their own
+            // click handler.
+            var chipClass = chip.className || '';
+            if((' ' + chipClass + ' ').indexOf(' preview-btn ') !== -1) return;
             if(!search) return;
-            search.value = t.getAttribute('data-tag') || '';
+            search.value = chip.getAttribute('data-tag') || '';
             applyFilter();
             if(typeof search.focus === 'function') search.focus();
           });
