@@ -13,6 +13,10 @@
   </header>
 
   <main>
+    <!-- Release index: filled in by changelog.js once the entries are rendered.
+         Stays hidden (and harmless) if scripting is off or the fetch fails. -->
+    <nav id="release-index" hidden aria-label="Releases"></nav>
+
     <section id="changelog-root" aria-live="polite">
       <p class="loading">Loading changelog…</p>
     </section>

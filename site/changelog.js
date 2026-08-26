@@ -1,5 +1,6 @@
 (function(){
   const ROOT = document.getElementById('changelog-root');
+  const INDEX = document.getElementById('release-index');
   // The changelog JSON lives at data/changelog.json in the repository root and is
   // not duplicated inside site/. Depending on which directory is served as the web
   // root, that file is one of the paths below, so try them in order.
@@ -92,18 +93,65 @@
     return container;
   }
 
+  // Short label for the release index: "version — date", falling back to the
+  // entry title and then to 'Unversioned', so an entry with neither a version
+  // nor a date still gets something readable to click on.
+  function indexLabel(item){
+    const name = item.version || item.title || 'Unversioned';
+    return item.date ? (name + ' — ' + item.date) : name;
+  }
+
+  // Build the jump list above the entries. `rendered` carries the ids that were
+  // actually assigned to the <article class="entry"> nodes: entryId() keeps
+  // state in seenIds, so recomputing here would invent -2 suffixes that match
+  // nothing on the page. Reuse, never recompute.
+  function buildIndex(rendered){
+    if(!INDEX) return;
+    INDEX.innerHTML = '';
+    if(rendered.length < 2){
+      INDEX.hidden = true;
+      return;
+    }
+    const list = el('ul',{class:'release-index-list'},[]);
+    rendered.forEach(entry=>{
+      const a = el('a',{href:'#' + entry.id, 'data-target':entry.id},[indexLabel(entry.item)]);
+      list.appendChild(el('li',null,[a]));
+    });
+    INDEX.appendChild(el('h2',{class:'release-index-title'},['Releases']));
+    INDEX.appendChild(list);
+    INDEX.hidden = false;
+  }
+
+  // Mark the index link whose entry the URL currently points at.
+  function highlightIndex(id){
+    if(!INDEX || INDEX.hidden) return;
+    const links = INDEX.querySelectorAll('a[data-target]');
+    for(let i=0;i<links.length;i++){
+      const link = links[i];
+      if(id && link.getAttribute('data-target') === id){
+        link.classList.add('current');
+        link.setAttribute('aria-current','true');
+      } else {
+        link.classList.remove('current');
+        link.removeAttribute('aria-current');
+      }
+    }
+  }
+
   // Deep links: when the URL carries #release-<slug>, scroll that entry into
   // view once the list has been rendered, and again on every hash change.
   // Same pattern as applyHash() in site/presets/index.html.
   function applyHash(){
     const id = (location.hash || '').replace(/^#/, '');
-    if(!id) return;
-    const target = document.getElementById(id);
-    if(!target || !target.classList || !target.classList.contains('entry')) return;
+    const target = id ? document.getElementById(id) : null;
+    const isEntry = !!(target && target.classList && target.classList.contains('entry'));
+    highlightIndex(isEntry ? id : '');
+    if(!isEntry) return;
     if(typeof target.scrollIntoView === 'function') target.scrollIntoView();
   }
 
   function showError(msg){
+    if(INDEX){ INDEX.innerHTML = ''; INDEX.hidden = true; }
     ROOT.innerHTML = '';
     const p = document.createElement('p'); p.className='loading'; p.textContent = msg;
     ROOT.appendChild(p);
@@ -139,9 +187,14 @@
       showError('No changelog entries found.');
       return;
     }
+    const rendered = [];
     sortNewestFirst(list).forEach((item, index)=>{
-      ROOT.appendChild(renderEntry(item, index));
+      const node = renderEntry(item, index);
+      ROOT.appendChild(node);
+      // Keep the id the article actually got — see buildIndex().
+      rendered.push({id:node.id, item:item});
     });
+    buildIndex(rendered);
     applyHash();
     window.addEventListener('hashchange', applyHash);
   }).catch(err=>{
