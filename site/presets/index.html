@@ -11,6 +11,20 @@
     <h1>Presets Gallery</h1>
     <p>Every preset for the Flagship Synth, with its full parameters.</p>
   </header>
+
+  <!-- Shared site navigation. The same block appears on all four pages with
+       paths relative to that page's directory, so both serving roots (the
+       repository root and site/) keep working. The current page is marked
+       statically with class="current" + aria-current="page" — no JavaScript. -->
+  <nav class="site-nav" aria-label="Site">
+    <ul>
+      <li><a href="../index.html">Home</a></li>
+      <li><a href="../plugins/flagship.html">Flagship Synth</a></li>
+      <li><a class="current" aria-current="page" href="index.html">Presets</a></li>
+      <li><a href="../changelog.html">Changelog</a></li>
+    </ul>
+  </nav>
+
   <main>
     <section id="gallery">
       <h2>Presets</h2>
@@ -19,15 +33,6 @@
         <input type="text" id="preset-search" placeholder="Search by name, author or param…" autocomplete="off">
       </div>
       <div id="presets-gallery">Loading presets…</div>
-    </section>
-
-    <section id="links">
-      <h2>More</h2>
-      <ul>
-        <li><a href="../index.html">Home</a></li>
-        <li><a href="../plugins/flagship.html">Flagship Synth</a></li>
-        <li><a href="../changelog.html">Changelog</a></li>
-      </ul>
     </section>
   </main>
   <script>
