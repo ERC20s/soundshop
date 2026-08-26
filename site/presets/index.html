@@ -84,6 +84,31 @@
             author.textContent = 'By ' + (p.author || 'unknown');
             card.appendChild(author);
 
+            // Tag chips. Each tag becomes a button that types itself into the
+            // existing search box (see the delegated click handler below), so
+            // the gallery is browsable by category without a second filter.
+            // Read defensively: presets without a tags array render unchanged.
+            var tags = Array.isArray(p.tags) ? p.tags : [];
+            var cleanTags = [];
+            tags.forEach(function(t){
+              var tag = String(t == null ? '' : t).trim().toLowerCase();
+              if(tag && cleanTags.indexOf(tag) === -1) cleanTags.push(tag);
+            });
+            if(cleanTags.length){
+              var tagBar = document.createElement('p');
+              tagBar.className = 'preset-tags';
+              cleanTags.forEach(function(tag){
+                var chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'tag-chip';
+                chip.textContent = tag;
+                chip.setAttribute('data-tag', tag);
+                chip.setAttribute('aria-label', 'Search presets for ' + tag);
+                tagBar.appendChild(chip);
+              });
+              card.appendChild(tagBar);
+            }
+
             var params = p.params && typeof p.params === 'object' ? p.params : {};
             var keys = Object.keys(params);
             if(keys.length){
@@ -152,6 +177,18 @@
             if(clearBtn) clearBtn.hidden = !raw;
             return visible;
           }
+
+          // One delegated click handler for every tag chip: a chip simply puts
+          // its word in the existing search box and re-runs the same filter, so
+          // there is no second filter dimension and no extra state to keep.
+          wrap.addEventListener('click', function(e){
+            var t = e.target;
+            if(!t || t.className !== 'tag-chip') return;
+            if(!search) return;
+            search.value = t.getAttribute('data-tag') || '';
+            applyFilter();
+            if(typeof search.focus === 'function') search.focus();
+          });
 
           if(search){
             // Filter once now, so a restored query is honoured immediately.

@@ -1,5 +1,5 @@
 [
-  { "name": "Classic Pad", "author": "Alice", "params": { "osc1": "saw", "filter": 800 } },
-  { "name": "Bright Lead", "author": "Bob", "params": { "osc1": "square", "filter": 1200 } },
-  { "name": "Deep Bass", "author": "Carol", "params": { "osc1": "sine", "filter": 200 } }
+  { "name": "Classic Pad", "author": "Alice", "tags": ["pad", "warm"], "params": { "osc1": "saw", "filter": 800 } },
+  { "name": "Bright Lead", "author": "Bob", "tags": ["lead", "bright"], "params": { "osc1": "square", "filter": 1200 } },
+  { "name": "Deep Bass", "author": "Carol", "tags": ["bass", "sub"], "params": { "osc1": "sine", "filter": 200 } }
 ]
