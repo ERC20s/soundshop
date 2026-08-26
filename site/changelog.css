@@ -2,9 +2,13 @@
 body{margin:0;padding:1.25rem;max-width:900px;margin-left:auto;margin-right:auto}
 header h1{margin:.25rem 0}
 #changelog-root{margin-top:1rem}
-.entry{border-radius:6px;padding:1rem;margin:0 0 1rem;border:1px solid #e6e6e6;background:#fbfbfd}
+.entry{border-radius:6px;padding:1rem;margin:0 0 1rem;border:1px solid #e6e6e6;background:#fbfbfd;position:relative;scroll-margin-top:1rem}
+.entry:target{border-color:#5b7cfa;box-shadow:0 0 0 2px rgba(91,124,250,.25);background:#f6f8ff}
+.permalink{position:absolute;top:0.75rem;right:0.9rem;color:#999;text-decoration:none;font-weight:700;line-height:1}
+.permalink:hover,.permalink:focus{color:#5b7cfa}
+.entry:target .permalink{color:#5b7cfa}
 .entry .meta{font-size:.9rem;color:#555;margin-bottom:.5rem}
 .entry h2{margin:.25rem 0 0.5rem}
 .entry ul{margin:.5rem 0 0 1.25rem}
 .loading{color:#666}
-@media (prefers-color-scheme:dark){:root{color:#ddd;background:#0b0b0d} .entry{background:#071018;border-color:#123}}
+@media (prefers-color-scheme:dark){:root{color:#ddd;background:#0b0b0d} .entry{background:#071018;border-color:#123} .entry:target{background:#0d1626;border-color:#5b7cfa}}

@@ -28,8 +28,32 @@
     return e;
   }
 
-  function renderEntry(item){
+  // Slug helper: turns a version (or date) into a stable, URL-safe id fragment.
+  // Same rule as the one duplicated in site/presets/index.html and
+  // site/plugins/flagship.html: lowercase, non-alphanumerics to '-', trimmed.
+  // Keep the copies in sync — there is no build step.
+  function slugify(s){
+    return String(s == null ? '' : s)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  // Stable per-entry id: 'release-<version-slug>', falling back to the date and
+  // then to 'entry-<n>'. Duplicate slugs get -2/-3 suffixes, in file order after
+  // the newest-first sort, so ids stay unique on the page.
+  const seenIds = {};
+  function entryId(item, index){
+    const base = slugify(item.version) || slugify(item.date) || ('entry-' + (index + 1));
+    const prefix = (slugify(item.version) || slugify(item.date)) ? 'release-' : '';
+    const id = prefix + base;
+    seenIds[id] = (seenIds[id] || 0) + 1;
+    return seenIds[id] > 1 ? id + '-' + seenIds[id] : id;
+  }
+
+  function renderEntry(item, index){
     const container = el('article',{class:'entry'});
+    container.id = entryId(item, index);
     const meta = el('div',{class:'meta'},[
       `${item.version || 'Unversioned'} — ${item.date || 'Unknown date'}`
     ]);
@@ -57,7 +81,26 @@
       container.appendChild(linkList);
     }
 
+    // '#' permalink, mirroring .preset-permalink in the presets gallery.
+    const label = item.version ? ('release ' + item.version) : (item.title || 'this entry');
+    container.appendChild(el('a',{
+      class:'permalink',
+      href:'#' + container.id,
+      'aria-label':'Permalink to ' + label
+    },['#']));
+
     return container;
+  }
+
+  // Deep links: when the URL carries #release-<slug>, scroll that entry into
+  // view once the list has been rendered, and again on every hash change.
+  // Same pattern as applyHash() in site/presets/index.html.
+  function applyHash(){
+    const id = (location.hash || '').replace(/^#/, '');
+    if(!id) return;
+    const target = document.getElementById(id);
+    if(!target || !target.classList || !target.classList.contains('entry')) return;
+    if(typeof target.scrollIntoView === 'function') target.scrollIntoView();
   }
 
   function showError(msg){
@@ -96,9 +139,11 @@
       showError('No changelog entries found.');
       return;
     }
-    sortNewestFirst(list).forEach(item=>{
-      ROOT.appendChild(renderEntry(item));
+    sortNewestFirst(list).forEach((item, index)=>{
+      ROOT.appendChild(renderEntry(item, index));
     });
+    applyHash();
+    window.addEventListener('hashchange', applyHash);
   }).catch(err=>{
     showError('Unable to load changelog. See console for details.');
     console.error(err);
