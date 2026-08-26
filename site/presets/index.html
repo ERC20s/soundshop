@@ -14,6 +14,10 @@
   <main>
     <section id="gallery">
       <h2>Presets</h2>
+      <div id="search-box">
+        <label for="preset-search">Search presets</label>
+        <input type="text" id="preset-search" placeholder="Search by name, author or param…" autocomplete="off">
+      </div>
       <div id="presets-gallery">Loading presets…</div>
     </section>
 
@@ -68,6 +72,30 @@
           });
           el.textContent = '';
           el.appendChild(wrap);
+
+          // Live search/filter: match card text (name, author, params) against
+          // the search box on every keystroke. Hides non-matching cards and
+          // shows a 'No presets found.' message when nothing matches.
+          var search = document.getElementById('preset-search');
+          if(search){
+            var cards = Array.prototype.slice.call(wrap.getElementsByClassName('preset-card'));
+            var empty = document.createElement('p');
+            empty.id = 'no-results';
+            empty.textContent = 'No presets found.';
+            empty.style.display = 'none';
+            wrap.parentNode.insertBefore(empty, wrap.nextSibling);
+
+            search.addEventListener('input', function(){
+              var q = search.value.trim().toLowerCase();
+              var visible = 0;
+              cards.forEach(function(card){
+                var match = !q || (card.textContent || '').toLowerCase().indexOf(q) !== -1;
+                card.style.display = match ? '' : 'none';
+                if(match) visible++;
+              });
+              empty.style.display = visible === 0 ? '' : 'none';
+            });
+          }
         }).catch(function(){
           document.getElementById('presets-gallery').textContent = 'Unable to load presets.';
         });

@@ -82,7 +82,7 @@
           var ul = document.createElement('ul');
           data.forEach(function(p){
             var li = document.createElement('li');
-            li.textContent = p.name + ' — ' + (p.author||'unknown');
+            li.textContent = (p.name || 'Untitled preset') + ' — ' + (p.author||'unknown');
             ul.appendChild(li);
           });
           el.textContent = '';
