@@ -10,7 +10,15 @@ Structure added by the scaffold:
 - site/assets/style.css — minimal styles for the scaffold.
 - site/presets/flagship-presets.json — sample presets metadata used by the plugin page UI.
 
-Demo integration:
-The flagship demo will be added under site/demo/ (not included here). flagship.html embeds the demo as an iframe: "<iframe src=\"/site/demo/flagship-demo.html\">" and loads presets from "/site/presets/flagship-presets.json" so demo PRs can target those paths.
+- site/changelog.html, site/changelog.css, site/changelog.js — changelog page; the JS renders data/changelog.json from the repository root.
 
-Serve the site/ directory with any static server (file:// works for simple testing) to view the pages. The group uses small, static files to keep incremental reviews simple and low-risk.
+Paths:
+All pages use relative, root-agnostic links, so the site works whether the repository root or site/ is served as the web root. Nothing hard-codes a leading "/site/" prefix any more. If you deploy under a fixed path prefix, re-test the links rather than reintroducing absolute paths.
+
+Demo integration:
+The flagship demo will be added under site/demo/ (not included here). flagship.html embeds the demo as an iframe: "<iframe src=\"../demo/flagship-demo.html\">" and loads presets from "../presets/flagship-presets.json" so demo PRs can target those paths.
+
+Serving:
+Serve either the repository root or site/ over http with any static server, for example "python -m http.server" from one of those directories. Opening the pages with file:// shows the styling but leaves the presets and changelog empty, because browsers block fetch() for file:// URLs. Serving the repository root is the only layout where the changelog JSON at data/changelog.json is reachable; site/changelog.js tries "data/changelog.json" and then "../data/changelog.json" so both layouts are attempted before the error message is shown.
+
+The group uses small, static files to keep incremental reviews simple and low-risk.

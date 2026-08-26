@@ -1,6 +1,20 @@
 (function(){
   const ROOT = document.getElementById('changelog-root');
-  const JSON_PATH = '../data/changelog.json';
+  // The changelog JSON lives at data/changelog.json in the repository root and is
+  // not duplicated inside site/. Depending on which directory is served as the web
+  // root, that file is one of the paths below, so try them in order.
+  const JSON_PATHS = ['data/changelog.json', '../data/changelog.json'];
+
+  function fetchFirst(paths){
+    if(!paths.length) return Promise.reject(new Error('No changelog path resolved'));
+    return fetch(paths[0]).then(r=>{
+      if(!r.ok) throw new Error('Fetch failed: '+r.status);
+      return r.json();
+    }).catch(err=>{
+      if(paths.length > 1) return fetchFirst(paths.slice(1));
+      throw err;
+    });
+  }
 
   function el(tag, attrs, children){
     const e = document.createElement(tag);
@@ -52,10 +66,7 @@
     ROOT.appendChild(p);
   }
 
-  fetch(JSON_PATH).then(r=>{
-    if(!r.ok) throw new Error('Fetch failed: '+r.status);
-    return r.json();
-  }).then(data=>{
+  fetchFirst(JSON_PATHS).then(data=>{
     ROOT.innerHTML='';
     const list = Array.isArray(data) ? data : (data.entries || []);
     if(list.length===0){
