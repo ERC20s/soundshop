@@ -1023,6 +1023,61 @@
               }
             })();
             </script>
+
+            <!-- ?item= deep link. The product pages link here as
+                 index.html?item=vanta#buy, so the buyer arrives in front of an
+                 undifferentiated list. This finds that one row with the same
+                 rule the card wiring uses (exact id/name first, partial only as
+                 a fallback), highlights it, says which item it is and focuses
+                 its Buy button. No auto-click, no checkout of its own and no
+                 URL rewriting: an unknown item, an empty list or a failed load
+                 simply leaves the page exactly as it is today. -->
+            <script>
+            (function () {
+              var m = /[?&]item=([^&#]*)/.exec(location.search);
+              var token = m ? String(decodeURIComponent(m[1].replace(/\+/g, " "))).trim().toLowerCase() : "";
+              var store = document.getElementById("group-store");
+              if (!token || !store) return;
+              var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
+              var find = function () {
+                var rows = store.querySelectorAll("a[data-item]");
+                if (!rows.length) return null;
+                var exact = null, part = null;
+                Array.prototype.forEach.call(rows, function (a) {
+                  var row = a.parentNode, b = row ? row.querySelector("b") : null;
+                  var id = norm(a.getAttribute("data-item")), name = norm(b && b.textContent);
+                  if (id === token || name === token) { if (!exact) exact = a; }
+                  else if (id.indexOf(token) > -1 || name.indexOf(token) > -1) { if (!part) part = a; }
+                });
+                return exact || part;
+              };
+              var mark = function (a) {
+                var row = a.parentNode || a, b = row.querySelector ? row.querySelector("b") : null;
+                row.style.background = "rgba(124,92,255,0.10)";       // inline, like the rows themselves
+                row.style.boxShadow = "inset 3px 0 0 #7c5cff";
+                row.style.borderRadius = "8px";
+                row.style.paddingLeft = "10px";
+                var p = document.createElement("p");
+                p.setAttribute("role", "status");
+                p.style.cssText = "font:13px system-ui,sans-serif;color:#9ca3af;margin:0 0 6px";
+                p.textContent = "Showing " + ((b && b.textContent.trim()) || token) + " — hit Buy below to check out.";
+                if (store.parentNode) { store.parentNode.insertBefore(p, store); }
+                var still = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+                try { still ? row.scrollIntoView() : row.scrollIntoView({ behavior: "smooth", block: "center" }); }
+                catch (err) { row.scrollIntoView(); }
+                try { a.focus({ preventScroll: true }); } catch (err) { a.focus(); }
+              };
+              var hit = find();
+              if (hit) { mark(hit); return; }
+              if (!window.MutationObserver) return;                   // rows arrive from the fetch
+              var obs = new MutationObserver(function () {
+                var h = find();
+                if (h) { obs.disconnect(); mark(h); }
+              });
+              obs.observe(store, { childList: true, subtree: true });
+              setTimeout(function () { obs.disconnect(); }, 15000);   // same cap as the wiring above
+            })();
+            </script>
           </div>
           <div class="panel__foot">
             <span class="label">Prices above are the list prices — the rows here are what is on sale</span>
