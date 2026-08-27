@@ -866,7 +866,9 @@
                  anchor so the delegated handler above does the checkout. If no row
                  matches, the button simply stays hidden. On click the button also
                  scrolls the buyer to the Buy section and shows its own busy state,
-                 mirroring the row until checkout opens or fails. -->
+                 mirroring the row until checkout opens or fails. On an exact match
+                 the card's own price is set to the store price with the markup
+                 price kept as "was …" — so the card and the button never disagree. -->
             <script>
             (function () {
               var store = document.getElementById("group-store");
@@ -906,6 +908,70 @@
                   var label = price ? "Buy " + priceEl.textContent.trim() : "Buy";
                   btn.textContent = label;
                   btn.hidden = false;
+
+                  // Keep the card's own price honest. The button label already
+                  // carries the store price, so a card reading "$149" beside a
+                  // button reading "Buy $129" contradicts itself. Only an exact
+                  // id/name match may touch the markup; a partial match, an empty
+                  // price, a failed load or a timeout leaves the list price alone.
+                  var syncPrice = function () {
+                    if (!exact || hit !== exact) return;
+                    var shown = priceEl ? priceEl.textContent.trim() : "";
+                    var box = btn.parentNode;
+                    if (!shown || !box) return;
+
+                    var card = box.querySelector(".card__price");
+                    if (card) {
+                      var list = card.getAttribute("data-list-price");
+                      if (list === null) {                       // remember the markup price once
+                        list = card.textContent.trim();
+                        card.setAttribute("data-list-price", list);
+                      }
+                      var was = box.querySelector(".card__was");
+                      if (norm(shown) === norm(list)) {          // same price — page stays as written
+                        card.textContent = list;
+                        if (was && was.parentNode) { was.parentNode.removeChild(was); }
+                        return;
+                      }
+                      card.textContent = shown;
+                      if (!was) {
+                        was = document.createElement("span");
+                        was.className = "card__was muted";
+                        was.style.fontSize = "var(--fs-small)";
+                        was.style.marginLeft = "0.4em";
+                        if (card.parentNode) { card.parentNode.insertBefore(was, card.nextSibling); }
+                      }
+                      was.textContent = "was " + list;
+                      return;
+                    }
+
+                    // The bundle button sits in a .cluster with no price element,
+                    // and the bundle maths table is not ours to rewrite: say it in
+                    // one small line above the buttons, and only when it differs.
+                    var bl = document.querySelector(".cat-bundle__price");
+                    var listed = bl ? bl.textContent.trim() : "";
+                    var host = box.parentNode;
+                    var line = host ? host.querySelector(".store-price-line") : null;
+                    if (listed && norm(shown) === norm(listed)) {
+                      if (line && line.parentNode) { line.parentNode.removeChild(line); }
+                      return;
+                    }
+                    if (!line && host) {
+                      line = document.createElement("p");
+                      line.className = "store-price-line label";
+                      line.style.textTransform = "none";
+                      line.style.letterSpacing = "0.02em";
+                      line.style.color = "var(--text-mute)";
+                      host.insertBefore(line, box);
+                    }
+                    if (line) {
+                      line.textContent = listed
+                        ? "Store price today: " + shown + " — " + listed + " above is the list price."
+                        : "Store price today: " + shown + ".";
+                    }
+                  };
+                  try { syncPrice(); } catch (err) { /* never block the Buy button over a price */ }
+
                   if (btn._storeRelease) { btn._storeRelease(); }
                   var idle = function () {
                     btn.textContent = label;
