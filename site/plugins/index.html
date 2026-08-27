@@ -320,6 +320,7 @@
             </ul>
             <div class="card__cta">
               <span class="card__price num">$149</span>
+              <button class="btn btn-primary btn--sm" type="button" data-store-item="vanta" hidden>Buy</button>
               <a class="btn btn-primary btn--sm push" href="flagship.html">Open VANTA</a>
               <a class="btn btn-ghost btn--sm" href="../demo/flagship-demo.html">Play it</a>
             </div>
@@ -372,6 +373,7 @@
             </ul>
             <div class="card__cta">
               <span class="card__price num">$79</span>
+              <button class="btn btn-primary btn--sm" type="button" data-store-item="drift" hidden>Buy</button>
               <a class="btn btn-primary btn--sm push" href="drift.html">Open DRIFT</a>
             </div>
           </div>
@@ -414,6 +416,7 @@
             </ul>
             <div class="card__cta">
               <span class="card__price num">$69</span>
+              <button class="btn btn-primary btn--sm" type="button" data-store-item="prism" hidden>Buy</button>
               <a class="btn btn-primary btn--sm push" href="prism.html">Open PRISM</a>
             </div>
           </div>
@@ -456,6 +459,7 @@
             </ul>
             <div class="card__cta">
               <span class="card__price num">$89</span>
+              <button class="btn btn-primary btn--sm" type="button" data-store-item="anvil" hidden>Buy</button>
               <a class="btn btn-primary btn--sm push" href="anvil.html">Open ANVIL</a>
             </div>
           </div>
@@ -640,6 +644,7 @@
           </div>
 
           <div class="cluster">
+            <button class="btn btn-primary btn--sm" type="button" data-store-item="bundle" hidden>Buy</button>
             <a class="btn btn-primary" href="#instruments">Back to the four</a>
             <a class="btn btn-ghost" href="../demo/flagship-demo.html">Play VANTA in the browser</a>
           </div>
@@ -699,6 +704,49 @@
                       .catch(function () { location.href = a.href; });
                   });
                 });
+            })();
+            </script>
+            <!-- Card wiring: point the hidden [data-store-item] buttons on this page at
+                 the rows the block above renders. Reads that markup only — no second
+                 fetch, no URL of its own; a click is forwarded to the row's own Buy
+                 anchor so the delegated handler above does the checkout. If no row
+                 matches, the button simply stays hidden. -->
+            <script>
+            (function () {
+              var store = document.getElementById("group-store");
+              var btns = document.querySelectorAll("[data-store-item]");
+              if (!store || !btns.length) return;
+              var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
+              var wire = function () {
+                var rows = store.querySelectorAll("a[data-item]");
+                if (!rows.length) return false;
+                var wired = 0;
+                Array.prototype.forEach.call(btns, function (btn) {
+                  var token = norm(btn.getAttribute("data-store-item"));
+                  if (!token) return;
+                  var exact = null, part = null;
+                  Array.prototype.forEach.call(rows, function (a) {
+                    var row = a.parentNode, b = row ? row.querySelector("b") : null;
+                    var id = norm(a.getAttribute("data-item")), name = norm(b && b.textContent);
+                    if (id === token || name === token) { if (!exact) exact = a; }
+                    else if (id.indexOf(token) > -1 || name.indexOf(token) > -1) { if (!part) part = a; }
+                  });
+                  var hit = exact || part;
+                  if (!hit) return;
+                  var priceEl = hit.parentNode ? hit.parentNode.querySelector("span") : null;
+                  var price = priceEl ? norm(priceEl.textContent) : "";
+                  btn.textContent = price ? "Buy " + priceEl.textContent.trim() : "Buy";
+                  btn.hidden = false;
+                  btn.onclick = function (e) { e.preventDefault(); hit.click(); };
+                  wired++;
+                });
+                return wired > 0;
+              };
+              if (!wire() && window.MutationObserver) {
+                var obs = new MutationObserver(function () { if (wire()) obs.disconnect(); });
+                obs.observe(store, { childList: true, subtree: true });
+                setTimeout(function () { obs.disconnect(); }, 15000);
+              }
             })();
             </script>
           </div>
