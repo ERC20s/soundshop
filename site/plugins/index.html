@@ -510,10 +510,12 @@
             </tr>
             <tr>
               <th scope="row">Price</th>
-              <td><span class="num">$149</span></td>
-              <td><span class="num">$79</span></td>
-              <td><span class="num">$69</span></td>
-              <td><span class="num">$89</span></td>
+              <!-- The tokens match the cards' [data-store-item]; the card wiring
+                   script below copies the live store price into these cells. -->
+              <td data-store-price="vanta"><span class="num">$149</span></td>
+              <td data-store-price="drift"><span class="num">$79</span></td>
+              <td data-store-price="prism"><span class="num">$69</span></td>
+              <td data-store-price="anvil"><span class="num">$89</span></td>
             </tr>
             <tr>
               <th scope="row">Formats</th>
@@ -988,7 +990,10 @@
                  scrolls the buyer to the Buy section and shows its own busy state,
                  mirroring the row until checkout opens or fails. On an exact match
                  the card's own price is set to the store price with the markup
-                 price kept as "was …" — so the card and the button never disagree.
+                 price kept as "was …" — so the card and the button never disagree,
+                 and the Compared table's [data-store-price] cell for that same
+                 plugin is written the same way, so the comparison one section
+                 down cannot quote a stale list price.
                  Before forwarding the click the row is stamped with this page's
                  token (data-page-item), so the return URL the row hands checkout
                  names the item in the words this page uses.
@@ -1007,6 +1012,40 @@
               if (!store || !btns.length) return;
               var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
               var BUSY = "Opening…";
+              // The Compared table quotes a price per plugin in hard-coded markup.
+              // Its [data-store-price] cells carry the same tokens as the cards, so
+              // the store price the card already shows is copied into the matching
+              // cell, with the markup price kept beside it as a muted "was …".
+              // Reads the rows already rendered above — no second fetch of its own.
+              var syncComparePrice = function (token, shown) {
+                if (!token || !shown) return;
+                var cells = document.querySelectorAll("[data-store-price]");
+                Array.prototype.forEach.call(cells, function (cell) {
+                  if (norm(cell.getAttribute("data-store-price")) !== token) return;
+                  var num = cell.querySelector(".num");
+                  if (!num) return;
+                  var list = cell.getAttribute("data-list-price");
+                  if (list === null) {                        // remember the markup price once
+                    list = num.textContent.trim();
+                    cell.setAttribute("data-list-price", list);
+                  }
+                  var was = cell.querySelector(".compare-was");
+                  if (norm(shown) === norm(list)) {           // same price — cell stays as written
+                    num.textContent = list;
+                    if (was && was.parentNode) { was.parentNode.removeChild(was); }
+                    return;
+                  }
+                  num.textContent = shown;
+                  if (!was) {
+                    was = document.createElement("span");
+                    was.className = "compare-was muted";
+                    was.style.fontSize = "var(--fs-small)";
+                    was.style.marginLeft = "0.4em";
+                    cell.appendChild(was);
+                  }
+                  was.textContent = "was " + list;
+                });
+              };
               // The rows live far below the fold, so a card click must take the
               // buyer to the Buy section — otherwise all the busy/failure text the
               // row shows happens off-screen. Smooth only when motion is welcome.
@@ -1055,6 +1094,10 @@
                     var shown = priceEl ? priceEl.textContent.trim() : "";
                     var box = btn.parentNode;
                     if (!shown || !box) return;
+
+                    // The Compared table follows the same exact-match rule, and does
+                    // nothing for a token it has no cell for (the bundle button).
+                    syncComparePrice(token, shown);
 
                     var card = box.querySelector(".card__price");
                     if (card) {
