@@ -669,9 +669,17 @@
       <!-- Return banner: the checkout below is handed a returnUrl built by returnTo(),
            which points back at this page with item= naming what was bought, so a
            buyer lands back here on a URL that says which item it was — whether they
-           came in on a deep link or just clicked a row. This reads only the return
-           keys off the query string and says what happened. Client-side hint, never
-           proof of payment.
+           came in on a deep link or just clicked a row.
+           The query string alone is only a hint and never proof of payment: the
+           sale is credited when the shop's webhook fires, so ?session_id=anything
+           used to paint a green "Payment received" for a session that never
+           completed. So the session id is now taken off the URL and posted to the
+           shop's confirm endpoint, and only an ok:true answer paints the green
+           banner, with whatever receipt fields the shop sends back. While that is
+           in flight the banner says "Checking your payment…"; a refusal, a
+           timeout or an unreachable shop says so instead of claiming a payment.
+           A return that carries paid/status keys but no session id cannot be
+           verified at all, so it gets neutral wording, not the confirmation.
            It also stands the ?item= deep link down after a successful payment: the
            buyer came in as ...?item=vanta#buy, so the URL they return on still
            carries item=vanta. Without the marker set here, the deep-link script
@@ -685,6 +693,8 @@
         var OK = ["1", "true", "yes", "ok", "success", "succeeded", "paid", "complete", "completed"];
         var NO = ["0", "false", "cancel", "cancelled", "canceled", "fail", "failed", "failure", "error"];
         var KEYS = ["paid", "checkout", "payment", "status", "redirect_status"];
+        var BASE = "https://d8a.com";                 // same shop as the store loader below
+        var CONFIRM = BASE + "/api/v1/store/confirm";
         var q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
         var good = false, bad = false, seen = false;
         for (var i = 0; i < KEYS.length; i++) {
@@ -695,13 +705,21 @@
           else if (NO.indexOf(v) > -1) { bad = true; }
           else { return; }
         }
-        if (!seen && q.has("session_id") && String(q.get("session_id") || "").trim()) { seen = true; good = true; }
+        // Captured before the history.replaceState scrub at the bottom of this
+        // script drops it from the address bar — the confirm call still needs it.
+        var sessionId = String(q.get("session_id") || "").trim();
+        if (!seen && sessionId) { seen = true; good = true; }
         if (!seen || (!good && !bad)) return;
 
-        // Tell the ?item= script below what happened, before it runs. "paid" means
-        // it must leave the page alone; "cancelled" keeps today's behaviour,
-        // because that buyer still wants the row they came for.
-        document.documentElement.setAttribute("data-buy-return", good ? "paid" : "cancelled");
+        // A good-looking return we can actually check with the shop.
+        var checking = good && !!sessionId;
+
+        // Tell the ?item= script below what happened, before it runs. "paid" and
+        // "checking" both mean it must leave the page alone — dragging focus to a
+        // Buy button while a payment is being verified is how a second checkout
+        // gets started by accident. "cancelled" keeps today's behaviour, because
+        // that buyer still wants the row they came for.
+        document.documentElement.setAttribute("data-buy-return", bad ? "cancelled" : (checking ? "checking" : "paid"));
 
         // Name the thing that was just bought, when the ?item= token matches one of
         // the hidden card buttons on this page. The bundle button lives in a
@@ -721,18 +739,114 @@
           }
         }
 
-        if (bad) {
+        var esc = function (s) {
+          return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+        };
+        // Anything the shop sends back is text, escaped and length-capped before
+        // it goes anywhere near innerHTML.
+        var cut = function (s, n) {
+          if (typeof s !== "string" && typeof s !== "number") return "";
+          var t = String(s).trim().replace(/\s+/g, " ");
+          if (!t) return "";
+          return t.length > n ? t.slice(0, n) + "…" : t;
+        };
+        var DOCS = '<p>Your licence file and installers go to the email address you used at checkout — see <a href="../docs.html">the docs</a> for installing and authorising.</p>';
+
+        var paintCancelled = function () {
           box.className = "note note--warn";
           box.innerHTML = '<p class="note__title">Nothing was charged</p>' +
             '<p>The checkout was cancelled, so no payment was taken. The rows below are still live — pick an item and hit Buy whenever you are ready.</p>';
-        } else {
+        };
+        var paintChecking = function () {
+          box.className = "note";
+          box.innerHTML = '<p class="note__title">Checking your payment…</p>' +
+            '<p>Confirming with the shop' + (itemName ? " for " + esc(itemName) : "") + '. This takes a moment — please do not start another checkout.</p>';
+        };
+        // Green only ever comes from here: the shop answered ok:true.
+        var paintPaid = function (payload) {
+          var r = (payload && typeof payload.receipt === "object" && payload.receipt) ? payload.receipt : (payload || {});
+          var name = cut(r.item || r.itemName || r.name || r.product || r.description || "", 80) || itemName;
+          var amount = cut(r.amount || r.total || r.price || r.amountFormatted || "", 40);
+          var email = cut(r.email || r.buyerEmail || r.customerEmail || r.receiptEmail || "", 120);
+          var lines = "";
+          if (amount) { lines += '<p>Charged: ' + esc(amount) + '</p>'; }
+          if (email) { lines += '<p>Receipt sent to ' + esc(email) + '</p>'; }
           box.className = "note note--good";
-          var esc = function (s) {
-            return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+          box.innerHTML = '<p class="note__title">Payment received' + (name ? " — " + esc(name) : "") + '</p>' +
+            '<p>Thank you — the shop has confirmed this payment.</p>' + lines + DOCS;
+        };
+        // The shop answered, but not with a confirmed payment.
+        var paintRefused = function (why) {
+          box.className = "note note--warn";
+          box.innerHTML = '<p class="note__title">Payment not confirmed</p>' +
+            '<p>The shop has no completed payment for this checkout' + (why ? ': ' + esc(why) : '') +
+            '. Nothing has been charged as far as the shop is concerned. If your card was debited, reply to the receipt email and we will sort it out.</p>';
+        };
+        // We could not ask, or got no usable answer: never claim either way.
+        var paintUnreachable = function () {
+          box.className = "note note--warn";
+          box.innerHTML = '<p class="note__title">Could not confirm your payment</p>' +
+            '<p>Your checkout finished, but the shop could not be reached to confirm it here. If the payment went through you will have an emailed receipt' +
+            (itemName ? " for " + esc(itemName) : "") + '; nothing on this page changes that. ' +
+            '<button type="button" data-confirm-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again</button></p>';
+          var again = box.querySelector("[data-confirm-retry]");
+          if (again) { again.addEventListener("click", function () { ask(); }); }
+        };
+        // A paid-looking return with no session id: nothing to verify against.
+        var paintUnverifiable = function () {
+          box.className = "note";
+          box.innerHTML = '<p class="note__title">Back from checkout</p>' +
+            '<p>This page cannot confirm the payment' + (itemName ? " for " + esc(itemName) : "") +
+            ' — the return carried no checkout reference. If it went through, the shop emails a receipt, and your licence file and installers follow to that address. See <a href="../docs.html">the docs</a> for installing and authorising.</p>';
+        };
+
+        // POST the captured session id to the shop and let its answer decide what
+        // the banner says. Same 12s AbortController timeout the store loader uses,
+        // so a stalled request can never leave the banner on "Checking…" for ever.
+        var ask = function () {
+          paintChecking();
+          if (!window.fetch) { paintUnreachable(); return; }
+          var done = false, timedOut = false;
+          var ctrl = window.AbortController ? new AbortController() : null;
+          var timer = setTimeout(function () {
+            if (done) return;
+            timedOut = true;
+            if (ctrl) { try { ctrl.abort(); } catch (err) { paintUnreachable(); } }  // rejects -> .catch below
+            else { paintUnreachable(); }                                             // no AbortController: draw it here
+          }, 12000);
+          var opts = {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: sessionId })
           };
-          box.innerHTML = '<p class="note__title">Payment received' + (itemName ? " — " + esc(itemName) : "") + '</p>' +
-            '<p>Thank you. Your licence file and installers go to the email address you used at checkout — see <a href="../docs.html">the docs</a> for installing and authorising.</p>';
-        }
+          if (ctrl) { opts.signal = ctrl.signal; }
+          fetch(CONFIRM, opts)
+            .then(function (res) {
+              if (timedOut) { return null; }        // late answer: the failure line stands
+              done = true;
+              clearTimeout(timer);
+              return res.json().then(
+                function (d) { return { httpOk: res.ok, data: d }; },
+                function () { return { httpOk: res.ok, data: null }; }   // not JSON
+              );
+            })
+            .then(function (out) {
+              if (timedOut || !out) { return; }
+              var p = (out.data && typeof out.data === "object") ? out.data : null;
+              if (p && p.ok === true) { paintPaid(p); return; }
+              if (p && (p.ok === false || p.error || p.message)) {
+                paintRefused(cut(p.error || p.message || "", 200));
+                return;
+              }
+              if (!out.httpOk) { paintUnreachable(); return; }
+              paintRefused("");
+            })
+            .catch(function () { paintUnreachable(); });
+        };
+
+        if (bad) { paintCancelled(); }
+        else if (checking) { ask(); }
+        else { paintUnverifiable(); }
         box.hidden = false;
         var sec = document.getElementById("buy");
         if (sec && sec.scrollIntoView) { sec.scrollIntoView(); }
@@ -1197,10 +1311,13 @@
                  After a successful payment it does nothing at all: the return
                  banner above sets data-buy-return="paid" on <html> before this
                  runs, and dragging a paid buyer back to a Buy button they have
-                 just used is how a second checkout gets started by accident. -->
+                 just used is how a second checkout gets started by accident.
+                 The same applies while that payment is still being verified with
+                 the shop ("checking"), when the answer is not in yet. -->
             <script>
             (function () {
-              if (document.documentElement.getAttribute("data-buy-return") === "paid") return;
+              var ret = document.documentElement.getAttribute("data-buy-return");
+              if (ret === "paid" || ret === "checking") return;
               var m = /[?&]item=([^&#]*)/.exec(location.search);
               var token = m ? String(decodeURIComponent(m[1].replace(/\+/g, " "))).trim().toLowerCase() : "";
               var store = document.getElementById("group-store");
