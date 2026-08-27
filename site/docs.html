@@ -204,6 +204,41 @@
                 who answer everything else — see <a href="#support">Support</a>. A cancelled checkout means no
                 money was taken and no product is owed; nothing was charged.</li>
             </ul>
+
+            <!-- What this browser remembers about the purchase.
+                 Ships hidden and stays hidden unless assets/js/plugin.js finds a
+                 purchase remembered in this browser under soundshop:bought:v1 —
+                 the same key the plugins page writes on a paid checkout return.
+                 The banner that carried the payment reference is gone as soon as
+                 the return keys leave the address bar, so without this the page
+                 above asks for a number the buyer can no longer see.
+
+                 Every product name and every sentence lives here, in markup:
+                 plugin.js holds no wording, prints with textContent only, and
+                 never writes, prunes or clears anything from the docs. With
+                 nothing remembered, storage blocked or the value corrupt, this
+                 block stays exactly as it shipped — hidden. -->
+            <div class="note note--good" hidden
+                 data-bought-summary
+                 data-bought-summary-date-prefix="bought on this device on "
+                 data-bought-summary-ref-prefix="Payment reference: "
+                 data-bought-summary-ref-suffix=" — quote this when you write to us."
+                 data-bought-summary-noref="No payment reference was stored with this one — the receipt email from the payment provider carries it.">
+              <p class="note__title">What this browser remembers about your purchase</p>
+              <p>This device was returned from a completed checkout for the following. It is a note kept in this
+                browser, not a record of your licence, so it disappears if you clear site data or switch machines
+                — but it is enough to answer the question above.</p>
+              <ul data-bought-summary-list></ul>
+              <p class="muted">A note in a browser is never proof of payment; the receipt from the payment provider
+                is. If a purchase you made is missing here, that only means this browser has forgotten it — the
+                receipt still stands, and <a href="#support">Support</a> can find the order from it.</p>
+              <span hidden data-bought-summary-labels
+                    data-bought-label-flagship="VANTA"
+                    data-bought-label-drift="DRIFT"
+                    data-bought-label-prism="PRISM"
+                    data-bought-label-anvil="ANVIL"
+                    data-bought-label-bundle="Full Shop bundle"></span>
+            </div>
           </div>
 
           <!-- ============================================ INSTALLATION -->
@@ -889,6 +924,10 @@
 </footer>
 
 <script src="assets/js/ui.js"></script>
+<!-- plugin.js acts only on data-* hooks. The only one this page carries is
+     [data-bought-summary] in "Nothing has arrived", so nothing else here
+     changes; with nothing remembered it does nothing at all. -->
+<script src="assets/js/plugin.js"></script>
 <script>
 /* docs.html — table-of-contents scrollspy. Page-local; does not touch ui.js. */
 (function () {
