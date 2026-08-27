@@ -22,6 +22,7 @@
      SSPlugin.initTabs(root)       ARIA tablist panels (spec sheets)
      SSPlugin.initCounters(root)   count-up for [data-count-to] figures
      SSPlugin.initBoughtNote(r)    unhide [data-bought-note] for a remembered buy
+     SSPlugin.initBoughtSummary(r) list every remembered buy into [data-bought-summary]
    ========================================================================= */
 
 (function (window, document) {
@@ -571,8 +572,21 @@
   var BOUGHT_KEY = 'soundshop:bought:v1';
   var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;   // 60 days, as on the plugins page
 
-  /** Everything this browser remembers buying, normalised and unexpired. */
-  function boughtItems() {
+  // A payment reference is quoted back to the buyer verbatim, so it is held to
+  // exactly the shape the plugins page accepted off the return URL before it
+  // ever reached storage. Anything else is treated as "no reference stored".
+  var BOUGHT_REF_RE = /^[A-Za-z0-9_-]{1,128}$/;
+  // A token is only ever printed when the page has no label for it, so it is
+  // held to the same shape the plugins page allows itself to write.
+  var BOUGHT_TOKEN_RE = /^[a-z0-9][a-z0-9 ._-]{0,63}$/;
+
+  /**
+   * Everything this browser remembers buying, normalised and unexpired, as
+   * token -> { t: <ms>, ref: '<payment reference>' | '' }. One parser for the
+   * whole file: initBoughtNote wants only the time, initBoughtSummary wants
+   * the reference too, and neither should re-read or re-validate the key.
+   */
+  function boughtRecords() {
     var out = {};
     var raw = null;
     try { raw = window.localStorage.getItem(BOUGHT_KEY); } catch (e) { return out; }
@@ -590,13 +604,27 @@
       // { t: <time>, ref: '<payment reference>' } as written by the plugins page
       // when the checkout return carried a reference. Reading only the number
       // here would make Number({...}) NaN and silently hide this note for every
-      // purchase made after that change. The reference itself is not shown on
-      // product pages yet; it is deliberately ignored rather than dropped.
+      // purchase made after that change.
       var rec = parsed[key];
-      var when = Number(rec && typeof rec === 'object' && !Array.isArray(rec) ? rec.t : rec);
+      var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
+      var when = Number(isObj ? rec.t : rec);
       if (!token || !isFinite(when) || when <= 0) continue;
       if ((now - when) > BOUGHT_MAX_AGE) continue;   // too old to speak for: ignore
-      out[token] = when;
+
+      var ref = isObj && typeof rec.ref === 'string' ? rec.ref.trim() : '';
+      if (!BOUGHT_REF_RE.test(ref)) ref = '';
+      out[token] = { t: when, ref: ref };
+    }
+    return out;
+  }
+
+  /** The same set, flattened to token -> timestamp for callers that want only that. */
+  function boughtItems() {
+    var recs = boughtRecords();
+    var out = {};
+    for (var token in recs) {
+      if (!Object.prototype.hasOwnProperty.call(recs, token)) continue;
+      out[token] = recs[token].t;
     }
     return out;
   }
@@ -653,7 +681,116 @@
   };
 
   /* =======================================================================
-     07  BOOT
+     07  BOUGHT SUMMARY  (docs.html, "Nothing has arrived")
+     A buyer whose product never arrived ends up in the docs, and until now the
+     docs could say nothing about the purchase they are troubleshooting: the
+     return banner on the plugins page is gone once the return keys leave the
+     address bar, and with it the payment reference the docs tell them to quote.
+
+     This reads the same soundshop:bought:v1 key back and fills a block the page
+     already ships, hidden:
+
+       <div class="note" hidden data-bought-summary
+            data-bought-summary-date-prefix="bought on this device on "
+            data-bought-summary-ref-prefix="Reference: "
+            data-bought-summary-ref-suffix=" — quote this when you contact us."
+            data-bought-summary-noref="No payment reference was stored...">
+         <ul data-bought-summary-list></ul>
+         <span hidden data-bought-summary-labels
+               data-bought-label-drift="DRIFT" ...></span>
+       </div>
+
+     Rules kept, the same ones the note above obeys:
+       - No product name, no wording and no URL in this file. Labels come from
+         [data-bought-summary-labels], every sentence fragment from a data-*
+         attribute on the host. A token with no label is printed only if it
+         matches the shape the plugins page allows itself to write.
+       - Strictly read-only: nothing is written, pruned or cleared from here, so
+         opening the docs can never disturb what the shop remembers.
+       - Written with textContent only, newest purchase first, capped.
+       - Nothing remembered, storage blocked or corrupt: the block stays hidden
+         and the page is exactly what shipped in the HTML.
+       - A note in a browser is never proof of payment, which is why the page's
+         wording says "on this device".
+     ======================================================================= */
+
+  var BOUGHT_SUMMARY_MAX = 12;
+
+  function boughtLabel(map, token) {
+    var label = map ? attr(map, 'data-bought-label-' + token) : '';
+    if (label) return label;
+    return BOUGHT_TOKEN_RE.test(token) ? token : '';
+  }
+
+  function boughtSummaryRow(host, map, entry) {
+    var label = boughtLabel(map, entry.token);
+    if (!label) return null;                         // unlabelled and unprintable: skip
+
+    var row = el('li', 'bought-summary__item');
+    row.appendChild(el('strong', null, label));
+
+    var dated = boughtDate(entry.t);
+    if (dated) {
+      row.appendChild(
+        document.createTextNode(' — ' + attr(host, 'data-bought-summary-date-prefix') + dated + '.')
+      );
+    }
+
+    if (entry.ref) {
+      var refLine = el('span', 'bought-summary__ref');
+      refLine.appendChild(document.createTextNode(' ' + attr(host, 'data-bought-summary-ref-prefix')));
+      refLine.appendChild(el('code', null, entry.ref));
+      refLine.appendChild(document.createTextNode(attr(host, 'data-bought-summary-ref-suffix')));
+      row.appendChild(refLine);
+    } else {
+      var noRef = attr(host, 'data-bought-summary-noref');
+      if (noRef) row.appendChild(el('span', 'bought-summary__ref muted', ' ' + noRef));
+    }
+
+    return row;
+  }
+
+  P.initBoughtSummary = function (root) {
+    var hosts = $$('[data-bought-summary]', root || document);
+    if (!hosts.length) return;                       // every page but the docs: untouched
+
+    var recs = boughtRecords();
+    var entries = [];
+    for (var token in recs) {
+      if (!Object.prototype.hasOwnProperty.call(recs, token)) continue;
+      entries.push({ token: token, t: recs[token].t, ref: recs[token].ref });
+    }
+    if (!entries.length) return;                     // nothing remembered, nothing to say
+
+    entries.sort(function (a, b) { return b.t - a.t; });   // newest purchase first
+    entries = entries.slice(0, BOUGHT_SUMMARY_MAX);
+
+    hosts.forEach(function (host) {
+      if (bound(host, 'boughtsummary')) return;
+
+      var list = $('[data-bought-summary-list]', host);
+      if (!list) return;
+      var map = $('[data-bought-summary-labels]', host);
+
+      var frag = document.createDocumentFragment();
+      var rows = 0;
+      entries.forEach(function (entry) {
+        var row = null;
+        try { row = boughtSummaryRow(host, map, entry); } catch (e) { row = null; }
+        if (row) { frag.appendChild(row); rows++; }
+      });
+      if (!rows) return;                             // nothing printable: stay hidden
+
+      while (list.firstChild) list.removeChild(list.firstChild);
+      list.appendChild(frag);
+
+      host.setAttribute('data-bought-summary-state', 'ready');
+      host.hidden = false;
+    });
+  };
+
+  /* =======================================================================
+     08  BOOT
      ======================================================================= */
 
   P.init = function (root) {
@@ -663,6 +800,7 @@
     try { P.initTabs(root); } catch (e) { /* never block the page */ }
     try { P.initCounters(root); } catch (e) { /* never block the page */ }
     try { P.initBoughtNote(root); } catch (e) { /* never block the page */ }
+    try { P.initBoughtSummary(root); } catch (e) { /* never block the page */ }
   };
 
   function ready(fn) {
