@@ -668,7 +668,12 @@
 
       <!-- Return banner: the checkout above is handed returnUrl: location.href, so a
            buyer lands back here. This reads only the return keys off the query string
-           and says what happened. Client-side hint, never proof of payment. -->
+           and says what happened. Client-side hint, never proof of payment.
+           It also stands the ?item= deep link down after a successful payment: the
+           buyer came in as ...?item=vanta#buy, so the URL they return on still
+           carries item=vanta. Without the marker set here, the deep-link script
+           further down would drag the just-paid buyer away from this banner and
+           park keyboard focus on Buy for the plugin they have already bought. -->
       <div id="buy-return" class="note" hidden role="status" aria-live="polite"></div>
       <script>
       (function () {
@@ -689,13 +694,40 @@
         }
         if (!seen && q.has("session_id") && String(q.get("session_id") || "").trim()) { seen = true; good = true; }
         if (!seen || (!good && !bad)) return;
+
+        // Tell the ?item= script below what happened, before it runs. "paid" means
+        // it must leave the page alone; "cancelled" keeps today's behaviour,
+        // because that buyer still wants the row they came for.
+        document.documentElement.setAttribute("data-buy-return", good ? "paid" : "cancelled");
+
+        // Name the thing that was just bought, when the ?item= token matches one of
+        // the hidden card buttons on this page. The bundle button lives in a
+        // .cluster with no .card__title, so it simply keeps the plain wording.
+        var itemName = "";
+        if (good) {
+          var token = String(q.get("item") || "").trim().toLowerCase();
+          if (token) {
+            var btns = document.querySelectorAll("[data-store-item]");
+            for (var j = 0; j < btns.length; j++) {
+              if (String(btns[j].getAttribute("data-store-item") || "").trim().toLowerCase() !== token) continue;
+              var body = btns[j].closest ? btns[j].closest(".card__body") : null;
+              var title = body ? body.querySelector(".card__title") : null;
+              if (title && title.textContent.trim()) { itemName = title.textContent.trim(); }
+              break;
+            }
+          }
+        }
+
         if (bad) {
           box.className = "note note--warn";
           box.innerHTML = '<p class="note__title">Nothing was charged</p>' +
             '<p>The checkout was cancelled, so no payment was taken. The rows below are still live — pick an item and hit Buy whenever you are ready.</p>';
         } else {
           box.className = "note note--good";
-          box.innerHTML = '<p class="note__title">Payment received</p>' +
+          var esc = function (s) {
+            return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+          };
+          box.innerHTML = '<p class="note__title">Payment received' + (itemName ? " — " + esc(itemName) : "") + '</p>' +
             '<p>Thank you. Your licence file and installers go to the email address you used at checkout — see <a href="../docs.html">the docs</a> for installing and authorising.</p>';
         }
         box.hidden = false;
@@ -704,6 +736,9 @@
         if (history.replaceState) {
           KEYS.forEach(function (k) { q.delete(k); });
           q.delete("session_id");
+          // On a paid return the deep link has done its job: drop it so a refresh
+          // cannot re-trigger the highlight, scroll and focus on a bought item.
+          if (good) { q.delete("item"); }
           var rest = q.toString();
           history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
         }
@@ -1031,9 +1066,14 @@
                  a fallback), highlights it, says which item it is and focuses
                  its Buy button. No auto-click, no checkout of its own and no
                  URL rewriting: an unknown item, an empty list or a failed load
-                 simply leaves the page exactly as it is today. -->
+                 simply leaves the page exactly as it is today.
+                 After a successful payment it does nothing at all: the return
+                 banner above sets data-buy-return="paid" on <html> before this
+                 runs, and dragging a paid buyer back to a Buy button they have
+                 just used is how a second checkout gets started by accident. -->
             <script>
             (function () {
+              if (document.documentElement.getAttribute("data-buy-return") === "paid") return;
               var m = /[?&]item=([^&#]*)/.exec(location.search);
               var token = m ? String(decodeURIComponent(m[1].replace(/\+/g, " "))).trim().toLowerCase() : "";
               var store = document.getElementById("group-store");
