@@ -736,6 +736,29 @@
           }
         }
 
+        // The shop's own identifier for this payment, if it sent one back on the
+        // return URL. A buyer whose receipt email is slow or missing otherwise has
+        // no number to quote at us. The first key carrying a value wins; it is
+        // shown only when it looks like an identifier (1-128 characters of
+        // A-Z a-z 0-9 _ -) and it still goes through esc() on the way out, so a
+        // hostile value renders nothing rather than markup. This is a record of
+        // the trip through checkout, never proof that money moved.
+        var esc = function (s) {
+          return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+        };
+        var REF_KEYS = ["session_id", "order", "order_id", "payment_intent", "reference", "ref", "transaction_id", "checkout_id"];
+        var ref = "";
+        for (var r = 0; r < REF_KEYS.length; r++) {
+          var rv = String(q.get(REF_KEYS[r]) || "").trim();
+          if (rv) { ref = rv; break; }
+        }
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(ref)) { ref = ""; }
+        // Nothing is added when no reference came back, so there is no empty row.
+        var refLine = ref
+          ? '<p>Reference: <code style="font:12px ui-monospace,SFMono-Regular,Menlo,monospace">' + esc(ref) +
+            '</code> — quote this if you contact us.</p>'
+          : "";
+
         if (bad) {
           box.className = "note note--warn";
           box.innerHTML = '<p class="note__title">Nothing was charged</p>' +
@@ -745,21 +768,23 @@
           // this page can tell whether the money arrived.
           box.className = "note";
           box.innerHTML = '<p class="note__title">Payment still being confirmed</p>' +
-            '<p>You are back from checkout, but the shop is still finishing this payment — some methods, such as bank transfer, settle later. Nothing more is needed from you here. The receipt emailed to the address you used at checkout is the record of what happened; once it clears, your licence file and installers follow to the same address — see <a href="../docs.html">the docs</a> for installing and authorising. Do not pay again for this item.</p>';
+            '<p>You are back from checkout, but the shop is still finishing this payment — some methods, such as bank transfer, settle later. Nothing more is needed from you here. The receipt emailed to the address you used at checkout is the record of what happened; once it clears, your licence file and installers follow to the same address — see <a href="../docs.html">the docs</a> for installing and authorising. Do not pay again for this item.</p>' +
+            refLine;
         } else {
           box.className = "note note--good";
-          var esc = function (s) {
-            return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
-          };
           box.innerHTML = '<p class="note__title">Payment received' + (itemName ? " — " + esc(itemName) : "") + '</p>' +
-            '<p>Thank you. Your licence file and installers go to the email address you used at checkout — see <a href="../docs.html">the docs</a> for installing and authorising.</p>';
+            '<p>Thank you. Your licence file and installers go to the email address you used at checkout — see <a href="../docs.html">the docs</a> for installing and authorising.</p>' +
+            refLine;
         }
         box.hidden = false;
         var sec = document.getElementById("buy");
         if (sec && sec.scrollIntoView) { sec.scrollIntoView(); }
         if (history.replaceState) {
           KEYS.forEach(function (k) { q.delete(k); });
-          q.delete("session_id");
+          // Every reference key goes, not just session_id: a leftover order_id in
+          // the address bar would replay this banner on a refresh and could later
+          // be shown as the reference for a different payment.
+          REF_KEYS.forEach(function (k) { q.delete(k); });
           // On a paid or pending return the deep link has done its job: drop it
           // so a refresh cannot re-trigger the highlight, scroll and focus on an
           // item that is already bought or already being paid for.
@@ -797,7 +822,11 @@
               // re-used URL cannot answer for this trip), item is set to the
               // token being bought, and the #buy hash is kept so the buyer
               // lands on the section, not the top of the page.
-              var RETURN_KEYS = ["paid", "checkout", "payment", "status", "redirect_status", "session_id"];
+              // The banner's outcome keys plus every reference key it can display:
+              // a buyer who came back on ?paid=1&order_id=A and then buys again
+              // must not be handed A as the reference for the new payment.
+              var RETURN_KEYS = ["paid", "checkout", "payment", "status", "redirect_status",
+                "session_id", "order", "order_id", "payment_intent", "reference", "ref", "transaction_id", "checkout_id"];
               var returnTo = function (token) {
                 try {
                   var u = new URL(location.href);
