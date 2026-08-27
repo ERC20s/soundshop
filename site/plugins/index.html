@@ -682,7 +682,10 @@
            buyer came in as ...?item=vanta#buy, so the URL they return on still
            carries item=vanta. Without the marker set here, the deep-link script
            further down would drag the just-paid buyer away from this banner and
-           park keyboard focus on Buy for the plugin they have already bought. -->
+           park keyboard focus on Buy for the plugin they have already bought.
+           Before dropping item= it keeps the token on <html> as data-buy-item,
+           so the "just bought" script further down can mark that one row and
+           card button instead of leaving a plain Buy under a green banner. -->
       <div id="buy-return" class="note" hidden role="status" aria-live="polite"></div>
       <script>
       (function () {
@@ -720,21 +723,29 @@
         // today's behaviour, because that buyer still wants the row they came for.
         document.documentElement.setAttribute("data-buy-return", bad ? "cancelled" : (pend ? "pending" : "paid"));
 
+        // Which item this return is about. It is read once here, for paid and
+        // pending alike, and stashed on <html> as data-buy-item — the copy in
+        // the address bar is deleted a few lines below, and the "you just paid
+        // for this" marking further down needs to know which row and which card
+        // button the buyer has already paid on. A cancelled return sets nothing:
+        // that buyer has not paid, and their row must stay a plain Buy.
+        var token = String(q.get("item") || "").trim().toLowerCase();
+        if (token && (good || pend)) {
+          document.documentElement.setAttribute("data-buy-item", token);
+        }
+
         // Name the thing that was just bought, when the ?item= token matches one of
         // the hidden card buttons on this page. The bundle button lives in a
         // .cluster with no .card__title, so it simply keeps the plain wording.
         var itemName = "";
-        if (good) {
-          var token = String(q.get("item") || "").trim().toLowerCase();
-          if (token) {
-            var btns = document.querySelectorAll("[data-store-item]");
-            for (var j = 0; j < btns.length; j++) {
-              if (String(btns[j].getAttribute("data-store-item") || "").trim().toLowerCase() !== token) continue;
-              var body = btns[j].closest ? btns[j].closest(".card__body") : null;
-              var title = body ? body.querySelector(".card__title") : null;
-              if (title && title.textContent.trim()) { itemName = title.textContent.trim(); }
-              break;
-            }
+        if (good && token) {
+          var btns = document.querySelectorAll("[data-store-item]");
+          for (var j = 0; j < btns.length; j++) {
+            if (String(btns[j].getAttribute("data-store-item") || "").trim().toLowerCase() !== token) continue;
+            var body = btns[j].closest ? btns[j].closest(".card__body") : null;
+            var title = body ? body.querySelector(".card__title") : null;
+            if (title && title.textContent.trim()) { itemName = title.textContent.trim(); }
+            break;
           }
         }
 
@@ -1437,6 +1448,100 @@
                 obs.disconnect();
                 check(true);
               }, 15000);
+            })();
+            </script>
+
+            <!-- Just bought. Directly under a green "Payment received — DRIFT"
+                 banner sits the very same live row the shop rendered, with its
+                 Buy anchor and its wired card button both reading "Buy $79" —
+                 so a second click is a second charge. The banner above stashes
+                 the item on <html> as data-buy-item (paid and pending alike,
+                 before it strips item= from the URL); this marks that one row
+                 and that one card button.
+                 Exact match only, on the row's data-item id or its <b> name:
+                 marking the wrong row would be worse than marking none. Nothing
+                 is disabled and nothing is hidden — a buyer who means to buy a
+                 second licence still can — the row's anchor simply reads "Buy
+                 again" and one muted line, set with textContent, says what has
+                 already happened. Rows arrive from the fetch above, so this
+                 reuses the same MutationObserver-with-a-15s-cap pattern; if the
+                 shop never answers there is no row and nothing is said. The
+                 marking lasts for this page load only: the URL token is gone,
+                 so a reload shows the ordinary page again. -->
+            <script>
+            (function () {
+              var ret = document.documentElement.getAttribute("data-buy-return");
+              if (ret !== "paid" && ret !== "pending") return;        // cancelled: nothing was charged
+              var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
+              var token = norm(document.documentElement.getAttribute("data-buy-item"));
+              var store = document.getElementById("group-store");
+              if (!token || !store) return;                           // no item named: say nothing
+              var NOTE = "You just paid for this — your licence goes to the email you used. Only buy again if you mean to.";
+              // One muted line, text and nothing else. The class is its own, not
+              // .store-missing-line, so the card wiring's "a late row wins" clean
+              // up cannot delete it.
+              var line = function (gap) {
+                var p = document.createElement("p");
+                p.className = "store-bought-line muted";
+                p.setAttribute("role", "status");
+                p.style.font = "13px system-ui,sans-serif";
+                p.style.color = "#9ca3af";
+                p.style.margin = gap || "0";
+                p.style.flexBasis = "100%";                           // .card__cta / .cluster are flex-wrap rows
+                p.textContent = NOTE;                                 // never innerHTML
+                return p;
+              };
+              var rowDone = false, cardDone = false;
+              // The row the shop rendered: relabel its Buy anchor and put the
+              // line under it. "Buy" only — a row mid-checkout reading "Opening…"
+              // is left exactly as it is.
+              var markRow = function () {
+                if (rowDone) return true;
+                var rows = store.querySelectorAll("a[data-item]");
+                if (!rows.length) return false;
+                var hit = null;
+                Array.prototype.forEach.call(rows, function (a) {
+                  if (hit) return;
+                  var row = a.parentNode, b = row ? row.querySelector("b") : null;
+                  if (norm(a.getAttribute("data-item")) === token || norm(b && b.textContent) === token) { hit = a; }
+                });
+                if (!hit) return false;
+                rowDone = true;
+                if (norm(hit.textContent) === "buy") { hit.textContent = "Buy again"; }
+                var row = hit.parentNode;
+                if (row && row.parentNode && !row.parentNode.querySelector(".store-bought-line")) {
+                  row.parentNode.insertBefore(line("0 0 10px"), row.nextSibling);
+                }
+                return true;
+              };
+              // The hidden card button for the same token, once it is wired: the
+              // same line in its .card__cta, so a buyer who scrolled back up to
+              // the cards reads it there too.
+              var markCard = function () {
+                if (cardDone) return true;
+                var btns = document.querySelectorAll("[data-store-item]");
+                for (var i = 0; i < btns.length; i++) {
+                  if (norm(btns[i].getAttribute("data-store-item")) !== token) continue;
+                  cardDone = true;
+                  var box = btns[i].parentNode;
+                  if (box && !box.querySelector(".store-bought-line")) { box.insertBefore(line("0"), btns[i]); }
+                  return true;
+                }
+                return true;                                          // no card carries this token
+              };
+              // One pass: the card is only marked once the shop has actually
+              // listed the row, so nothing on a card claims a purchase the
+              // store block never confirmed listing.
+              var pass = function () {
+                if (!markRow()) return false;
+                markCard();
+                return true;
+              };
+              if (pass()) return;
+              if (!window.MutationObserver) return;                   // rows arrive from the fetch
+              var obs = new MutationObserver(function () { if (pass()) obs.disconnect(); });
+              obs.observe(store, { childList: true, subtree: true });
+              setTimeout(function () { obs.disconnect(); }, 15000);   // same cap as the scripts above
             })();
             </script>
           </div>
