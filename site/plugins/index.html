@@ -666,6 +666,50 @@
           the card page opens; you come back here when it is done.</p>
       </div>
 
+      <!-- Return banner: the checkout above is handed returnUrl: location.href, so a
+           buyer lands back here. This reads only the return keys off the query string
+           and says what happened. Client-side hint, never proof of payment. -->
+      <div id="buy-return" class="note" hidden role="status" aria-live="polite"></div>
+      <script>
+      (function () {
+        var box = document.getElementById("buy-return");
+        if (!box) return;
+        var OK = ["1", "true", "yes", "ok", "success", "succeeded", "paid", "complete", "completed"];
+        var NO = ["0", "false", "cancel", "cancelled", "canceled", "fail", "failed", "failure", "error"];
+        var KEYS = ["paid", "checkout", "payment", "status", "redirect_status"];
+        var q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+        var good = false, bad = false, seen = false;
+        for (var i = 0; i < KEYS.length; i++) {
+          if (!q.has(KEYS[i])) continue;
+          seen = true;
+          var v = String(q.get(KEYS[i]) || "").trim().toLowerCase();
+          if (OK.indexOf(v) > -1) { good = true; }
+          else if (NO.indexOf(v) > -1) { bad = true; }
+          else { return; }
+        }
+        if (!seen && q.has("session_id") && String(q.get("session_id") || "").trim()) { seen = true; good = true; }
+        if (!seen || (!good && !bad)) return;
+        if (bad) {
+          box.className = "note note--warn";
+          box.innerHTML = '<p class="note__title">Nothing was charged</p>' +
+            '<p>The checkout was cancelled, so no payment was taken. The rows below are still live — pick an item and hit Buy whenever you are ready.</p>';
+        } else {
+          box.className = "note note--good";
+          box.innerHTML = '<p class="note__title">Payment received</p>' +
+            '<p>Thank you. Your licence file and installers go to the email address you used at checkout — see <a href="../docs.html">the docs</a> for installing and authorising.</p>';
+        }
+        box.hidden = false;
+        var sec = document.getElementById("buy");
+        if (sec && sec.scrollIntoView) { sec.scrollIntoView(); }
+        if (history.replaceState) {
+          KEYS.forEach(function (k) { q.delete(k); });
+          q.delete("session_id");
+          var rest = q.toString();
+          history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
+        }
+      })();
+      </script>
+
       <div class="split" data-reveal>
         <div class="panel">
           <div class="panel__head"><h3>On sale now</h3></div>
