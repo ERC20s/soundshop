@@ -678,6 +678,10 @@
            none of the two lists, including pending, processing and any wording the
            gateway invents — a neutral "still being confirmed" note. Cancelled beats
            pending beats paid, so a mixed return never goes green.
+           Whatever the outcome, the banner names the item when the return URL
+           carried one: the name is read off that item's card title, and the
+           bundle — whose Buy button has no card title beside it — is named
+           "The Full Shop bundle" in the script itself.
            It also stands the ?item= deep link down after a successful payment: the
            buyer came in as ...?item=vanta#buy, so the URL they return on still
            carries item=vanta. Without the marker set here, the deep-link script
@@ -734,11 +738,18 @@
           document.documentElement.setAttribute("data-buy-item", token);
         }
 
-        // Name the thing that was just bought, when the ?item= token matches one of
-        // the hidden card buttons on this page. The bundle button lives in a
-        // .cluster with no .card__title, so it simply keeps the plain wording.
+        // Name the item this return is about — on every outcome, not just the
+        // green one. This lookup used to sit inside the paid branch, so a
+        // cancelled return read "Nothing was charged" without ever saying what
+        // was not charged, and a still-settling one was just as vague.
+        // "bundle" is named in words here: that button sits in a .cluster with
+        // no .card__title of its own, so there is nothing on the page to copy.
+        // Every other token matches one of the hidden card buttons and takes
+        // its card's .card__title, so renaming a card renames the banner too.
         var itemName = "";
-        if (good && token) {
+        if (token === "bundle") {
+          itemName = "The Full Shop bundle";
+        } else if (token) {
           var btns = document.querySelectorAll("[data-store-item]");
           for (var j = 0; j < btns.length; j++) {
             if (String(btns[j].getAttribute("data-store-item") || "").trim().toLowerCase() !== token) continue;
@@ -772,20 +783,27 @@
             '</code> — quote this if you contact us.</p>'
           : "";
 
+        // One escaped fragment, built once and appended to whichever title is
+        // drawn below, so "Nothing was charged — DRIFT" and "Payment received —
+        // DRIFT" cannot drift apart. Empty when the return named no item, which
+        // leaves the old wording exactly as it was.
+        var namePart = itemName ? " — " + esc(itemName) : "";
+        var itemPhrase = itemName ? esc(itemName) : "this item";
+
         if (bad) {
           box.className = "note note--warn";
-          box.innerHTML = '<p class="note__title">Nothing was charged</p>' +
+          box.innerHTML = '<p class="note__title">Nothing was charged' + namePart + '</p>' +
             '<p>The checkout was cancelled, so no payment was taken. The rows below are still live — pick an item and hit Buy whenever you are ready.</p>';
         } else if (pend) {
           // Neutral by design: no licence is promised here, because nothing on
           // this page can tell whether the money arrived.
           box.className = "note";
-          box.innerHTML = '<p class="note__title">Payment still being confirmed</p>' +
-            '<p>You are back from checkout, but the shop is still finishing this payment — some methods, such as bank transfer, settle later. Nothing more is needed from you here. The receipt emailed to the address you used at checkout is the record of what happened; once it clears, your licence file and installers follow to the same address — see <a href="../docs.html">the docs</a> for installing and authorising. Do not pay again for this item.</p>' +
+          box.innerHTML = '<p class="note__title">Payment still being confirmed' + namePart + '</p>' +
+            '<p>You are back from checkout, but the shop is still finishing this payment — some methods, such as bank transfer, settle later. Nothing more is needed from you here. The receipt emailed to the address you used at checkout is the record of what happened; once it clears, your licence file and installers follow to the same address — see <a href="../docs.html">the docs</a> for installing and authorising. Do not pay again for ' + itemPhrase + '.</p>' +
             refLine;
         } else {
           box.className = "note note--good";
-          box.innerHTML = '<p class="note__title">Payment received' + (itemName ? " — " + esc(itemName) : "") + '</p>' +
+          box.innerHTML = '<p class="note__title">Payment received' + namePart + '</p>' +
             '<p>Thank you. Your licence file and installers go to the email address you used at checkout — see <a href="../docs.html">the docs</a> for installing and authorising.</p>' +
             refLine;
         }
