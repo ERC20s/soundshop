@@ -836,13 +836,27 @@
                  the rows the block above renders. Reads that markup only — no second
                  fetch, no URL of its own; a click is forwarded to the row's own Buy
                  anchor so the delegated handler above does the checkout. If no row
-                 matches, the button simply stays hidden. -->
+                 matches, the button simply stays hidden. On click the button also
+                 scrolls the buyer to the Buy section and shows its own busy state,
+                 mirroring the row until checkout opens or fails. -->
             <script>
             (function () {
               var store = document.getElementById("group-store");
               var btns = document.querySelectorAll("[data-store-item]");
               if (!store || !btns.length) return;
               var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
+              var BUSY = "Opening…";
+              // The rows live far below the fold, so a card click must take the
+              // buyer to the Buy section — otherwise all the busy/failure text the
+              // row shows happens off-screen. Smooth only when motion is welcome.
+              var goToBuy = function () {
+                var sec = document.getElementById("buy");
+                if (!sec || !sec.scrollIntoView) return;
+                var still = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+                if (still) { sec.scrollIntoView(); return; }
+                try { sec.scrollIntoView({ behavior: "smooth", block: "start" }); }
+                catch (err) { sec.scrollIntoView(); }
+              };
               var wire = function () {
                 var rows = store.querySelectorAll("a[data-item]");
                 if (!rows.length) return false;
@@ -861,9 +875,49 @@
                   if (!hit) return;
                   var priceEl = hit.parentNode ? hit.parentNode.querySelector("span") : null;
                   var price = priceEl ? norm(priceEl.textContent) : "";
-                  btn.textContent = price ? "Buy " + priceEl.textContent.trim() : "Buy";
+                  var label = price ? "Buy " + priceEl.textContent.trim() : "Buy";
+                  btn.textContent = label;
                   btn.hidden = false;
-                  btn.onclick = function (e) { e.preventDefault(); hit.click(); };
+                  if (btn._storeRelease) { btn._storeRelease(); }
+                  var idle = function () {
+                    btn.textContent = label;
+                    btn.disabled = false;
+                    btn.removeAttribute("aria-busy");
+                  };
+                  idle();
+                  btn.onclick = function (e) {
+                    e.preventDefault();
+                    if (btn.disabled || btn.getAttribute("aria-busy") === "true") return;  // one checkout at a time
+                    goToBuy();
+                    btn.textContent = BUSY;
+                    btn.disabled = true;
+                    btn.setAttribute("aria-busy", "true");
+
+                    // Mirror the row back onto the card button: the row's own
+                    // handler owns the checkout, so the button is done as soon as
+                    // the row stops saying "Opening…" (success navigates away).
+                    var obs = null, timer = null;
+                    var done = function () {
+                      if (obs) { obs.disconnect(); obs = null; }
+                      if (timer) { clearTimeout(timer); timer = null; }
+                      btn._storeRelease = null;
+                      idle();
+                    };
+                    btn._storeRelease = done;
+                    timer = setTimeout(done, 16000);            // the button can never stick
+                    if (window.MutationObserver) {
+                      obs = new MutationObserver(function () {
+                        if (norm(hit.textContent) !== norm(BUSY)) { done(); }
+                      });
+                      obs.observe(hit, { childList: true, characterData: true, subtree: true });
+                    }
+                    hit.click();
+                    // Nothing started (a checkout was already in flight, or the row
+                    // just followed its pay link): release instead of hanging.
+                    setTimeout(function () {
+                      if (btn._storeRelease === done && norm(hit.textContent) !== norm(BUSY)) { done(); }
+                    }, 0);
+                  };
                   wired++;
                 });
                 return wired > 0;
