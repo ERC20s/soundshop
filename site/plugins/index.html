@@ -117,6 +117,50 @@
   .subnav a:hover { color: var(--text); }
   .subnav a.is-active { color: var(--accent-text); }
   .subnav a.is-active::after { transform: scaleX(1); }
+
+  /* Page-local: the group's store block (pasted from .d8a payments:).
+     The block ships with its own inline styles for a light page; these rules
+     pull its rows, price and Buy pill onto this page's type and palette.
+     Structure is untouched — only presentation is overridden here. */
+  #group-store { min-height: 2.5rem; }
+  #group-store > div {
+    font-family: var(--font-sans) !important;
+    font-size: var(--fs-small) !important;
+    border-top-color: var(--line-soft) !important;
+    padding-block: var(--sp-3) !important;
+    color: var(--text-dim);
+  }
+  #group-store > div:first-child { border-top: 0 !important; }
+  #group-store b { color: var(--text); font-weight: 500; }
+  #group-store > div > div > div {
+    color: var(--text-mute) !important;
+    font-size: var(--fs-label) !important;
+    line-height: 1.6;
+  }
+  #group-store > div > span {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  #group-store a[data-item] {
+    background: var(--accent) !important;
+    color: var(--bg) !important;
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: var(--sp-2) var(--sp-4) !important;
+    transition: filter var(--dur-2) var(--ease-mech);
+  }
+  #group-store a[data-item]:hover { filter: brightness(1.1); }
+  #group-store > p {
+    margin-block-start: var(--sp-3);
+    font-family: var(--font-sans) !important;
+    font-size: var(--fs-label) !important;
+    color: var(--text-mute) !important;
+  }
+  #group-store > p a { color: var(--accent-text) !important; }
 </style>
 </head>
 <body>
@@ -208,6 +252,7 @@
       <a href="#instruments">The four</a>
       <a href="#compare">Compared</a>
       <a href="#whats-in">The bundle</a>
+      <a href="#buy">Buy</a>
       <a href="#faq">Buying FAQ</a>
     </div>
   </nav>
@@ -566,7 +611,7 @@
             </div>
           </div>
           <div class="panel__foot">
-            <span class="label">Illustrative pricing — this site has no checkout</span>
+            <span class="label">List prices — checkout is in <a href="#buy">Buy</a></span>
           </div>
         </div>
 
@@ -597,6 +642,95 @@
           <div class="cluster">
             <a class="btn btn-primary" href="#instruments">Back to the four</a>
             <a class="btn btn-ghost" href="../demo/flagship-demo.html">Play VANTA in the browser</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================
+       BUY — the group's store, pasted from the payments: block in /.d8a.
+       Items and prices are set on the group's Admin tab, never in this file.
+       =================================================================== -->
+  <section class="section" id="buy">
+    <div class="wrap">
+      <div class="sec-head" data-reveal>
+        <span class="sec-head__eyebrow">Buy</span>
+        <h2 class="sec-head__title">Checkout, on this page</h2>
+        <p class="sec-head__sub">What is actually on sale right now, straight from the shop. Pick an item, hit Buy, and
+          the card page opens; you come back here when it is done.</p>
+      </div>
+
+      <div class="split" data-reveal>
+        <div class="panel">
+          <div class="panel__head"><h3>On sale now</h3></div>
+          <div class="panel__body">
+            <!-- Sell on your site: your items, a Buy button each. -->
+            <div id="group-store"></div>
+            <script>
+            (function () {
+              var BASE = "https://d8a.com";
+              var GROUP = "batch-synthshop";
+              var esc = function (s) {
+                return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+              };
+              var el = document.getElementById("group-store");
+              fetch(BASE + "/api/v1/store/items?group=" + encodeURIComponent(GROUP))
+                .then(function (r) { return r.json(); })
+                .then(function (s) {
+                  if (!el || !s.items) return;
+                  if (!s.items.length) { el.innerHTML = '<p style="font:13px system-ui,sans-serif;color:#9ca3af">Nothing for sale right now.</p>'; return; }
+                  el.innerHTML = s.items.map(function (it) {
+                    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #e5e7eb;font:14px system-ui,sans-serif">' +
+                      '<div style="flex:1"><b>' + esc(it.name) + '</b>' +
+                      (it.description ? '<div style="font-size:12px;color:#6b7280">' + esc(it.description) + '</div>' : '') + '</div>' +
+                      '<span>' + esc(it.price) + '</span>' +
+                      '<a href="' + esc(it.payUrl) + '" data-item="' + esc(it.id) + '" style="background:#7c5cff;color:#fff;border-radius:999px;padding:6px 14px;text-decoration:none">Buy</a></div>';
+                  }).join("") + '<p style="font:11px system-ui,sans-serif;color:#9ca3af">Sold by <a href="' + esc(s.group.url) + '" style="color:#7c5cff">' + esc(s.group.name) + '</a></p>';
+                  el.addEventListener("click", function (e) {
+                    var a = e.target && e.target.closest ? e.target.closest("a[data-item]") : null;
+                    if (!a || !s.checkout.enabled) return;
+                    e.preventDefault();
+                    a.textContent = "Opening…";
+                    fetch(s.checkout.url, { method: "POST", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ group: GROUP, item: a.getAttribute("data-item"), quantity: 1, returnUrl: location.href }) })
+                      .then(function (r) { return r.json(); })
+                      .then(function (d) { if (d.url) { location.href = d.url; } else { a.textContent = "Buy"; location.href = a.href; } })
+                      .catch(function () { location.href = a.href; });
+                  });
+                });
+            })();
+            </script>
+          </div>
+          <div class="panel__foot">
+            <span class="label">Prices above are the list prices — the rows here are what is on sale</span>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="panel">
+            <div class="panel__head"><h3>How the checkout works</h3></div>
+            <div class="panel__body">
+              <div class="spec">
+                <div class="spec__row"><span class="spec__key">Seller</span><span class="spec__val spec__val--wrap">The shop's own store, listed at d8a.com</span></div>
+                <div class="spec__row"><span class="spec__key">Items</span><span class="spec__val spec__val--wrap">Set in the shop's admin, not in this page</span></div>
+                <div class="spec__row"><span class="spec__key">Payment</span><span class="spec__val spec__val--wrap">Card, on the checkout page</span></div>
+                <div class="spec__row"><span class="spec__key">Return</span><span class="spec__val spec__val--wrap">Back to this page when you are done</span></div>
+                <div class="spec__row"><span class="spec__key">Delivery</span><span class="spec__val spec__val--wrap">Licence file and installers by email</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="note">
+            <p class="note__title">If the list is empty</p>
+            <p>The rows are fetched when the page loads. If nothing appears, either nothing is listed for sale at the
+              moment or the store could not be reached — the plugin pages, the demos and the presets all keep working
+              either way, and you can still write to us.</p>
+          </div>
+
+          <div class="cluster">
+            <a class="btn btn-ghost" href="#whats-in">What's in the bundle</a>
+            <a class="btn btn-ghost" href="#faq">Buying FAQ</a>
           </div>
         </div>
       </div>
