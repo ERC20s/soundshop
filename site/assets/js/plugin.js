@@ -21,6 +21,7 @@
      SSPlugin.initSectionNav(root) sticky in-page nav + scroll spy
      SSPlugin.initTabs(root)       ARIA tablist panels (spec sheets)
      SSPlugin.initCounters(root)   count-up for [data-count-to] figures
+     SSPlugin.initBoughtNote(r)    unhide [data-bought-note] for a remembered buy
    ========================================================================= */
 
 (function (window, document) {
@@ -531,7 +532,121 @@
   };
 
   /* =======================================================================
-     06  BOOT
+     06  ALREADY-BOUGHT NOTE
+     A buyer who pays on the plugins page has that return written into this
+     browser under one namespaced key, token -> timestamp:
+
+       localStorage["soundshop:bought:v1"] = {"drift": 1756233600000}
+
+     The product pages knew nothing about it, so someone who had just bought
+     DRIFT could land back on drift.html and see nothing but "Buy DRIFT" and
+     no route to the delivery instructions. This reads that same key back and
+     unhides a note the page already ships, hidden:
+
+       <div class="note note--good" hidden
+            data-bought-note data-bought-item="drift" data-bought-covered-by="bundle">
+         <p class="note__title">Already bought on this device</p>
+         <p>...<span data-bought-cover hidden>...</span>
+            <span data-bought-date data-bought-date-prefix=", bought "></span>...</p>
+       </div>
+
+     Rules kept deliberately:
+       - Every token, every word and every link lives in the markup. This file
+         holds no item name, no wording and no URL — only the storage key and
+         the same 60-day cut-off the plugins page uses.
+       - data-bought-covered-by names a token that also covers this one (the
+         Full Shop bundle covers all four plugins), matching the plugins page,
+         where a remembered "bundle" marks every other token as covered. The
+         item's own purchase wins, and then [data-bought-cover] stays hidden.
+       - Read-only. Nothing is written or deleted here, so a product page can
+         never disturb what the shop remembers; expired entries are simply
+         ignored on read and the plugins page prunes them.
+       - Storage blocked, unreadable or corrupt is a silent no-op: the note
+         stays hidden and the page is exactly what shipped in the HTML.
+       - Nothing is disabled or hidden by this: a second licence is still one
+         click away on the same Buy link. A note in a browser is never proof
+         of ownership, which is why the wording says "on this device".
+     ======================================================================= */
+
+  var BOUGHT_KEY = 'soundshop:bought:v1';
+  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;   // 60 days, as on the plugins page
+
+  /** Everything this browser remembers buying, normalised and unexpired. */
+  function boughtItems() {
+    var out = {};
+    var raw = null;
+    try { raw = window.localStorage.getItem(BOUGHT_KEY); } catch (e) { return out; }
+    if (!raw) return out;
+
+    var parsed = null;
+    try { parsed = JSON.parse(raw); } catch (e) { return out; }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
+
+    var now = Date.now();
+    for (var key in parsed) {
+      if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
+      var token = String(key == null ? '' : key).trim().toLowerCase();
+      var when = Number(parsed[key]);
+      if (!token || !isFinite(when) || when <= 0) continue;
+      if ((now - when) > BOUGHT_MAX_AGE) continue;   // too old to speak for: ignore
+      out[token] = when;
+    }
+    return out;
+  }
+
+  function boughtDate(ms) {
+    var d = new Date(ms);
+    if (isNaN(d.getTime())) return '';
+    try { return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); }
+    catch (e) { return d.toDateString(); }
+  }
+
+  P.initBoughtNote = function (root) {
+    var notes = $$('[data-bought-note]', root || document);
+    if (!notes.length) return;                       // e.g. the plugins page: untouched
+
+    var items = boughtItems();
+    var tokens = 0;
+    for (var t in items) { if (Object.prototype.hasOwnProperty.call(items, t)) tokens++; }
+    if (!tokens) return;                             // nothing remembered, nothing to say
+
+    notes.forEach(function (note) {
+      if (bound(note, 'bought')) return;
+
+      var token = attr(note, 'data-bought-item').toLowerCase();
+      if (!token) return;
+
+      var when = 0;
+      var state = '';
+      if (Object.prototype.hasOwnProperty.call(items, token)) {
+        when = items[token];
+        state = 'own';
+      } else {
+        var cover = attr(note, 'data-bought-covered-by').toLowerCase();
+        if (cover && Object.prototype.hasOwnProperty.call(items, cover)) {
+          when = items[cover];
+          state = 'covered';
+        }
+      }
+      if (!state) return;                            // not bought here: leave it hidden
+
+      var dateNode = $('[data-bought-date]', note);
+      if (dateNode) {
+        var text = boughtDate(when);
+        // The wording around the date is the page's, not this file's.
+        dateNode.textContent = text ? (attr(dateNode, 'data-bought-date-prefix') + text) : '';
+      }
+
+      var coverNode = $('[data-bought-cover]', note);
+      if (coverNode) coverNode.hidden = state === 'own' ? true : false;
+
+      note.setAttribute('data-bought-state', state);
+      note.hidden = false;
+    });
+  };
+
+  /* =======================================================================
+     07  BOOT
      ======================================================================= */
 
   P.init = function (root) {
@@ -540,6 +655,7 @@
     try { P.initSectionNav(root); } catch (e) { /* never block the page */ }
     try { P.initTabs(root); } catch (e) { /* never block the page */ }
     try { P.initCounters(root); } catch (e) { /* never block the page */ }
+    try { P.initBoughtNote(root); } catch (e) { /* never block the page */ }
   };
 
   function ready(fn) {
