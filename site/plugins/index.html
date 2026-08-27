@@ -738,16 +738,91 @@
                       '<span>' + esc(it.price) + '</span>' +
                       '<a href="' + esc(it.payUrl) + '" data-item="' + esc(it.id) + '" style="background:#7c5cff;color:#fff;border-radius:999px;padding:6px 14px;text-decoration:none">Buy</a></div>';
                   }).join("") + '<p style="font:11px system-ui,sans-serif;color:#9ca3af">Sold by <a href="' + esc(s.group.url) + '" style="color:#7c5cff">' + esc(s.group.name) + '</a></p>';
+                  // Buy click. One checkout at a time (busy), only trust an ok JSON
+                  // response, and never navigate to a link that is not a real
+                  // http(s) URL — an item with no payUrl renders href="undefined",
+                  // which would dump the buyer on /plugins/undefined mid-payment.
+                  var busy = false;
+                  var note = document.createElement("p");
+                  note.setAttribute("role", "status");
+                  note.style.cssText = "font:13px system-ui,sans-serif;color:#9ca3af";
+                  note.hidden = true;
+                  el.appendChild(note);
+
+                  // Absolute http/https only, judged on the raw attribute so that a
+                  // relative "undefined" cannot pass as an absolute URL.
+                  var httpUrl = function (raw) {
+                    if (typeof raw !== "string" || !/^https?:\/\//i.test(raw.trim())) return "";
+                    try {
+                      var u = new URL(raw.trim());
+                      return (u.protocol === "http:" || u.protocol === "https:") ? u.href : "";
+                    } catch (err) { return ""; }
+                  };
+                  var release = function (a, label) {
+                    busy = false;
+                    if (a) {
+                      a.textContent = label || "Buy";
+                      if (a.parentNode && a.parentNode.removeAttribute) { a.parentNode.removeAttribute("aria-busy"); }
+                    }
+                  };
+                  var fail = function (a, label) {
+                    release(a, label);
+                    note.innerHTML = 'Checkout could not be started. <button type="button" data-checkout-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again.</button>';
+                    note.hidden = false;
+                    var again = note.querySelector("[data-checkout-retry]");
+                    if (again) { again.addEventListener("click", function () { note.hidden = true; if (a) { a.click(); } }); }
+                  };
+
                   el.addEventListener("click", function (e) {
                     var a = e.target && e.target.closest ? e.target.closest("a[data-item]") : null;
-                    if (!a || !s.checkout.enabled) return;
+                    if (!a) return;
+                    var link = httpUrl(a.getAttribute("href"));
+                    if (!s.checkout || !s.checkout.enabled || !s.checkout.url) {
+                      // No API checkout: follow the pay link only if it is a real URL.
+                      if (!link) { e.preventDefault(); fail(a, a.textContent); }
+                      return;
+                    }
                     e.preventDefault();
+                    if (busy) return;                       // second click while one is in flight
+                    busy = true;
+                    note.hidden = true;
+                    var label = a.textContent;
                     a.textContent = "Opening…";
+                    if (a.parentNode && a.parentNode.setAttribute) { a.parentNode.setAttribute("aria-busy", "true"); }
+
+                    var settled = false;
+                    var timer = setTimeout(function () {
+                      if (settled) return;
+                      settled = true;
+                      fail(a, label);                       // "Opening…" can never stick
+                    }, 15000);
+                    var finish = function (fn) {
+                      if (settled) return;
+                      settled = true;
+                      clearTimeout(timer);
+                      fn();
+                    };
+
                     fetch(s.checkout.url, { method: "POST", headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ group: GROUP, item: a.getAttribute("data-item"), quantity: 1, returnUrl: location.href }) })
-                      .then(function (r) { return r.json(); })
-                      .then(function (d) { if (d.url) { location.href = d.url; } else { a.textContent = "Buy"; location.href = a.href; } })
-                      .catch(function () { location.href = a.href; });
+                      .then(function (r) {
+                        if (!r.ok) { throw new Error("HTTP " + r.status); }
+                        return r.json();
+                      })
+                      .then(function (d) {
+                        var to = d && httpUrl(d.url);
+                        finish(function () {
+                          if (to) { location.href = to; return; }  // happy path, row stays busy
+                          if (link) { location.href = link; return; }
+                          fail(a, label);
+                        });
+                      })
+                      .catch(function () {
+                        finish(function () {
+                          if (link) { location.href = link; return; }
+                          fail(a, label);
+                        });
+                      });
                   });
                 })
                 .catch(function () {
