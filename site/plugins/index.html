@@ -161,6 +161,26 @@
     color: var(--text-mute) !important;
   }
   #group-store > p a { color: var(--accent-text) !important; }
+
+  /* Deep link from a product page (index.html?item=vanta#buy): the row the
+     buyer came for is marked so it is obvious which of the rows is theirs.
+     Presentation only — the row's own markup and handlers are untouched. */
+  #group-store > div.is-wanted {
+    background: var(--accent-a12);
+    box-shadow: inset 0 0 0 1px var(--accent-a35);
+    padding-inline: var(--sp-3) !important;
+  }
+  #group-store a[data-item]:focus-visible {
+    outline: 2px solid var(--accent-text);
+    outline-offset: 3px;
+  }
+  .store-deeplink {
+    margin-block-end: var(--sp-3);
+    font-size: var(--fs-label);
+    color: var(--text-mute);
+    text-transform: none;
+    letter-spacing: 0.02em;
+  }
 </style>
 </head>
 <body>
@@ -715,6 +735,7 @@
           <div class="panel__head"><h3>On sale now</h3></div>
           <div class="panel__body">
             <!-- Sell on your site: your items, a Buy button each. -->
+            <p id="store-deeplink" class="store-deeplink label" role="status" aria-live="polite" hidden></p>
             <div id="group-store"></div>
             <script>
             (function () {
@@ -1021,6 +1042,85 @@
                 obs.observe(store, { childList: true, subtree: true });
                 setTimeout(function () { obs.disconnect(); }, 15000);
               }
+            })();
+            </script>
+            <!-- Deep link: the four product pages link here as
+                 index.html?item=vanta#buy (flagship.html, drift.html,
+                 prism.html, anvil.html). This reads that one key and points the
+                 buyer at their row: highlight it, say which one it is, and put
+                 the keyboard focus on its Buy anchor. It never clicks anything
+                 — the buyer still presses Buy — and an unknown item, an empty
+                 list or a failed/timed-out load changes nothing on the page. -->
+            <script>
+            (function () {
+              var store = document.getElementById("group-store");
+              if (!store) return;
+              var q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+              var want = String(q.get("item") || "").trim().toLowerCase();
+              if (!want) return;
+              var line = document.getElementById("store-deeplink");
+              var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
+
+              // Same matching rule as the card wiring above: exact id or name
+              // first, a partial only as a fallback, so "prism" can never be
+              // answered by some other row that merely contains the word.
+              var find = function () {
+                var rows = store.querySelectorAll("a[data-item]");
+                if (!rows.length) return null;
+                var exact = null, part = null;
+                Array.prototype.forEach.call(rows, function (a) {
+                  var row = a.parentNode, b = row ? row.querySelector("b") : null;
+                  var id = norm(a.getAttribute("data-item")), name = norm(b && b.textContent);
+                  if (id === want || name === want) { if (!exact) exact = a; }
+                  else if ((id && id.indexOf(want) > -1) || (name && name.indexOf(want) > -1)) { if (!part) part = a; }
+                });
+                return exact || part;
+              };
+
+              var show = function (a) {
+                var row = a.parentNode;
+                var b = row ? row.querySelector("b") : null;
+                var name = b ? b.textContent.trim() : "";
+                if (row && row.classList) { row.classList.add("is-wanted"); }
+                if (line) {
+                  line.textContent = name
+                    ? "Showing " + name + " — hit Buy below to check out."
+                    : "Showing the item you came for — hit Buy below to check out.";
+                  line.hidden = false;
+                }
+                var still = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+                if (row && row.scrollIntoView) {
+                  if (still) { row.scrollIntoView(); }
+                  else {
+                    try { row.scrollIntoView({ behavior: "smooth", block: "center" }); }
+                    catch (err) { row.scrollIntoView(); }
+                  }
+                }
+                // Keyboard buyers land on the Buy they asked for; preventScroll
+                // keeps the smooth scroll above from being jumped over.
+                try { a.focus({ preventScroll: true }); } catch (err) { try { a.focus(); } catch (err2) {} }
+                // Spent — drop it so a reload or a share is just the page.
+                if (history.replaceState) {
+                  q.delete("item");
+                  var rest = q.toString();
+                  history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
+                }
+              };
+
+              // Rows arrive from the fetch above, so try once and otherwise
+              // watch — capped at 15s, the same cap the card wiring uses and
+              // above the 12s store timeout, so a failed load just ends quietly.
+              var hit = find();
+              if (hit) { show(hit); return; }
+              if (!window.MutationObserver) return;
+              var obs = new MutationObserver(function () {
+                var found = find();
+                if (!found) return;
+                obs.disconnect();
+                show(found);
+              });
+              obs.observe(store, { childList: true, subtree: true });
+              setTimeout(function () { obs.disconnect(); }, 15000);
             })();
             </script>
           </div>
