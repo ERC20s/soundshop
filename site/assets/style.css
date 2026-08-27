@@ -39,7 +39,12 @@ ul{margin:0.5rem 0;padding-left:1.25rem}
 .tag-chip{padding:.1rem .55rem;border:1px solid #e0e0e6;border-radius:999px;background:#f6f6f9;color:#334;font:inherit;font-size:.85rem;line-height:1.4;cursor:pointer}
 .tag-chip:hover,.tag-chip:focus{border-color:#5b7cfa;background:#eef2ff;color:#243}
 /* Playable one-octave demo keyboard, built into #demo-slot by
-   site/plugins/demo-keys.js. Nothing here applies until that script runs. */
+   site/plugins/demo-keys.js. Used by both site/index.html (first section on the
+   home page) and site/plugins/flagship.html. Nothing below applies until that
+   script runs, except the scroll offset for the "#demo" deep link the presets
+   gallery's "play in demo" button uses. */
+#demo{scroll-margin-top:1rem}
+#demo>h2{margin-top:0}
 .demo-keys-wrap{border:1px solid #ddd;border-radius:6px;padding:.75rem;background:#fafafb}
 .demo-controls{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .7rem;margin-bottom:.7rem;font-size:.9rem}
 .demo-controls label{font-weight:600;color:#444}

@@ -26,6 +26,21 @@
   </nav>
 
   <main>
+    <!--
+      The product first: the playable keyboard is the first block on the home
+      page, above the link sections. plugins/demo-keys.js fills #demo-slot with
+      the same one-octave keyboard it builds on plugins/flagship.html — the
+      script only looks for this id and for Web Audio, so it needs no
+      page-specific wiring. Without Web Audio (or with JavaScript off) the
+      fallback paragraph below simply stays.
+    -->
+    <section id="demo">
+      <h2>Play the Flagship Synth</h2>
+      <div id="demo-slot">
+        <p>The playable demo needs a browser with Web Audio — see the <a href="plugins/flagship.html">Flagship Synth page</a> for specs and presets.</p>
+      </div>
+    </section>
+
     <section>
       <h2>Plugins</h2>
       <ul>
@@ -44,5 +59,8 @@
   <footer>
     <p>Serve these files over http from either the repository root or site/ — all links are relative.</p>
   </footer>
+  <!-- Same keyboard as the flagship page, loaded from its own file. The path is
+       relative to this page (site/), so both serving roots keep working. -->
+  <script src="plugins/demo-keys.js" defer></script>
 </body>
 </html>
