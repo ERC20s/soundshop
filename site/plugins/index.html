@@ -1065,8 +1065,13 @@
                  rule the card wiring uses (exact id/name first, partial only as
                  a fallback), highlights it, says which item it is and focuses
                  its Buy button. No auto-click, no checkout of its own and no
-                 URL rewriting: an unknown item, an empty list or a failed load
-                 simply leaves the page exactly as it is today.
+                 URL rewriting.
+                 When the row is not there it now says so instead of leaving the
+                 buyer in front of a list that never mentions what they clicked:
+                 once the store block has settled (rows, the empty-list line, or
+                 the "could not be reached" line with its Try again button) one
+                 status line goes in above the list — "not listed" when the shop
+                 answered, "could not check" when it did not.
                  After a successful payment it does nothing at all: the return
                  banner above sets data-buy-return="paid" on <html> before this
                  runs, and dragging a paid buyer back to a Buy button they have
@@ -1091,7 +1096,54 @@
                 });
                 return exact || part;
               };
+              // The name to say out loud. The hidden card buttons on this page
+              // already carry the same tokens the product pages link with, so
+              // ?item=drift can be spoken as "DRIFT" even when the shop never
+              // answered. Falls back to the raw token, printed with textContent
+              // so a hostile ?item= value is text and nothing else.
+              var label = function () {
+                var btns = document.querySelectorAll("[data-store-item]");
+                for (var i = 0; i < btns.length; i++) {
+                  if (norm(btns[i].getAttribute("data-store-item")) !== token) continue;
+                  var body = btns[i].closest ? btns[i].closest(".card__body") : null;
+                  var title = body ? body.querySelector(".card__title") : null;
+                  if (title && title.textContent.trim()) return title.textContent.trim();
+                  break;
+                }
+                return token;
+              };
+              // Has the store block finished one way or another? "rows" = the
+              // shop answered with items, "empty" = it answered with none,
+              // "failed" = the loader drew its failure line and Try again
+              // button (that includes its own 12s timeout). "" = still loading.
+              var settled = function () {
+                if (store.querySelector("a[data-item]")) return "rows";
+                if (store.querySelector("[data-store-retry]")) return "failed";
+                var ps = store.querySelectorAll("p");
+                for (var i = 0; i < ps.length; i++) {
+                  if (/nothing for sale/i.test(ps[i].textContent || "")) return "empty";
+                }
+                return "";
+              };
+              var fired = false;                                      // one line, ever
+              var say = function (text) {
+                if (fired) return;
+                fired = true;
+                var p = document.createElement("p");
+                p.setAttribute("role", "status");
+                p.style.cssText = "font:13px system-ui,sans-serif;color:#9ca3af;margin:0 0 6px";
+                p.textContent = text;                                 // never innerHTML
+                if (store.parentNode) { store.parentNode.insertBefore(p, store); }
+              };
+              var miss = function (state) {
+                var name = label();
+                if (state === "rows") { say(name + " is not listed in the shop right now — below is everything on sale today."); }
+                else if (state === "empty") { say(name + " is not listed in the shop right now — nothing is on sale today."); }
+                else { say("We could not check whether " + name + " is on sale. Try again above."); }
+              };
               var mark = function (a) {
+                if (fired) return;
+                fired = true;
                 var row = a.parentNode || a, b = row.querySelector ? row.querySelector("b") : null;
                 row.style.background = "rgba(124,92,255,0.10)";       // inline, like the rows themselves
                 row.style.boxShadow = "inset 3px 0 0 #7c5cff";
@@ -1107,15 +1159,26 @@
                 catch (err) { row.scrollIntoView(); }
                 try { a.focus({ preventScroll: true }); } catch (err) { a.focus(); }
               };
-              var hit = find();
-              if (hit) { mark(hit); return; }
-              if (!window.MutationObserver) return;                   // rows arrive from the fetch
-              var obs = new MutationObserver(function () {
+              // One pass: mark the row if it is there, and only once the block
+              // has settled say that it is not. While it is still loading this
+              // does nothing, so a slow shop is never called a missing item.
+              var check = function (force) {
+                if (fired) return true;
                 var h = find();
-                if (h) { obs.disconnect(); mark(h); }
-              });
+                if (h) { mark(h); return true; }
+                var state = settled();
+                if (state) { miss(state); return true; }
+                if (force) { miss("failed"); return true; }           // 15s and still nothing to go on
+                return false;
+              };
+              if (check(false)) return;
+              if (!window.MutationObserver) return;                   // rows arrive from the fetch
+              var obs = new MutationObserver(function () { if (check(false)) obs.disconnect(); });
               obs.observe(store, { childList: true, subtree: true });
-              setTimeout(function () { obs.disconnect(); }, 15000);   // same cap as the wiring above
+              setTimeout(function () {                                // same cap as the wiring above
+                obs.disconnect();
+                check(true);
+              }, 15000);
             })();
             </script>
           </div>
