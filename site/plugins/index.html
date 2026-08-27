@@ -154,6 +154,12 @@
     transition: filter var(--dur-2) var(--ease-mech);
   }
   #group-store a[data-item]:hover { filter: brightness(1.1); }
+  /* The row a product page deep-linked to (index.html?item=vanta#buy). */
+  #group-store > div.is-target {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
   #group-store > p {
     margin-block-start: var(--sp-3);
     font-family: var(--font-sans) !important;
@@ -1021,6 +1027,113 @@
                 obs.observe(store, { childList: true, subtree: true });
                 setTimeout(function () { obs.disconnect(); }, 15000);
               }
+            })();
+            </script>
+            <!-- Deep link from the product pages: flagship.html, drift.html, prism.html and
+                 anvil.html send the buyer here with ?item=vanta|drift|prism|anvil#buy. This
+                 finds that row in the block above with the same normalise-and-match rules the
+                 card wiring uses, waits for the rows the same way (MutationObserver, 15s cap),
+                 then highlights the row, moves focus to its Buy anchor and says so once in a
+                 live region. It never starts a checkout — the buyer still presses Buy — and it
+                 stands down completely when the return banner is showing. -->
+            <script>
+            (function () {
+              var store = document.getElementById("group-store");
+              if (!store) return;
+              var q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+              if (!q.has("item")) return;
+              var token = String(q.get("item") || "").trim().toLowerCase();
+
+              // Take item off the URL straight away, exactly as the return banner
+              // does with its own keys, so a reload or a shared link is just Buy.
+              if (history.replaceState) {
+                q.delete("item");
+                var rest = q.toString();
+                try {
+                  history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
+                } catch (err) { /* a hostile URL is not worth failing over */ }
+              }
+              if (!token) return;
+
+              // Someone coming back from checkout gets the banner and nothing else:
+              // two things moving this page at once is worse than either alone.
+              var banner = document.getElementById("buy-return");
+              if (banner && !banner.hidden) return;
+
+              var label = token.replace(/[^a-z0-9 ._-]/g, "").slice(0, 32).toUpperCase() || "That item";
+              var say = document.createElement("p");
+              say.setAttribute("role", "status");
+              say.setAttribute("aria-live", "polite");
+              say.className = "label";
+              say.style.textTransform = "none";
+              say.style.letterSpacing = "0.02em";
+              say.style.color = "var(--text-mute)";
+              say.hidden = true;
+              if (store.parentNode) { store.parentNode.insertBefore(say, store); }
+              var tell = function (text) { say.textContent = text; say.hidden = false; };
+
+              var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
+              // null = rows not drawn yet; false = rows drawn, none of them match.
+              var find = function () {
+                var rows = store.querySelectorAll("a[data-item]");
+                if (!rows.length) return null;
+                var exact = null, part = null;
+                Array.prototype.forEach.call(rows, function (a) {
+                  var row = a.parentNode, b = row ? row.querySelector("b") : null;
+                  var id = norm(a.getAttribute("data-item")), name = norm(b && b.textContent);
+                  if (id === token || name === token) { if (!exact) exact = a; }
+                  else if (id.indexOf(token) > -1 || name.indexOf(token) > -1) { if (!part) part = a; }
+                });
+                return exact || part || false;
+              };
+
+              var settled = false;
+              var settle = function (hit) {
+                if (settled) return;
+                settled = true;
+                if (!hit) {
+                  // No match, an empty list, a timeout or a failed load: one line,
+                  // and the block below says the rest in its own words.
+                  tell(label + " is not on sale right now — what is on sale is listed below.");
+                  return;
+                }
+                var row = hit.parentNode;
+                if (row && row.classList) { row.classList.add("is-target"); }
+                tell(label + " is the highlighted row below — press Buy when you are ready.");
+                var target = row || hit;
+                var still = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+                if (target.scrollIntoView) {
+                  if (still) { target.scrollIntoView(); }
+                  else {
+                    try { target.scrollIntoView({ behavior: "smooth", block: "center" }); }
+                    catch (err) { target.scrollIntoView(); }
+                  }
+                }
+                // Focus without a second jump; the scroll above already got there.
+                try { hit.focus({ preventScroll: true }); }
+                catch (err2) { try { hit.focus(); } catch (err3) { /* nothing to focus */ } }
+              };
+
+              var first = find();
+              if (first !== null) { settle(first); return; }
+
+              var obs = null;
+              if (window.MutationObserver) {
+                obs = new MutationObserver(function () {
+                  var hit = find();
+                  if (hit === null) return;                 // still loading
+                  if (obs) { obs.disconnect(); obs = null; }
+                  settle(hit);
+                });
+                obs.observe(store, { childList: true, subtree: true });
+              }
+              // Same 15s cap the card wiring uses, so the two agree: after it, say
+              // something rather than leaving the buyer waiting on a silent page.
+              setTimeout(function () {
+                if (obs) { obs.disconnect(); obs = null; }
+                var hit = find();
+                settle(hit === null ? false : hit);
+              }, 15000);
             })();
             </script>
           </div>
