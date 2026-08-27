@@ -7,12 +7,8 @@ version: 1
 group: d8a:batch-synthshop
 proof: PLvctTcwGQb--ioBmblyTVSZULvcYqQNDFyrtW_U66jcqWdqTvXFQ86jd748IM32of3UMsS-D4mtJppLhoeYYFwJdAub3pmqyMj1UnB6VQFURGVGlM_wuFCISaU0v8wIfDtHKf864btoSzGtLVgaexytsAdbJucV89qVeFAAGcBNrtZtdPcdY9jiDg1kdB3hGUjvODE6NbMjXMEUEV7O2x5pGlsyvwaBloxElQiw6zmoY4dqInfJAQqArJh6h4NZszx-nuX9RHQvcBOQmRatkeGMaAAcdpmEI8a-O5ldOu4dCJvgEu5eOKuGSIFKKeesNQgZR_xZvaGnmYAkcddCnw
 
-# Where this repository runs live, if anywhere — the footer shows it as a globe.
-# url: https://example.com
-
-# How to run this repository. Yours to edit — the governance lines above are
-# not. One terminal per entry, launched together by the ▶ button in VS Code
-# (the VSD8A extension) and by nothing else.
+# url: https://example.com   — where it runs live; shown as a globe once set.
+# run: — how to run it. Yours to edit; VS Code's ▶ (the VSD8A extension) launches each entry.
 run:
   {
     "site": { "cmd": "npx --yes serve -l 5003 .", "cwd": "site", "port": 5003 }
