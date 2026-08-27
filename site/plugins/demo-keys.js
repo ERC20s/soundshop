@@ -1,7 +1,10 @@
-/* Playable one-octave Web Audio keyboard for the flagship page.
+/* Playable one-octave Web Audio keyboard.
  *
- * Renders itself inside #demo-slot on site/plugins/flagship.html, replacing the
- * "not published yet" fallback only when this browser really has Web Audio.
+ * Renders itself inside #demo-slot on whichever page loads it — today the home
+ * page (site/index.html, which loads it as "plugins/demo-keys.js") and the
+ * flagship page (site/plugins/flagship.html) — replacing the fallback text only
+ * when this browser really has Web Audio. The script needs nothing but that id
+ * and window.AudioContext: no fetches, no page-specific paths.
  * No new page, no iframe, no site/demo/ directory.
  *
  * The voice graph is the same one already merged in site/presets/preview.js:
