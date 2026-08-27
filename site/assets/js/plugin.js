@@ -586,7 +586,14 @@
     for (var key in parsed) {
       if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
       var token = String(key == null ? '' : key).trim().toLowerCase();
-      var when = Number(parsed[key]);
+      // Two stored shapes, both valid: a bare timestamp, and
+      // { t: <time>, ref: '<payment reference>' } as written by the plugins page
+      // when the checkout return carried a reference. Reading only the number
+      // here would make Number({...}) NaN and silently hide this note for every
+      // purchase made after that change. The reference itself is not shown on
+      // product pages yet; it is deliberately ignored rather than dropped.
+      var rec = parsed[key];
+      var when = Number(rec && typeof rec === 'object' && !Array.isArray(rec) ? rec.t : rec);
       if (!token || !isFinite(when) || when <= 0) continue;
       if ((now - when) > BOUGHT_MAX_AGE) continue;   // too old to speak for: ignore
       out[token] = when;
