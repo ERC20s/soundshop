@@ -185,7 +185,13 @@
   </button>
 </header>
 
-<main id="main">
+<!-- The items endpoint and the group name live here, on the markup, never in
+     buy.js — same rule plugin.js follows for every path it fetches. They are
+     the generated tools: lines from /.d8a; items and prices are set on the
+     group's Admin tab. -->
+<main id="main"
+      data-store-items="https://d8a.com/api/v1/store/items?group=batch-synthshop"
+      data-store-group="batch-synthshop">
 
   <!-- ===================================================================
        HEADER BAND — the shop, and the bundle offer as the hero deal
@@ -228,6 +234,8 @@
           <p class="label" style="text-transform:none;letter-spacing:0.02em;font-family:var(--font-sans);font-size:var(--fs-small);color:var(--text-mute);">
             Bought separately the four come to <span class="num">$386</span>. The bundle keeps <span class="num">$87</span> in your pocket.</p>
           <div class="cluster">
+            <!-- Hidden until buy.js finds a matching item in the group's store. -->
+            <button class="btn btn-primary" type="button" data-store-item="bundle" hidden>Buy</button>
             <a class="btn btn-primary" href="#whats-in">What's in the bundle</a>
             <a class="btn btn-ghost" href="#compare">Compare all four</a>
           </div>
@@ -320,6 +328,8 @@
             </ul>
             <div class="card__cta">
               <span class="card__price num">$149</span>
+              <!-- Hidden until buy.js finds a matching item in the group's store. -->
+              <button class="btn btn-primary btn--sm" type="button" data-store-item="vanta" hidden>Buy</button>
               <a class="btn btn-primary btn--sm push" href="flagship.html">Open VANTA</a>
               <a class="btn btn-ghost btn--sm" href="../demo/flagship-demo.html">Play it</a>
             </div>
@@ -372,6 +382,8 @@
             </ul>
             <div class="card__cta">
               <span class="card__price num">$79</span>
+              <!-- Hidden until buy.js finds a matching item in the group's store. -->
+              <button class="btn btn-primary btn--sm" type="button" data-store-item="drift" hidden>Buy</button>
               <a class="btn btn-primary btn--sm push" href="drift.html">Open DRIFT</a>
             </div>
           </div>
@@ -414,6 +426,8 @@
             </ul>
             <div class="card__cta">
               <span class="card__price num">$69</span>
+              <!-- Hidden until buy.js finds a matching item in the group's store. -->
+              <button class="btn btn-primary btn--sm" type="button" data-store-item="prism" hidden>Buy</button>
               <a class="btn btn-primary btn--sm push" href="prism.html">Open PRISM</a>
             </div>
           </div>
@@ -456,6 +470,8 @@
             </ul>
             <div class="card__cta">
               <span class="card__price num">$89</span>
+              <!-- Hidden until buy.js finds a matching item in the group's store. -->
+              <button class="btn btn-primary btn--sm" type="button" data-store-item="anvil" hidden>Buy</button>
               <a class="btn btn-primary btn--sm push" href="anvil.html">Open ANVIL</a>
             </div>
           </div>
@@ -838,5 +854,6 @@
 
 <script src="../assets/js/ui.js"></script>
 <script src="../assets/js/plugin.js"></script>
+<script src="../assets/js/buy.js"></script>
 </body>
 </html>

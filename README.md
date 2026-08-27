@@ -116,6 +116,8 @@ site/
       home.js                      page script for index.html (hero canvas, mini-instrument)
       plugin.js                    window.SSPlugin — shared behaviour for the four
                                    product pages
+      buy.js                       window.SSBuy — reveals the Buy buttons on
+                                   plugins/index.html and starts the store checkout
       demo.js                      page script for demo/flagship-demo.html (the rack)
       presets.js                   page script for presets/index.html (the gallery)
       changelog.js                 renderer for changelog.html
