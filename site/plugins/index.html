@@ -1530,7 +1530,16 @@
                  This is a note in the buyer's browser, never proof of ownership:
                  nothing is disabled, so a genuine second licence is still one
                  click away, and a browser with storage blocked behaves exactly
-                 as it did before. -->
+                 as it did before.
+                 One purchase covers more than one row: the Full Shop bundle
+                 licenses all four plugins, so when the token "bundle" is
+                 remembered or just paid for, every other token on the page's own
+                 hidden card buttons is marked "Included in The Full Shop bundle"
+                 too. Those rows and cards keep saying Buy — the buyer never
+                 bought them separately — and their lines are filed under the
+                 bundle, so the bundle's single "Not you? Clear" removes the lot.
+                 A plugin bought outright keeps its own stronger wording. -->
+
             <script>
             (function () {
               var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
@@ -1577,6 +1586,25 @@
               if (live) { items[live] = { when: 0, live: true }; }     // this trip wins the wording
               var tokens = [];
               for (var t in items) { if (Object.prototype.hasOwnProperty.call(items, t)) tokens.push(t); }
+              // The Full Shop bundle covers the four plugins, so a buyer who has
+              // it must not be shown a plain purple Buy on VANTA, DRIFT, PRISM or
+              // ANVIL. The covered tokens are read off the page's own hidden card
+              // buttons rather than hard-coded, so a fifth card added later is
+              // covered without touching this script. Only the exact token
+              // "bundle" triggers it — the same token the banner names "The Full
+              // Shop bundle" above — and a token bought outright keeps its own
+              // wording, which is the stronger claim.
+              if (Object.prototype.hasOwnProperty.call(items, "bundle")) {
+                var bundle = items["bundle"];
+                var cards = document.querySelectorAll("[data-store-item]");
+                for (var c = 0; c < cards.length; c++) {
+                  var ctok = norm(cards[c].getAttribute("data-store-item"));
+                  if (!ctok || ctok === "bundle") continue;
+                  if (Object.prototype.hasOwnProperty.call(items, ctok)) continue;
+                  items[ctok] = { when: bundle.when, live: bundle.live, cover: "bundle" };
+                  tokens.push(ctok);
+                }
+              }
               if (!tokens.length) return;                              // nothing bought, nothing to say
 
               var NOTE = "You just paid for this — your licence goes to the email you used. Only buy again if you mean to.";
@@ -1614,6 +1642,16 @@
                 p.style.color = "#9ca3af";
                 p.style.margin = gap || "0";
                 p.style.flexBasis = "100%";                           // .card__cta / .cluster are flex-wrap rows
+                if (it.cover) {
+                  // Covered by a bundle, not bought on its own. No Clear button of
+                  // its own: the line is filed under the bundle's slot, so the
+                  // bundle's single "Not you? Clear" removes all of them at once.
+                  p.textContent = "Included in The Full Shop bundle, " +
+                    (it.live ? "which you just paid for" : "bought on this device on " + dated(it.when)) +
+                    " — only buy it separately if you mean to.";
+                  slot(it.cover).lines.push(p);
+                  return p;
+                }
                 if (it.live) {
                   p.textContent = NOTE;                               // never innerHTML
                 } else {
@@ -1648,7 +1686,10 @@
                 });
                 if (!hit) return false;
                 st.rowDone = true;
-                if (norm(hit.textContent) === "buy") { hit.textContent = "Buy again"; st.anchor = hit; }
+                // A bundle-covered row is not relabelled: the buyer never bought
+                // that item on its own, so "Buy again" would be wrong. It keeps
+                // saying Buy and carries the covered line underneath.
+                if (!items[token].cover && norm(hit.textContent) === "buy") { hit.textContent = "Buy again"; st.anchor = hit; }
                 var row = hit.parentNode;
                 if (row && row.parentNode) {
                   var next = row.nextSibling;
