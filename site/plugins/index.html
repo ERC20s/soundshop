@@ -903,6 +903,7 @@
                   };
                   var release = function (a, label) {
                     busy = false;
+                    cancelPending = null;                   // nothing left for a restore to undo
                     if (a) {
                       a.textContent = label || "Buy";
                       if (a.parentNode && a.parentNode.removeAttribute) { a.parentNode.removeAttribute("aria-busy"); }
@@ -915,6 +916,23 @@
                     var again = note.querySelector("[data-checkout-retry]");
                     if (again) { again.addEventListener("click", function () { note.hidden = true; if (a) { a.click(); } }); }
                   };
+
+                  // Back from the gateway. A buyer who presses Back instead of
+                  // paying gets this page restored from the back/forward cache with
+                  // the script state intact: busy still true, the row still reading
+                  // "Opening…", aria-busy still set, and the 15s timer resuming to
+                  // call fail() — so someone who merely changed their mind is told
+                  // "Checkout could not be started" and cannot buy without a reload.
+                  // On restore, cancel the attempt in flight and hand the row back.
+                  // (event.persisted is the reliable signal, but browsers differ, so
+                  // a still-set busy flag on any pageshow is treated the same way.)
+                  var cancelPending = null;
+                  window.addEventListener("pageshow", function (e) {
+                    if (!(e && e.persisted) && !busy) return;
+                    if (cancelPending) { var c = cancelPending; cancelPending = null; c(); }
+                    busy = false;
+                    note.hidden = true;
+                  });
 
                   el.addEventListener("click", function (e) {
                     var a = e.target && e.target.closest ? e.target.closest("a[data-item]") : null;
@@ -944,6 +962,13 @@
                       settled = true;
                       clearTimeout(timer);
                       fn();
+                    };
+                    // What a back/forward restore undoes: stop this attempt's timer
+                    // and put the row back to its own label, without failing it.
+                    cancelPending = function () {
+                      settled = true;
+                      clearTimeout(timer);
+                      release(a, label);
                     };
 
                     // The store id is what the shop is asked to charge for; the
@@ -1057,6 +1082,21 @@
                 try { sec.scrollIntoView({ behavior: "smooth", block: "start" }); }
                 catch (err) { sec.scrollIntoView(); }
               };
+              // Back from the gateway. When the browser restores this page from the
+              // back/forward cache the button is still disabled, still aria-busy and
+              // still reading "Opening…", with its observer and 16s timer resuming.
+              // Release any button that has an attempt in flight, exactly as the
+              // row's own restore handler above releases the row. persisted is the
+              // reliable signal; a still-busy button on any pageshow counts too.
+              window.addEventListener("pageshow", function (e) {
+                var restored = !!(e && e.persisted);
+                Array.prototype.forEach.call(btns, function (btn) {
+                  if (typeof btn._storeRelease !== "function") return;
+                  if (!restored && btn.getAttribute("aria-busy") !== "true") return;
+                  btn._storeRelease();
+                });
+              });
+
               var wire = function () {
                 var rows = store.querySelectorAll("a[data-item]");
                 if (!rows.length) return false;
