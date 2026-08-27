@@ -672,6 +672,10 @@
            came in on a deep link or just clicked a row. This reads only the return
            keys off the query string and says what happened. Client-side hint, never
            proof of payment.
+           Every return gets a stated outcome: paid, cancelled, or — for a value in
+           none of the two lists, including pending, processing and any wording the
+           gateway invents — a neutral "still being confirmed" note. Cancelled beats
+           pending beats paid, so a mixed return never goes green.
            It also stands the ?item= deep link down after a successful payment: the
            buyer came in as ...?item=vanta#buy, so the URL they return on still
            carries item=vanta. Without the marker set here, the deep-link script
@@ -684,24 +688,35 @@
         if (!box) return;
         var OK = ["1", "true", "yes", "ok", "success", "succeeded", "paid", "complete", "completed"];
         var NO = ["0", "false", "cancel", "cancelled", "canceled", "fail", "failed", "failure", "error"];
+        // Bank transfer, delayed card methods and anything the gateway words in a
+        // way these lists do not know: the buyer is back, the money is not settled.
+        var PENDING = ["pending", "processing", "in_progress", "requires_action", "awaiting_payment"];
         var KEYS = ["paid", "checkout", "payment", "status", "redirect_status"];
         var q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
-        var good = false, bad = false, seen = false;
+        var good = false, bad = false, pend = false, seen = false;
         for (var i = 0; i < KEYS.length; i++) {
           if (!q.has(KEYS[i])) continue;
           seen = true;
           var v = String(q.get(KEYS[i]) || "").trim().toLowerCase();
           if (OK.indexOf(v) > -1) { good = true; }
           else if (NO.indexOf(v) > -1) { bad = true; }
-          else { return; }
+          else if (PENDING.indexOf(v) > -1) { pend = true; }
+          // Anything in none of the three lists is treated as pending too, rather
+          // than dropped: a return we cannot read is still a return, and a silent
+          // page is the one outcome a buyer cannot act on.
+          else { pend = true; }
         }
         if (!seen && q.has("session_id") && String(q.get("session_id") || "").trim()) { seen = true; good = true; }
-        if (!seen || (!good && !bad)) return;
+        if (!seen || (!good && !bad && !pend)) return;
+        // Precedence: cancelled beats pending beats paid, so a mixed return such
+        // as ?paid=1&redirect_status=pending never goes green.
+        if (bad) { pend = false; good = false; }
+        else if (pend) { good = false; }
 
-        // Tell the ?item= script below what happened, before it runs. "paid" means
-        // it must leave the page alone; "cancelled" keeps today's behaviour,
-        // because that buyer still wants the row they came for.
-        document.documentElement.setAttribute("data-buy-return", good ? "paid" : "cancelled");
+        // Tell the ?item= script below what happened, before it runs. "paid" and
+        // "pending" both mean it must leave the page alone; "cancelled" keeps
+        // today's behaviour, because that buyer still wants the row they came for.
+        document.documentElement.setAttribute("data-buy-return", bad ? "cancelled" : (pend ? "pending" : "paid"));
 
         // Name the thing that was just bought, when the ?item= token matches one of
         // the hidden card buttons on this page. The bundle button lives in a
@@ -725,6 +740,12 @@
           box.className = "note note--warn";
           box.innerHTML = '<p class="note__title">Nothing was charged</p>' +
             '<p>The checkout was cancelled, so no payment was taken. The rows below are still live — pick an item and hit Buy whenever you are ready.</p>';
+        } else if (pend) {
+          // Neutral by design: no licence is promised here, because nothing on
+          // this page can tell whether the money arrived.
+          box.className = "note";
+          box.innerHTML = '<p class="note__title">Payment still being confirmed</p>' +
+            '<p>You are back from checkout, but the shop is still finishing this payment — some methods, such as bank transfer, settle later. Nothing more is needed from you here. The receipt emailed to the address you used at checkout is the record of what happened; once it clears, your licence file and installers follow to the same address — see <a href="../docs.html">the docs</a> for installing and authorising. Do not pay again for this item.</p>';
         } else {
           box.className = "note note--good";
           var esc = function (s) {
@@ -739,9 +760,10 @@
         if (history.replaceState) {
           KEYS.forEach(function (k) { q.delete(k); });
           q.delete("session_id");
-          // On a paid return the deep link has done its job: drop it so a refresh
-          // cannot re-trigger the highlight, scroll and focus on a bought item.
-          if (good) { q.delete("item"); }
+          // On a paid or pending return the deep link has done its job: drop it
+          // so a refresh cannot re-trigger the highlight, scroll and focus on an
+          // item that is already bought or already being paid for.
+          if (good || pend) { q.delete("item"); }
           var rest = q.toString();
           history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
         }
@@ -1194,13 +1216,15 @@
                  the "could not be reached" line with its Try again button) one
                  status line goes in above the list — "not listed" when the shop
                  answered, "could not check" when it did not.
-                 After a successful payment it does nothing at all: the return
-                 banner above sets data-buy-return="paid" on <html> before this
-                 runs, and dragging a paid buyer back to a Buy button they have
-                 just used is how a second checkout gets started by accident. -->
+                 After a successful or still-settling payment it does nothing at
+                 all: the return banner above sets data-buy-return="paid" or
+                 "pending" on <html> before this runs, and dragging such a buyer
+                 back to a Buy button they have just used is how a second
+                 checkout gets started by accident. -->
             <script>
             (function () {
-              if (document.documentElement.getAttribute("data-buy-return") === "paid") return;
+              var ret = document.documentElement.getAttribute("data-buy-return");
+              if (ret === "paid" || ret === "pending") return;
               var m = /[?&]item=([^&#]*)/.exec(location.search);
               var token = m ? String(decodeURIComponent(m[1].replace(/\+/g, " "))).trim().toLowerCase() : "";
               var store = document.getElementById("group-store");
