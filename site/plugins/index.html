@@ -738,6 +738,39 @@
           document.documentElement.setAttribute("data-buy-item", token);
         }
 
+        // Remember a paid return in this browser. Without this the marking below
+        // lasts one page load: the URL token is deleted a few lines down, so a
+        // refresh, a nav link back to Buy or a visit tomorrow shows the bought
+        // row as a plain purple Buy under no banner at all — the one guard
+        // against a second charge gone. One namespaced key, token -> timestamp,
+        // read back by the "just bought" script further down.
+        // Paid only: a cancelled buyer has not paid, and a pending one may never.
+        // Everything is inside try/catch — private mode, blocked storage or a
+        // corrupt value is a silent no-op and the page behaves exactly as before.
+        // This is a note in the buyer's browser, never proof of ownership.
+        if (good && token && /^[a-z0-9][a-z0-9 ._-]{0,63}$/.test(token)) {
+          try {
+            var BKEY = "soundshop:bought:v1";
+            var saved = {};
+            var raw = window.localStorage.getItem(BKEY);
+            if (raw) {
+              var parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === "object" && !(parsed instanceof Array)) { saved = parsed; }
+            }
+            saved[token] = Date.now();
+            // A hand-crafted return URL could otherwise stuff this key: keep the
+            // 24 most recent entries and drop the rest.
+            var keys = Object.keys(saved);
+            if (keys.length > 24) {
+              keys.sort(function (a, b) { return Number(saved[b]) - Number(saved[a]); });
+              var trimmed = {};
+              for (var t = 0; t < 24; t++) { trimmed[keys[t]] = saved[keys[t]]; }
+              saved = trimmed;
+            }
+            window.localStorage.setItem(BKEY, JSON.stringify(saved));
+          } catch (e) { /* storage unavailable or unreadable: today's behaviour */ }
+        }
+
         // Name the item this return is about — on every outcome, not just the
         // green one. This lookup used to sit inside the paid branch, so a
         // cancelled return read "Nothing was charged" without ever saying what
@@ -1483,22 +1516,97 @@
                  again" and one muted line, set with textContent, says what has
                  already happened. Rows arrive from the fetch above, so this
                  reuses the same MutationObserver-with-a-15s-cap pattern; if the
-                 shop never answers there is no row and nothing is said. The
-                 marking lasts for this page load only: the URL token is gone,
-                 so a reload shows the ordinary page again. -->
+                 shop never answers there is no row and nothing is said.
+                 The marking no longer lasts one page load only. The banner above
+                 writes each paid return into localStorage under
+                 soundshop:bought:v1 (token -> timestamp), and this reads that
+                 back, so a reload, a nav link back to Buy or a visit tomorrow
+                 still shows "Buy again" instead of a plain purple Buy. Entries
+                 older than 60 days are dropped on read. A remembered item is
+                 worded differently from a just-paid one — bought on this device,
+                 with the date — and carries a "Not you? Clear" button that
+                 deletes the entry, removes the lines and puts the anchor back to
+                 Buy, for shared machines and for anyone who wants it gone.
+                 This is a note in the buyer's browser, never proof of ownership:
+                 nothing is disabled, so a genuine second licence is still one
+                 click away, and a browser with storage blocked behaves exactly
+                 as it did before. -->
             <script>
             (function () {
-              var ret = document.documentElement.getAttribute("data-buy-return");
-              if (ret !== "paid" && ret !== "pending") return;        // cancelled: nothing was charged
               var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
-              var token = norm(document.documentElement.getAttribute("data-buy-item"));
               var store = document.getElementById("group-store");
-              if (!token || !store) return;                           // no item named: say nothing
+              if (!store) return;
+              var KEY = "soundshop:bought:v1";
+              var MAX_AGE = 60 * 24 * 60 * 60 * 1000;                 // 60 days
+              // Storage is optional everywhere: private mode, a blocked origin or
+              // a corrupt value all fall back to "nothing remembered".
+              var read = function () {
+                try {
+                  var raw = window.localStorage.getItem(KEY);
+                  if (!raw) return {};
+                  var o = JSON.parse(raw);
+                  return (o && typeof o === "object" && !(o instanceof Array)) ? o : {};
+                } catch (e) { return {}; }
+              };
+              var write = function (o) {
+                try { window.localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { /* no-op */ }
+              };
+              var forget = function (tok) {
+                var o = read();
+                if (Object.prototype.hasOwnProperty.call(o, tok)) { delete o[tok]; write(o); }
+              };
+
+              // This return, if there is one. Paid and pending alike get the
+              // "you just paid for this" wording; cancelled sets no item at all.
+              var ret = document.documentElement.getAttribute("data-buy-return");
+              var live = (ret === "paid" || ret === "pending")
+                ? norm(document.documentElement.getAttribute("data-buy-item")) : "";
+
+              // What this browser remembers, minus anything expired or unreadable.
+              // Pruning is written straight back, so the key does not grow stale.
+              var saved = read(), pruned = false, items = {};
+              for (var k in saved) {
+                if (!Object.prototype.hasOwnProperty.call(saved, k)) continue;
+                var tok = norm(k), when = Number(saved[k]);
+                if (!tok || !isFinite(when) || when <= 0 || (Date.now() - when) > MAX_AGE) {
+                  delete saved[k]; pruned = true; continue;
+                }
+                items[tok] = { when: when, live: false };
+              }
+              if (pruned) write(saved);
+              if (live) { items[live] = { when: 0, live: true }; }     // this trip wins the wording
+              var tokens = [];
+              for (var t in items) { if (Object.prototype.hasOwnProperty.call(items, t)) tokens.push(t); }
+              if (!tokens.length) return;                              // nothing bought, nothing to say
+
               var NOTE = "You just paid for this — your licence goes to the email you used. Only buy again if you mean to.";
+              var dated = function (ms) {
+                var d = new Date(ms);
+                try { return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); }
+                catch (e) { return d.toDateString(); }
+              };
+              // Per token: the anchor that was relabelled and every line inserted,
+              // so "Clear" can undo exactly what was done and nothing else.
+              var state = {};
+              var slot = function (tok) {
+                if (!state[tok]) { state[tok] = { rowDone: false, cardDone: false, anchor: null, lines: [] }; }
+                return state[tok];
+              };
+              var clear = function (tok) {
+                forget(tok);
+                var st = state[tok];
+                if (!st) return;
+                for (var i = 0; i < st.lines.length; i++) {
+                  if (st.lines[i].parentNode) { st.lines[i].parentNode.removeChild(st.lines[i]); }
+                }
+                st.lines = [];
+                if (st.anchor && norm(st.anchor.textContent) === "buy again") { st.anchor.textContent = "Buy"; }
+              };
               // One muted line, text and nothing else. The class is its own, not
               // .store-missing-line, so the card wiring's "a late row wins" clean
               // up cannot delete it.
-              var line = function (gap) {
+              var line = function (tok, gap) {
+                var it = items[tok];
                 var p = document.createElement("p");
                 p.className = "store-bought-line muted";
                 p.setAttribute("role", "status");
@@ -1506,15 +1614,30 @@
                 p.style.color = "#9ca3af";
                 p.style.margin = gap || "0";
                 p.style.flexBasis = "100%";                           // .card__cta / .cluster are flex-wrap rows
-                p.textContent = NOTE;                                 // never innerHTML
+                if (it.live) {
+                  p.textContent = NOTE;                               // never innerHTML
+                } else {
+                  p.textContent = "Bought on this device on " + dated(it.when) +
+                    " — your licence went to the email you used. Only buy again if you mean to. ";
+                  var btn = document.createElement("button");
+                  btn.type = "button";
+                  btn.className = "store-bought-clear";
+                  btn.style.cssText = "font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline";
+                  btn.textContent = "Not you? Clear";
+                  btn.addEventListener("click", function () { clear(tok); });
+                  p.appendChild(btn);
+                }
+                slot(tok).lines.push(p);
                 return p;
               };
-              var rowDone = false, cardDone = false;
               // The row the shop rendered: relabel its Buy anchor and put the
               // line under it. "Buy" only — a row mid-checkout reading "Opening…"
-              // is left exactly as it is.
-              var markRow = function () {
-                if (rowDone) return true;
+              // is left exactly as it is. Exact match only, on the row's
+              // data-item id or its <b> name: marking the wrong row would be
+              // worse than marking none.
+              var markRow = function (token) {
+                var st = slot(token);
+                if (st.rowDone) return true;
                 var rows = store.querySelectorAll("a[data-item]");
                 if (!rows.length) return false;
                 var hit = null;
@@ -1524,36 +1647,45 @@
                   if (norm(a.getAttribute("data-item")) === token || norm(b && b.textContent) === token) { hit = a; }
                 });
                 if (!hit) return false;
-                rowDone = true;
-                if (norm(hit.textContent) === "buy") { hit.textContent = "Buy again"; }
+                st.rowDone = true;
+                if (norm(hit.textContent) === "buy") { hit.textContent = "Buy again"; st.anchor = hit; }
                 var row = hit.parentNode;
-                if (row && row.parentNode && !row.parentNode.querySelector(".store-bought-line")) {
-                  row.parentNode.insertBefore(line("0 0 10px"), row.nextSibling);
+                if (row && row.parentNode) {
+                  var next = row.nextSibling;
+                  var already = next && next.className && String(next.className).indexOf("store-bought-line") > -1;
+                  if (!already) { row.parentNode.insertBefore(line(token, "0 0 10px"), next); }
                 }
                 return true;
               };
               // The hidden card button for the same token, once it is wired: the
               // same line in its .card__cta, so a buyer who scrolled back up to
               // the cards reads it there too.
-              var markCard = function () {
-                if (cardDone) return true;
+              var markCard = function (token) {
+                var st = slot(token);
+                if (st.cardDone) return true;
                 var btns = document.querySelectorAll("[data-store-item]");
                 for (var i = 0; i < btns.length; i++) {
                   if (norm(btns[i].getAttribute("data-store-item")) !== token) continue;
-                  cardDone = true;
+                  st.cardDone = true;
                   var box = btns[i].parentNode;
-                  if (box && !box.querySelector(".store-bought-line")) { box.insertBefore(line("0"), btns[i]); }
+                  if (box && !box.querySelector(".store-bought-line")) { box.insertBefore(line(token, "0"), btns[i]); }
                   return true;
                 }
+                st.cardDone = true;
                 return true;                                          // no card carries this token
               };
-              // One pass: the card is only marked once the shop has actually
-              // listed the row, so nothing on a card claims a purchase the
-              // store block never confirmed listing.
+              // One pass over every token: the card is only marked once the shop
+              // has actually listed that row, so nothing on a card claims a
+              // purchase the store block never confirmed listing. Done when every
+              // token has found its row — anything still missing keeps the
+              // observer alive until the 15s cap.
               var pass = function () {
-                if (!markRow()) return false;
-                markCard();
-                return true;
+                var all = true;
+                for (var i = 0; i < tokens.length; i++) {
+                  if (markRow(tokens[i])) { markCard(tokens[i]); }
+                  else { all = false; }
+                }
+                return all;
               };
               if (pass()) return;
               if (!window.MutationObserver) return;                   // rows arrive from the fetch
