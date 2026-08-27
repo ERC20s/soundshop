@@ -88,8 +88,9 @@ README.md                          this file
 site/
   data/
     changelog.json                 release history for all four products, newest first
-  index.html                       home — hero scope canvas, the four instruments,
-                                   inline playable mini-instrument, formats, bundle
+  index.html                       home — hero with the playable mini-instrument
+                                   above the fold, scope canvas, the four
+                                   instruments, formats, bundle
   docs.html                        documentation: install, parameter reference,
                                    presets, MIDI/automation, troubleshooting, licence
   changelog.html                   changelog shell — filter bar + timeline container
