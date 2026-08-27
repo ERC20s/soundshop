@@ -666,9 +666,12 @@
           the card page opens; you come back here when it is done.</p>
       </div>
 
-      <!-- Return banner: the checkout above is handed returnUrl: location.href, so a
-           buyer lands back here. This reads only the return keys off the query string
-           and says what happened. Client-side hint, never proof of payment.
+      <!-- Return banner: the checkout below is handed a returnUrl built by returnTo(),
+           which points back at this page with item= naming what was bought, so a
+           buyer lands back here on a URL that says which item it was — whether they
+           came in on a deep link or just clicked a row. This reads only the return
+           keys off the query string and says what happened. Client-side hint, never
+           proof of payment.
            It also stands the ?item= deep link down after a successful payment: the
            buyer came in as ...?item=vanta#buy, so the URL they return on still
            carries item=vanta. Without the marker set here, the deep-link script
@@ -760,6 +763,29 @@
               };
               var el = document.getElementById("group-store");
               if (!el) { return; }
+
+              // Where the buyer comes back to. Handing checkout a bare
+              // location.href only names the item when the buyer happened to
+              // arrive on a ?item= deep link — someone who scrolled down to Buy
+              // and clicked a row returns on a URL with no item at all, so the
+              // banner falls back to a plain "Payment received" and a cancelled
+              // buyer lands in front of an undifferentiated list again.
+              // This builds the return URL from the current one: the stale
+              // return keys the banner reads are dropped (so a refreshed or
+              // re-used URL cannot answer for this trip), item is set to the
+              // token being bought, and the #buy hash is kept so the buyer
+              // lands on the section, not the top of the page.
+              var RETURN_KEYS = ["paid", "checkout", "payment", "status", "redirect_status", "session_id"];
+              var returnTo = function (token) {
+                try {
+                  var u = new URL(location.href);
+                  RETURN_KEYS.forEach(function (k) { u.searchParams.delete(k); });
+                  if (token) { u.searchParams.set("item", token); }
+                  else { u.searchParams.delete("item"); }
+                  if (!u.hash) { u.hash = "#buy"; }
+                  return u.href;
+                } catch (err) { return location.href; }   // no URL support: today's behaviour
+              };
               // One place that draws the failure line, so the timeout below and the
               // .catch at the end show exactly the same thing.
               var loadFailed = function () {
@@ -867,8 +893,16 @@
                       fn();
                     };
 
+                    // The store id is what the shop is asked to charge for; the
+                    // return URL prefers the page's own token for this row (a
+                    // card button stamps data-page-item before forwarding the
+                    // click), because that is what the banner and the deep-link
+                    // script match against the cards on this page.
+                    var storeItem = a.getAttribute("data-item");
+                    var pageItem = a.getAttribute("data-page-item");
+
                     fetch(s.checkout.url, { method: "POST", headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ group: GROUP, item: a.getAttribute("data-item"), quantity: 1, returnUrl: location.href }) })
+                      body: JSON.stringify({ group: GROUP, item: storeItem, quantity: 1, returnUrl: returnTo(pageItem || storeItem) }) })
                       .then(function (r) {
                         if (!r.ok) { throw new Error("HTTP " + r.status); }
                         return r.json();
@@ -903,7 +937,10 @@
                  scrolls the buyer to the Buy section and shows its own busy state,
                  mirroring the row until checkout opens or fails. On an exact match
                  the card's own price is set to the store price with the markup
-                 price kept as "was …" — so the card and the button never disagree. -->
+                 price kept as "was …" — so the card and the button never disagree.
+                 Before forwarding the click the row is stamped with this page's
+                 token (data-page-item), so the return URL the row hands checkout
+                 names the item in the words this page uses. -->
             <script>
             (function () {
               var store = document.getElementById("group-store");
@@ -1040,6 +1077,11 @@
                       });
                       obs.observe(hit, { childList: true, characterData: true, subtree: true });
                     }
+                    // Tell the row which name this page knows the item by, so the
+                    // return URL the row sends to checkout carries the card's own
+                    // token — that is the token the return banner matches against
+                    // [data-store-item] to say "Payment received — DRIFT".
+                    hit.setAttribute("data-page-item", token);
                     hit.click();
                     // Nothing started (a checkout was already in flight, or the row
                     // just followed its pay link): release instead of hanging.
