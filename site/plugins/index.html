@@ -161,6 +161,13 @@
     color: var(--text-mute) !important;
   }
   #group-store > p a { color: var(--accent-text) !important; }
+
+  /* Page-local: the return banner shown when a buyer comes back from the
+     checkout page. Hidden until the script finds a return parameter. */
+  #buy-return { border-inline-start: 3px solid var(--line-strong); }
+  #buy-return[data-state="paid"] { border-inline-start-color: var(--accent); }
+  #buy-return[data-state="cancelled"] { border-inline-start-color: var(--accent-2); }
+  #buy-return:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 </style>
 </head>
 <body>
@@ -666,6 +673,10 @@
           the card page opens; you come back here when it is done.</p>
       </div>
 
+      <!-- Return state: filled in and unhidden only when this page is loaded
+           with a return parameter from the checkout page. Silent otherwise. -->
+      <div id="buy-return" class="note" hidden role="status" aria-live="polite" tabindex="-1"></div>
+
       <div class="split" data-reveal>
         <div class="panel">
           <div class="panel__head"><h3>On sale now</h3></div>
@@ -753,6 +764,68 @@
                 var obs = new MutationObserver(function () { if (wire()) obs.disconnect(); });
                 obs.observe(store, { childList: true, subtree: true });
                 setTimeout(function () { obs.disconnect(); }, 15000);
+              }
+            })();
+            </script>
+            <!-- Return state: the checkout above is handed returnUrl: location.href,
+                 so the card page sends the buyer back to this page. This reads the
+                 query string for the usual return keys, fills #buy-return, scrolls
+                 Buy into view and then strips those keys from the URL so a refresh
+                 does not repeat the message. No fetch, no change to the block above;
+                 an unrecognised key simply leaves the banner hidden. -->
+            <script>
+            (function () {
+              var el = document.getElementById("buy-return");
+              if (!el || typeof window.URLSearchParams !== "function") { return; }
+              var params;
+              try { params = new URLSearchParams(location.search); } catch (e) { return; }
+              var KEYS = ["paid", "checkout", "payment", "status", "result", "redirect_status", "session_id"];
+              var OK = ["1", "true", "yes", "ok", "success", "succeeded", "paid", "complete", "completed"];
+              var NO = ["0", "false", "cancel", "cancelled", "canceled", "fail", "failed", "failure", "error"];
+              var state = "";
+              KEYS.forEach(function (k) {
+                if (!params.has(k)) { return; }
+                var v = String(params.get(k) || "").trim().toLowerCase();
+                if (NO.indexOf(v) > -1) { state = "cancelled"; return; }
+                if (state === "cancelled") { return; }
+                if (OK.indexOf(v) > -1) { state = "paid"; return; }
+                if (k === "session_id" && v) { state = "paid"; }
+              });
+              if (!state) { return; }
+
+              var title = document.createElement("p");
+              title.className = "note__title";
+              var body = document.createElement("p");
+              if (state === "paid") {
+                title.textContent = "Payment received";
+                body.appendChild(document.createTextNode(
+                  "Thank you. Your licence file and installers are on their way to the email address you used at " +
+                  "checkout — they usually land within a few minutes. If nothing arrives, check the spam folder and " +
+                  "then write to us. Dropping the licence file in place is covered in the "));
+                var link = document.createElement("a");
+                link.href = "../docs.html";
+                link.textContent = "documentation";
+                body.appendChild(link);
+                body.appendChild(document.createTextNode("."));
+              } else {
+                title.textContent = "Nothing was charged";
+                body.textContent = "The checkout was cancelled, so no payment was taken and no licence was issued. " +
+                  "The rows below are still live — pick an item and hit Buy whenever you are ready.";
+              }
+              el.setAttribute("data-state", state);
+              el.appendChild(title);
+              el.appendChild(body);
+              el.hidden = false;
+
+              var buy = document.getElementById("buy") || el;
+              try { buy.scrollIntoView({ behavior: "smooth", block: "start" }); }
+              catch (e) { buy.scrollIntoView(); }
+              try { el.focus({ preventScroll: true }); } catch (e) { try { el.focus(); } catch (e2) {} }
+
+              if (window.history && history.replaceState) {
+                KEYS.forEach(function (k) { params.delete(k); });
+                var q = params.toString();
+                try { history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + "#buy"); } catch (e) {}
               }
             })();
             </script>
