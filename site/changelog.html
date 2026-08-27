@@ -1,48 +1,265 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Soundshop — Changelog</title>
-  <link rel="stylesheet" href="changelog.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Changelog — SOUNDSHOP</title>
+<meta name="description" content="Every SOUNDSHOP release since 1.0, with the reasons attached — VANTA, DRIFT, PRISM and ANVIL, filterable by instrument and by release type.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2308090A'/%3E%3Crect x='5.5' y='5.5' width='21' height='21' rx='3.5' fill='none' stroke='%23363D44'/%3E%3Ccircle cx='16' cy='16' r='4.2' fill='%23F2A93B'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  /* Header: keep the theme toggle to the right of the nav on desktop and
+     beside the burger on mobile. */
+  .site-head > .theme-toggle { flex: none; }
+  @media (max-width: 899px) {
+    .site-head > .theme-toggle { margin-inline-start: auto; }
+    .site-head > .nav-toggle   { margin-inline-start: var(--sp-3); }
+  }
+  /* ---- changelog.html page-local only --------------------------------- */
+  .cl-lede { max-width: 62ch; }
+
+  .cl-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+  .cl-filters__label {
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+  }
+  .cl-filters__sep { width: 1px; height: 18px; background: var(--line); }
+  .cl-count {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--fs-label);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+    margin-block: var(--sp-5) 0;
+  }
+
+  /* Timeline rail. The dot sits on the version line of each entry. */
+  .cl-timeline { position: relative; margin-block-start: var(--sp-3); }
+  .cl-timeline::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 5px;
+    width: 1px;
+    background: linear-gradient(180deg, transparent, var(--line) 40px, var(--line) calc(100% - 80px), transparent);
+    pointer-events: none;
+  }
+  .cl-entry { position: relative; padding-inline-start: 38px; align-items: start; }
+  .cl-entry::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: 0;
+    top: calc(var(--sp-6) + 0.45em);
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    border: 1px solid var(--line-strong);
+    background: var(--bg);
+  }
+  .cl-entry[data-type="release"]::before {
+    border-color: var(--accent);
+    background: var(--accent);
+    box-shadow: var(--glow);
+  }
+  .cl-entry[data-type="beta"]::before { border-color: var(--warn); }
+  .cl-entry[data-type="feature"]::before { border-color: var(--good); }
+  .cl-entry:first-child { padding-block-start: 0; }
+  .cl-entry:first-child::before { top: 0.45em; }
+
+  .cl-badges { margin-block-start: var(--sp-1); }
+  .cl-product { color: var(--text); border-color: var(--line-strong); letter-spacing: 0.2em; }
+
+  .cl-notes { list-style: none; margin: 0; padding: 0; font-size: var(--fs-body); line-height: 1.7; }
+  .cl-notes li { position: relative; padding-inline-start: 1.35em; }
+  .cl-notes li + li { margin-block-start: var(--sp-3); }
+  .cl-notes li::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 0.85em;
+    width: 6px;
+    height: 1px;
+    background: var(--accent);
+  }
+
+  .cl-links { margin-block-start: var(--sp-4); }
+  .cl-link {
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-2);
+    text-decoration: none;
+    padding: 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    transition: border-color var(--dur-2) var(--ease-mech), color var(--dur-2) var(--ease-mech);
+  }
+  .cl-link:hover { border-color: var(--line-strong); color: var(--text); }
+
+  .cl-detail { font-size: var(--fs-small); color: var(--text-mute); margin-block-start: var(--sp-3); }
+
+  .cl-noscript { margin-block-start: var(--sp-6); }
+
+  @media (max-width: 899px) {
+    .cl-entry { padding-inline-start: 26px; }
+    .cl-badges { margin-block-start: 0; }
+    .cl-timeline::before { inset-inline-start: 5px; }
+  }
+</style>
 </head>
 <body>
-  <header>
-    <h1>Changelog</h1>
-    <p id="summary">Recent releases and notable changes for Soundshop.</p>
-  </header>
-
-  <!-- Shared site navigation. The same block appears on all four pages with
-       paths relative to that page's directory, so both serving roots (the
-       repository root and site/) keep working. The current page is marked
-       statically with class="current" + aria-current="page" — no JavaScript. -->
-  <nav class="site-nav" aria-label="Site">
-    <ul>
-      <li><a href="index.html">Home</a></li>
-      <li><a href="plugins/flagship.html">Flagship Synth</a></li>
-      <li><a href="presets/index.html">Presets</a></li>
-      <li><a class="current" aria-current="page" href="changelog.html">Changelog</a></li>
-    </ul>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-head" data-head>
+  <a class="brand" href="index.html" aria-label="Soundshop home">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">SOUNDSHOP</span>
+  </a>
+  <nav class="site-nav" aria-label="Primary">
+    <a href="plugins/index.html">Plugins</a>
+    <a href="presets/index.html">Presets</a>
+    <a href="demo/flagship-demo.html">Demo</a>
+    <a href="docs.html">Docs</a>
+    <a href="changelog.html">Changelog</a>
   </nav>
+  <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" aria-label="Switch to light theme" title="Switch to light theme">
+    <span data-theme-label>Dark</span>
+  </button>
+  <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" data-nav-toggle>
+    <span></span><span></span><span></span>
+  </button>
+</header>
 
-  <main>
-    <!-- Release index: filled in by changelog.js once the entries are rendered.
-         Stays hidden (and harmless) if scripting is off or the fetch fails. -->
-    <nav id="release-index" hidden aria-label="Releases"></nav>
+<main id="main">
 
-    <section id="changelog-root" aria-live="polite">
-      <p class="loading">Loading changelog…</p>
-    </section>
+  <section class="section section--tight">
+    <div class="wrap">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <ol>
+          <li><a href="index.html">Home</a></li>
+          <li>Changelog</li>
+        </ol>
+      </nav>
+      <div class="sec-head mt-5" data-reveal>
+        <p class="sec-head__eyebrow">Updates</p>
+        <h1 class="sec-head__title">What changed, and when</h1>
+        <p class="sec-head__sub cl-lede">Every release since 1.0, with the reasons attached. We do not ship
+          "various improvements" — if a line moved in the DSP, it is written down here, and if a fix is free to
+          existing owners the entry says so.</p>
+      </div>
+      <div class="cluster mt-5">
+        <span class="badge badge--version">VANTA 1.4.0</span>
+        <span class="badge badge--version">DRIFT 1.1.0</span>
+        <span class="badge badge--beta">PRISM 0.9.0 beta</span>
+        <span class="badge badge--version">ANVIL 2.0.1</span>
+      </div>
+    </div>
+  </section>
 
-    <noscript>
-      <p>JavaScript is required to render the full changelog. A sample JSON file is available at <a href="../data/changelog.json">data/changelog.json</a>.</p>
-    </noscript>
-  </main>
+  <section class="section section--flush">
+    <div class="wrap">
 
-  <footer>
-    <p><a href="index.html">Home</a></p>
-  </footer>
+      <h2 class="sr-only">Release history</h2>
 
-  <script src="changelog.js"></script>
+      <div class="filter-bar" data-cl-filters hidden>
+        <div class="cl-filters">
+          <span class="cl-filters__label" id="cl-product-label">Instrument</span>
+          <div class="cluster cluster--sm" role="group" aria-labelledby="cl-product-label">
+            <button class="tag is-active" type="button" data-cl-product="all" aria-pressed="true">All <span class="tag__count" data-cl-count-for="all">0</span></button>
+            <button class="tag" type="button" data-cl-product="VANTA" aria-pressed="false">VANTA <span class="tag__count" data-cl-count-for="VANTA">0</span></button>
+            <button class="tag" type="button" data-cl-product="DRIFT" aria-pressed="false">DRIFT <span class="tag__count" data-cl-count-for="DRIFT">0</span></button>
+            <button class="tag" type="button" data-cl-product="PRISM" aria-pressed="false">PRISM <span class="tag__count" data-cl-count-for="PRISM">0</span></button>
+            <button class="tag" type="button" data-cl-product="ANVIL" aria-pressed="false">ANVIL <span class="tag__count" data-cl-count-for="ANVIL">0</span></button>
+            <button class="tag" type="button" data-cl-product="Soundshop" aria-pressed="false">House <span class="tag__count" data-cl-count-for="Soundshop">0</span></button>
+          </div>
+        </div>
+        <span class="cl-filters__sep" aria-hidden="true"></span>
+        <div class="cl-filters">
+          <span class="cl-filters__label" id="cl-type-label">Type</span>
+          <div class="cluster cluster--sm" role="group" aria-labelledby="cl-type-label">
+            <button class="tag is-active" type="button" data-cl-type="all" aria-pressed="true">Everything</button>
+            <button class="tag" type="button" data-cl-type="release" aria-pressed="false">Release</button>
+            <button class="tag" type="button" data-cl-type="feature" aria-pressed="false">Feature</button>
+            <button class="tag" type="button" data-cl-type="fix" aria-pressed="false">Fix</button>
+            <button class="tag" type="button" data-cl-type="beta" aria-pressed="false">Beta</button>
+          </div>
+        </div>
+      </div>
+
+      <p class="cl-count" data-cl-count aria-live="polite"></p>
+
+      <div class="cl-timeline" data-cl-list></div>
+
+      <div class="empty-state" data-cl-empty hidden>
+        <p class="empty-state__title">Nothing matches</p>
+        <p>No release in the history matches that combination of instrument and type. Widen the filter — most
+          instruments have more fixes than features, and the house entries cover the whole shop at once.</p>
+      </div>
+
+      <div class="empty-state" data-cl-status>
+        <p class="empty-state__title">Loading release history</p>
+        <p>Reading the release data.</p>
+      </div>
+
+      <noscript>
+        <div class="note cl-noscript">
+          <p class="note__title">JavaScript is off</p>
+          <p>This page renders the release history from a single JSON file. With scripting disabled you can read
+            the raw data directly: <a href="data/changelog.json">site/data/changelog.json</a>. It is plain text,
+            newest first, one object per release — the same file the page above formats.</p>
+        </div>
+      </noscript>
+
+    </div>
+  </section>
+
+  <section class="section section--elev">
+    <div class="wrap">
+      <div class="sec-head" data-reveal>
+        <p class="sec-head__eyebrow">How we version</p>
+        <h2 class="sec-head__title">Free within a major version</h2>
+        <p class="sec-head__sub cl-lede">Every 1.x update is free to 1.x owners, and every 2.x update is free to
+          2.x owners. PRISM's 1.0 release is free to everyone who bought the 0.9.0 public beta. Parameter IDs are
+          frozen across a major version, so automation written years ago still lands where you put it.</p>
+      </div>
+      <div class="cluster mt-5">
+        <a class="btn btn-primary" href="demo/flagship-demo.html">Play VANTA in the browser</a>
+        <a class="btn btn-ghost" href="plugins/index.html">See all four instruments</a>
+        <a class="btn btn-ghost" href="docs.html">Read the documentation</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="foot-grid">
+    <div class="foot-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <p>SOUNDSHOP<br><span class="muted">Instruments for the deep end.</span></p>
+    </div>
+    <div><h3>Instruments</h3><ul>
+      <li><a href="plugins/flagship.html">VANTA</a></li>
+      <li><a href="plugins/drift.html">DRIFT</a></li>
+      <li><a href="plugins/prism.html">PRISM</a></li>
+      <li><a href="plugins/anvil.html">ANVIL</a></li>
+    </ul></div>
+    <div><h3>Resources</h3><ul>
+      <li><a href="presets/index.html">Preset library</a></li>
+      <li><a href="demo/flagship-demo.html">Playable demo</a></li>
+      <li><a href="docs.html">Documentation</a></li>
+      <li><a href="changelog.html">Changelog</a></li>
+    </ul></div>
+  </div>
+  <p class="foot-legal"><span class="muted">&copy; 2026 Soundshop. Every page here is static — no build step, no trackers.</span></p>
+</footer>
+
+<script src="assets/js/ui.js"></script>
+<script src="assets/js/changelog.js"></script>
 </body>
 </html>

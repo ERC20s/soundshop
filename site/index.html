@@ -1,66 +1,801 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Soundshop — Home</title>
-  <link rel="stylesheet" href="assets/style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>SOUNDSHOP — Instruments for the deep end.</title>
+<meta name="description" content="SOUNDSHOP builds four audio plugins in-house: VANTA polysynth, DRIFT tape delay, PRISM spectral filter and ANVIL bus compressor. VST3, AU, AAX and CLAP. Play VANTA in your browser — no download, no account.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2308090A'/%3E%3Crect x='6.5' y='6.5' width='19' height='19' rx='3' fill='none' stroke='%23363D44'/%3E%3Cpath d='M10 21h12M10 17h12' stroke='%238A939B' stroke-width='1.2'/%3E%3Ccircle cx='16' cy='12' r='2.6' fill='%23F2A93B'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  /* -----------------------------------------------------------------------
+     Page-local styles for the home page only. Everything structural comes
+     from assets/style.css; this block adds the hero canvas layer, the
+     featured product card, the feature icons and a few home-only rhythms.
+     ----------------------------------------------------------------------- */
+
+  /* Header: keep the theme toggle to the right of the nav on desktop and
+     beside the burger on mobile. */
+  .site-head > .theme-toggle { flex: none; }
+  @media (max-width: 899px) {
+    .site-head > .theme-toggle { margin-inline-start: auto; }
+    .site-head > .nav-toggle   { margin-inline-start: var(--sp-3); }
+  }
+
+  /* --- hero ------------------------------------------------------------- */
+  .hero { isolation: isolate; }
+  .hero > .hero__canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .hero > .hero__veil {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(100deg,
+        var(--bg) 18%,
+        color-mix(in oklab, var(--bg) 72%, transparent) 52%,
+        color-mix(in oklab, var(--bg) 30%, transparent) 74%,
+        transparent 88%),
+      linear-gradient(0deg, var(--bg), transparent 11%);
+  }
+  .hero > .wrap--wide { width: 100%; }
+
+  .hero__mark {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    font-family: var(--font-mono);
+    font-size: clamp(0.8125rem, 0.72rem + 0.5vw, 1.0625rem);
+    font-weight: 500;
+    letter-spacing: 0.42em;
+    text-transform: uppercase;
+    color: var(--text);
+    margin: 0;
+  }
+  .hero__mark::after {
+    content: "";
+    flex: 1 1 auto;
+    max-width: 220px;
+    height: 1px;
+    background: linear-gradient(90deg, var(--line-strong), transparent);
+  }
+
+  .hero__title .hero__title-em { color: var(--accent-text); }
+
+  .hero__note {
+    font-family: var(--font-mono);
+    font-size: var(--fs-small);
+    letter-spacing: 0;
+    color: var(--text-mute);
+    margin: 0;
+  }
+
+  .hero__cue {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+    text-decoration: none;
+    transition: color var(--dur-2) var(--ease-mech);
+  }
+  .hero__cue:hover { color: var(--accent-text); }
+  .hero__cue::after {
+    content: "";
+    width: 34px;
+    height: 1px;
+    background: currentColor;
+    transition: width var(--dur-3) var(--ease-snap);
+  }
+  .hero__cue:hover::after { width: 54px; }
+
+  .hero__strip { margin-block-start: clamp(28px, 4vw, 56px); }
+
+  /* --- playable strip ---------------------------------------------------- */
+  .play-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: var(--gap);
+  }
+  @media (max-width: 719px) { .play-grid { grid-template-columns: minmax(0, 1fr); } }
+
+  .voice-leds { display: inline-flex; gap: 5px; }
+
+  .play-hint {
+    font-size: var(--fs-small);
+    line-height: 1.7;
+    color: var(--text-mute);
+    margin: 0;
+    max-width: 60ch;
+  }
+  .play-hint kbd {
+    display: inline-block;
+    min-width: 1.5em;
+    padding: 1px 5px;
+    margin-inline: 1px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-xs);
+    background: var(--bg-2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-micro);
+    text-align: center;
+    color: var(--text-dim);
+  }
+
+  .play-meter { display: flex; align-items: center; gap: var(--sp-3); min-width: 190px; }
+  .play-meter .meter { flex: 1 1 auto; }
+
+  /* --- product cards ----------------------------------------------------- */
+  .card__desc { font-size: var(--fs-body); color: var(--text-dim); margin: 0; }
+
+  .card--feature .card__media { aspect-ratio: 16 / 7; }
+  @media (min-width: 900px) {
+    .card--feature { flex-direction: row; align-items: stretch; }
+    .card--feature .card__media {
+      flex: 0 0 44%;
+      aspect-ratio: auto;
+      border-bottom: 0;
+      border-inline-end: 1px solid var(--line);
+    }
+    .card--feature .card__body { padding: clamp(24px, 3vw, 44px); justify-content: center; }
+  }
+  .card--feature .card__title { font-size: clamp(1.5rem, 1.2rem + 1.1vw, 2.25rem); }
+
+  .card__badges { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+
+  /* --- feature blurbs ---------------------------------------------------- */
+  .feature__icon {
+    display: block;
+    width: 30px;
+    height: 30px;
+    color: var(--accent-text);
+  }
+  .feature__icon svg { display: block; width: 100%; height: 100%; overflow: visible; }
+
+  /* --- numbers band ------------------------------------------------------ */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: clamp(24px, 3vw, 48px) var(--gap);
+  }
+  @media (max-width: 899px) { .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .stat { padding-block-start: var(--sp-4); border-block-start: 1px solid var(--line); }
+
+  /* --- quotes ------------------------------------------------------------ */
+  .quote { padding: var(--sp-5); border-inline-start: 1px solid var(--line); }
+  .quote__text::before { content: ""; }
+
+  /* --- closing links ----------------------------------------------------- */
+  .foot-links a { color: var(--text-mute); text-decoration: none; }
+  .foot-links a:hover { color: var(--accent-text); }
+</style>
 </head>
 <body>
-  <header>
-    <h1>Soundshop</h1>
-    <p>Plugin pages, demo, presets, changelog and docs for the flagship synth.</p>
-  </header>
 
-  <!-- Shared site navigation. The same block appears on all four pages with
-       paths relative to that page's directory, so both serving roots (the
-       repository root and site/) keep working. The current page is marked
-       statically with class="current" + aria-current="page" — no JavaScript. -->
-  <nav class="site-nav" aria-label="Site">
-    <ul>
-      <li><a class="current" aria-current="page" href="index.html">Home</a></li>
-      <li><a href="plugins/flagship.html">Flagship Synth</a></li>
-      <li><a href="presets/index.html">Presets</a></li>
-      <li><a href="changelog.html">Changelog</a></li>
-    </ul>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-head" data-head>
+  <a class="brand" href="index.html" aria-label="Soundshop home">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">SOUNDSHOP</span>
+  </a>
+  <nav class="site-nav" aria-label="Primary">
+    <a href="plugins/index.html">Plugins</a>
+    <a href="presets/index.html">Presets</a>
+    <a href="demo/flagship-demo.html">Demo</a>
+    <a href="docs.html">Docs</a>
+    <a href="changelog.html">Changelog</a>
   </nav>
+  <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" aria-label="Switch to light theme" title="Switch to light theme">
+    <span data-theme-label>Dark</span>
+  </button>
+  <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" data-nav-toggle>
+    <span></span><span></span><span></span>
+  </button>
+</header>
 
-  <main>
-    <!--
-      The product first: the playable keyboard is the first block on the home
-      page, above the link sections. plugins/demo-keys.js fills #demo-slot with
-      the same one-octave keyboard it builds on plugins/flagship.html — the
-      script only looks for this id and for Web Audio, so it needs no
-      page-specific wiring. Without Web Audio (or with JavaScript off) the
-      fallback paragraph below simply stays.
-    -->
-    <section id="demo">
-      <h2>Play the Flagship Synth</h2>
-      <div id="demo-slot">
-        <p>The playable demo needs a browser with Web Audio — see the <a href="plugins/flagship.html">Flagship Synth page</a> for specs and presets.</p>
+<main id="main">
+
+  <!-- ==================================================================
+       HERO
+       ================================================================== -->
+  <section class="hero" id="top">
+    <canvas class="hero__canvas" data-hero-canvas aria-hidden="true"></canvas>
+    <div class="hero__veil" aria-hidden="true"></div>
+
+    <div class="wrap--wide">
+      <div class="stack stack--lg">
+        <div class="stack">
+          <p class="hero__mark">Soundshop</p>
+          <p class="hero__eyebrow">Est. in a room with bad acoustics</p>
+        </div>
+
+        <h1 class="hero__title">Instruments for the <span class="hero__title-em">deep end</span>.</h1>
+
+        <p class="hero__sub">
+          Four plugins, built and maintained in-house by the people who designed the DSP.
+          VST3, AU, AAX and CLAP for macOS 11+ (Universal), Windows 10+ (x64) and Linux
+          (x64, VST3/CLAP). No subscription, no iLok, no account required to demo.
+        </p>
+
+        <div class="hero__actions">
+          <a class="btn btn-primary btn--lg" href="demo/flagship-demo.html">Play VANTA in your browser</a>
+          <a class="btn btn-ghost btn--lg" href="plugins/index.html">Browse instruments</a>
+        </div>
+
+        <div class="cluster cluster--lg">
+          <p class="hero__note">Audio starts on your first keypress — never before it.</p>
+          <a class="hero__cue" href="#play">Or play it right here</a>
+        </div>
+
+        <p class="strip hero__strip">
+          <span>VST3</span><span class="strip__sep" aria-hidden="true"></span>
+          <span>AU</span><span class="strip__sep" aria-hidden="true"></span>
+          <span>AAX</span><span class="strip__sep" aria-hidden="true"></span>
+          <span>CLAP</span><span class="strip__sep" aria-hidden="true"></span>
+          <span>macOS 11+ Universal</span><span class="strip__sep" aria-hidden="true"></span>
+          <span>Windows 10+ x64</span><span class="strip__sep" aria-hidden="true"></span>
+          <span>Linux x64</span>
+        </p>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <section>
-      <h2>Plugins</h2>
-      <ul>
-        <li><a href="plugins/flagship.html">Flagship Synth</a> — demo, specs and presets</li>
-      </ul>
-    </section>
-    <section>
-      <h2>Presets</h2>
-      <p><a href="presets/index.html">Presets gallery</a></p>
-    </section>
-    <section>
-      <h2>Changelog</h2>
-      <p><a href="changelog.html">Changelog</a></p>
-    </section>
-  </main>
-  <footer>
-    <p>Serve these files over http from either the repository root or site/ — all links are relative.</p>
-  </footer>
-  <!-- Same keyboard as the flagship page, loaded from its own file. The path is
-       relative to this page (site/), so both serving roots keep working. -->
-  <script src="plugins/demo-keys.js" defer></script>
+  <!-- ==================================================================
+       PLAY IT — inline mini-instrument
+       ================================================================== -->
+  <section class="section" id="play" data-play-section>
+    <div class="wrap--wide">
+      <div class="sec-head" data-reveal>
+        <p class="sec-head__eyebrow">Play it</p>
+        <h2 class="sec-head__title">VANTA, running in this tab</h2>
+        <p class="sec-head__sub">Real DSP, real presets, no download and no account.</p>
+      </div>
+
+      <div class="panel" data-play-panel data-reveal>
+        <div class="panel__head">
+          <span class="led" data-play-led aria-hidden="true"></span>
+          <span class="label" data-play-status role="status">Audio asleep — press a key</span>
+          <span class="push"></span>
+          <span class="label label--micro">Voices</span>
+          <span class="voice-leds" data-voice-leds aria-hidden="true">
+            <span class="led"></span><span class="led"></span><span class="led"></span><span class="led"></span>
+            <span class="led"></span><span class="led"></span><span class="led"></span><span class="led"></span>
+          </span>
+        </div>
+
+        <div class="panel__body stack stack--lg">
+
+          <div class="play-grid">
+            <div class="stack stack--sm">
+              <span class="label label--micro">Preset</span>
+              <div class="cluster cluster--sm" role="group" aria-label="VANTA presets" data-preset-row>
+                <!-- Preset buttons are populated by assets/js/home.js -->
+                <noscript><span class="muted">The four quick presets need JavaScript; the plugin itself does not.</span></noscript>
+              </div>
+            </div>
+
+            <div class="stack stack--sm">
+              <span class="label label--micro">Output</span>
+              <div class="play-meter">
+                <span class="meter" aria-hidden="true">
+                  <span class="meter__scale"></span>
+                  <span class="meter__bar" data-play-meter></span>
+                  <span class="meter__clip" data-play-clip></span>
+                </span>
+                <span class="label label--micro num" data-play-level>&minus;&infin; dB</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="keybed" data-keybed aria-hidden="true">
+            <div class="keybed__keys" data-keybed-keys></div>
+          </div>
+
+          <div class="play-grid">
+            <p class="play-hint">
+              Click the keys, or type
+              <kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd>
+              with <kbd>W</kbd><kbd>E</kbd><kbd>T</kbd><kbd>Y</kbd><kbd>U</kbd> for the sharps.
+              <kbd>Z</kbd><kbd>X</kbd> shift the octave.
+            </p>
+            <div class="cluster cluster--sm">
+              <span class="label label--micro num" data-play-octave>C4</span>
+              <button class="btn btn-ghost btn--sm" type="button" data-octave="-1" aria-label="Octave down">Oct &minus;</button>
+              <button class="btn btn-ghost btn--sm" type="button" data-octave="1" aria-label="Octave up">Oct +</button>
+              <button class="btn btn-ghost btn--sm" type="button" data-panic>All notes off</button>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="panel__foot">
+          <span>Browser demo. Audio quality and voice count are limited by the browser; the plugin is not.</span>
+          <span class="push"></span>
+          <a class="btn btn-ghost btn--sm" href="demo/flagship-demo.html">Open the full demo</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================================================================
+       THE SHOP — four instruments
+       ================================================================== -->
+  <section class="section" id="shop">
+    <div class="wrap--wide">
+      <div class="sec-head" data-reveal>
+        <p class="sec-head__eyebrow">The shop</p>
+        <h2 class="sec-head__title">Four instruments, one signal philosophy</h2>
+        <p class="sec-head__sub">Each one exists because we needed it and could not buy it.</p>
+      </div>
+
+      <div class="grid">
+
+        <!-- VANTA — flagship -->
+        <article class="card card--product card--feature span-12" data-reveal>
+          <div class="card__media" aria-hidden="true">
+            <svg viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice" role="presentation" focusable="false">
+              <g fill="none" stroke="currentColor" stroke-width="1" opacity=".35" color="var(--text-mute)">
+                <path d="M0 100h320M0 60h320M0 140h320"/>
+                <path d="M60 0v200M160 0v200M260 0v200"/>
+              </g>
+              <path d="M0 100 C20 100 24 46 40 46 C56 46 60 154 76 154 C92 154 96 62 112 62 C128 62 132 138 148 138 C164 138 168 74 184 74 C200 74 204 126 220 126 C236 126 240 88 256 88 C272 88 276 112 292 112 C304 112 310 100 320 100"
+                    fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" opacity=".95"/>
+              <g fill="var(--accent-2)" opacity=".75">
+                <rect x="24" y="168" width="4" height="18" rx="1"/>
+                <rect x="40" y="158" width="4" height="28" rx="1"/>
+                <rect x="56" y="174" width="4" height="12" rx="1"/>
+                <rect x="72" y="150" width="4" height="36" rx="1"/>
+                <rect x="88" y="166" width="4" height="20" rx="1"/>
+                <rect x="104" y="176" width="4" height="10" rx="1"/>
+                <rect x="120" y="160" width="4" height="26" rx="1"/>
+                <rect x="136" y="170" width="4" height="16" rx="1"/>
+              </g>
+              <g fill="none" stroke="var(--text-mute)" stroke-width="1" opacity=".5">
+                <circle cx="252" cy="46" r="16"/>
+                <path d="M252 32v10"/>
+                <circle cx="290" cy="46" r="16"/>
+                <path d="M290 32v10"/>
+              </g>
+            </svg>
+          </div>
+          <div class="card__body">
+            <div class="card__badges">
+              <span class="badge badge--bundle">Flagship</span>
+              <span class="badge badge--version num">v1.4.0</span>
+              <span class="badge badge--new">Plays in this page</span>
+            </div>
+            <h3 class="card__title">VANTA</h3>
+            <p class="card__sub">8-voice virtual-analog polysynth</p>
+            <p class="card__desc">
+              VANTA is our flagship: eight independent voices, each with two oscillators, a
+              resonant ladder filter, and its own small amount of tuning and envelope error,
+              because a perfectly matched voice card has never existed. Unison stacks all
+              eight. The modulation matrix has twenty-four slots and no hidden routing. It is
+              the instrument the playable demo on this site actually runs.
+            </p>
+            <div class="card__meta">
+              <span class="chip">VST3</span><span class="chip">AU</span><span class="chip">AAX</span><span class="chip">CLAP</span>
+            </div>
+            <p class="card__price num">$149</p>
+            <div class="card__cta">
+              <a class="btn btn-primary" href="plugins/flagship.html">VANTA in detail</a>
+              <a class="btn btn-ghost" href="demo/flagship-demo.html">Play the demo</a>
+            </div>
+          </div>
+        </article>
+
+        <!-- DRIFT -->
+        <article class="card card--product span-4" data-reveal>
+          <div class="card__media" aria-hidden="true">
+            <svg viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice" role="presentation" focusable="false">
+              <g fill="none" stroke="var(--text-mute)" stroke-width="1" opacity=".45">
+                <circle cx="92" cy="100" r="42"/><circle cx="92" cy="100" r="9"/>
+                <circle cx="228" cy="100" r="42"/><circle cx="228" cy="100" r="9"/>
+                <path d="M92 58v-14M228 58v-14"/>
+              </g>
+              <path d="M50 100h220" stroke="var(--line)" stroke-width="1"/>
+              <g stroke="var(--accent)" stroke-linecap="round" fill="none">
+                <path d="M134 100q26-34 52 0" stroke-width="2" opacity=".9"/>
+                <path d="M134 100q26 30 52 0" stroke-width="2" opacity=".55"/>
+              </g>
+              <g fill="var(--accent-2)">
+                <rect x="150" y="150" width="3" height="24" rx="1" opacity=".9"/>
+                <rect x="168" y="156" width="3" height="18" rx="1" opacity=".65"/>
+                <rect x="186" y="161" width="3" height="13" rx="1" opacity=".45"/>
+                <rect x="204" y="165" width="3" height="9" rx="1" opacity=".3"/>
+                <rect x="222" y="168" width="3" height="6" rx="1" opacity=".2"/>
+              </g>
+            </svg>
+          </div>
+          <div class="card__body">
+            <div class="card__badges">
+              <span class="badge badge--version num">v1.1.0</span>
+            </div>
+            <h3 class="card__title">DRIFT</h3>
+            <p class="card__sub">Tape-modelled delay &amp; pitch-warping echo</p>
+            <p class="card__desc">
+              DRIFT models the parts of tape delay people actually miss: wow and flutter with
+              correlated low-frequency drift, head-gap loss on repeats, and a record path that
+              saturates before it distorts. Push the transport speed and the repeats bend with
+              it, the way a machine does. Tempo-sync, free-run, and a freeze that holds the
+              loop without re-recording into it.
+            </p>
+            <div class="card__meta">
+              <span class="chip">VST3</span><span class="chip">AU</span><span class="chip">AAX</span><span class="chip">CLAP</span>
+            </div>
+            <p class="card__price num">$79</p>
+            <div class="card__cta">
+              <a class="btn btn-ghost" href="plugins/drift.html">DRIFT in detail</a>
+            </div>
+          </div>
+        </article>
+
+        <!-- PRISM -->
+        <article class="card card--product span-4" data-reveal>
+          <div class="card__media" aria-hidden="true">
+            <svg viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice" role="presentation" focusable="false">
+              <g fill="none" stroke="var(--text-mute)" stroke-width="1" opacity=".4">
+                <path d="M20 170h280"/>
+                <path d="M20 170 96 40 172 170"/>
+              </g>
+              <g stroke-width="2" fill="none" stroke-linecap="round">
+                <path d="M96 40 300 62" stroke="var(--accent)" opacity=".9"/>
+                <path d="M96 40 300 96" stroke="var(--accent)" opacity=".6"/>
+                <path d="M96 40 300 130" stroke="var(--accent-2)" opacity=".7"/>
+                <path d="M96 40 300 164" stroke="var(--accent-2)" opacity=".45"/>
+              </g>
+              <path d="M20 118 62 118" stroke="var(--text)" stroke-width="2" opacity=".6"/>
+            </svg>
+          </div>
+          <div class="card__body">
+            <div class="card__badges">
+              <span class="badge badge--beta">Public beta 0.9.0</span>
+            </div>
+            <h3 class="card__title">PRISM</h3>
+            <p class="card__sub">4-band spectral filter &amp; formant morpher</p>
+            <p class="card__desc">
+              PRISM splits the input into four spectral bands you can move, tilt and resonate
+              independently, then lets you drag the formant structure of one band onto another.
+              It is a public beta: the DSP is stable and the preset format is frozen, the
+              interface is not. Buy it now at $69 and the 1.0 release is a free update. Report
+              anything that misbehaves.
+            </p>
+            <div class="card__meta">
+              <span class="chip">VST3</span><span class="chip">AU</span><span class="chip">AAX</span><span class="chip">CLAP</span>
+            </div>
+            <p class="card__price num">$69</p>
+            <div class="card__cta">
+              <a class="btn btn-ghost" href="plugins/prism.html">PRISM in detail</a>
+            </div>
+          </div>
+        </article>
+
+        <!-- ANVIL -->
+        <article class="card card--product span-4" data-reveal>
+          <div class="card__media" aria-hidden="true">
+            <svg viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice" role="presentation" focusable="false">
+              <g fill="none" stroke="var(--text-mute)" stroke-width="1" opacity=".35">
+                <path d="M0 150h320M0 100h320M0 50h320"/>
+              </g>
+              <path d="M20 150 V150 L58 40 L74 150 L112 74 L128 150 L166 96 L182 150 L220 110 L236 150 L274 128 L290 150"
+                    fill="none" stroke="var(--accent-2)" stroke-width="1.5" opacity=".45" stroke-linejoin="round"/>
+              <path d="M20 150 L58 62 L74 150 L112 92 L128 150 L166 110 L182 150 L220 122 L236 150 L274 136 L290 150"
+                    fill="none" stroke="var(--accent)" stroke-width="2" opacity=".9" stroke-linejoin="round"/>
+              <g fill="none" stroke="var(--text)" stroke-width="1" opacity=".45">
+                <path d="M20 62h276"/>
+                <path d="M286 56 296 62 286 68"/>
+              </g>
+            </svg>
+          </div>
+          <div class="card__body">
+            <div class="card__badges">
+              <span class="badge badge--version num">v2.0.1</span>
+            </div>
+            <h3 class="card__title">ANVIL</h3>
+            <p class="card__sub">Transient shaper &amp; saturating bus compressor</p>
+            <p class="card__desc">
+              ANVIL does two jobs in one signal path: a transient stage that separates attack
+              from sustain without a detector to fight, and a bus compressor with
+              program-dependent release and a saturation stage that runs after the gain
+              element, not before it. Zero-latency mode for tracking, oversampled mode for
+              mixdown. Version 2.0.1 is a free update for all 1.x owners.
+            </p>
+            <div class="card__meta">
+              <span class="chip">VST3</span><span class="chip">AU</span><span class="chip">AAX</span><span class="chip">CLAP</span>
+            </div>
+            <p class="card__price num">$89</p>
+            <div class="card__cta">
+              <a class="btn btn-ghost" href="plugins/anvil.html">ANVIL in detail</a>
+            </div>
+          </div>
+        </article>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================================================================
+       INSIDE VANTA — six feature blurbs
+       ================================================================== -->
+  <section class="section section--elev" id="inside">
+    <div class="wrap--wide">
+      <div class="sec-head" data-reveal>
+        <p class="sec-head__eyebrow">Inside VANTA</p>
+        <h2 class="sec-head__title">What eight voices actually costs</h2>
+        <p class="sec-head__sub">Architecture, modulation, and the parts we refused to fake.</p>
+      </div>
+
+      <div class="grid">
+
+        <div class="feature span-4" data-reveal>
+          <span class="feature__icon" aria-hidden="true">
+            <svg viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" focusable="false">
+              <path d="M3 19V11M7 22V8M11 17V13M15 23V7M19 18V12M23 21V9M27 16V14"/>
+            </svg>
+          </span>
+          <p class="feature__index">01</p>
+          <h3 class="feature__title">Eight real voices</h3>
+          <p class="feature__body">
+            Eight voices, two oscillators each, allocated round-robin with proper release
+            stealing. A held chord keeps its tails when the ninth note arrives.
+          </p>
+        </div>
+
+        <div class="feature span-4" data-reveal>
+          <span class="feature__icon" aria-hidden="true">
+            <svg viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" focusable="false">
+              <path d="M2 10h11c5 0 5 12 13 12h2"/>
+              <path d="M2 21h11c5 0 5-12 13-12h2"/>
+              <circle cx="13" cy="10" r="1.6"/><circle cx="13" cy="21" r="1.6"/>
+            </svg>
+          </span>
+          <p class="feature__index">02</p>
+          <h3 class="feature__title">Two filters, one path</h3>
+          <p class="feature__body">
+            A four-pole ladder with self-oscillation and a state-variable filter with
+            continuous LP–BP–HP morph. Series or parallel, with a single blend control.
+          </p>
+        </div>
+
+        <div class="feature span-4" data-reveal>
+          <span class="feature__icon" aria-hidden="true">
+            <svg viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" focusable="false">
+              <path d="M2 15h26" opacity=".4"/>
+              <path d="M2 15c3 0 3-7 6-7s3 13 6 13 3-9 6-9 3 5 6 5h2"/>
+              <path d="M6 4v2M14 24v2M22 6v2"/>
+            </svg>
+          </span>
+          <p class="feature__index">03</p>
+          <h3 class="feature__title">Per-voice analog error</h3>
+          <p class="feature__body">
+            Each voice carries independent tuning, envelope-timing and filter-cutoff offsets.
+            One knob scales the whole spread from dead-accurate to visibly falling apart.
+          </p>
+        </div>
+
+        <div class="feature span-4" data-reveal>
+          <span class="feature__icon" aria-hidden="true">
+            <svg viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" focusable="false">
+              <path d="M3 3v24M11 3v24M19 3v24M27 3v24" opacity=".35"/>
+              <path d="M3 6h24M3 14h24M3 22h24" opacity=".35"/>
+              <circle cx="11" cy="6" r="2.2"/><circle cx="19" cy="14" r="2.2"/><circle cx="3" cy="22" r="2.2"/>
+            </svg>
+          </span>
+          <p class="feature__index">04</p>
+          <h3 class="feature__title">24-slot modulation matrix</h3>
+          <p class="feature__body">
+            Every source reaches every destination at audio rate. Slots are listed, not buried:
+            source, destination, depth, curve, four columns, no submenus.
+          </p>
+        </div>
+
+        <div class="feature span-4" data-reveal>
+          <span class="feature__icon" aria-hidden="true">
+            <svg viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" focusable="false">
+              <circle cx="15" cy="15" r="12"/>
+              <circle cx="9" cy="13" r="1.5"/><circle cx="21" cy="13" r="1.5"/>
+              <circle cx="15" cy="8" r="1.5"/><circle cx="11" cy="20" r="1.5"/><circle cx="19" cy="20" r="1.5"/>
+            </svg>
+          </span>
+          <p class="feature__index">05</p>
+          <h3 class="feature__title">MPE and plain MIDI</h3>
+          <p class="feature__body">
+            Full MPE with per-note pitch, pressure and slide, and a legacy mode that maps the
+            same destinations to mod wheel and aftertouch for ordinary keyboards.
+          </p>
+        </div>
+
+        <div class="feature span-4" data-reveal>
+          <span class="feature__icon" aria-hidden="true">
+            <svg viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" focusable="false">
+              <path d="M6 3h13l5 5v19H6z"/>
+              <path d="M19 3v5h5" opacity=".6"/>
+              <path d="M10 13h10M10 17h10M10 21h6"/>
+            </svg>
+          </span>
+          <p class="feature__index">06</p>
+          <h3 class="feature__title">Presets you can read</h3>
+          <p class="feature__body">
+            Presets are plain text, tagged and diffable, stored in a folder you choose. Copy one
+            into a chat window and it still loads on the other end.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================================================================
+       NUMBERS
+       ================================================================== -->
+  <section class="section" id="numbers">
+    <div class="wrap--wide">
+      <div class="sec-head" data-reveal>
+        <p class="sec-head__eyebrow">By the numbers</p>
+        <h2 class="sec-head__title">Everywhere you already work</h2>
+        <p class="sec-head__sub">
+          VST3, AU, AAX, CLAP — macOS 11+ Universal, Windows 10+ x64, Linux x64. The rest of
+          the specification, in the only units that matter.
+        </p>
+      </div>
+
+      <div class="stat-grid" data-reveal>
+        <div class="stat">
+          <p class="stat__figure num stat__figure--accent" data-countup="8">8</p>
+          <p class="stat__label">Voices, polyphonic</p>
+        </div>
+        <div class="stat">
+          <p class="stat__figure num" data-countup="2">2</p>
+          <p class="stat__label">Oscillators per voice</p>
+        </div>
+        <div class="stat">
+          <p class="stat__figure num" data-countup="24">24</p>
+          <p class="stat__label">Modulation slots</p>
+        </div>
+        <div class="stat">
+          <p class="stat__figure num" data-countup="4">4</p>
+          <p class="stat__label">Plugin formats</p>
+        </div>
+        <div class="stat">
+          <p class="stat__figure num stat__figure--accent" data-countup="200" data-countup-suffix="+">200+</p>
+          <p class="stat__label">Factory presets</p>
+        </div>
+        <div class="stat">
+          <p class="stat__figure num" data-countup="3">3</p>
+          <p class="stat__label">Machines per licence</p>
+        </div>
+        <div class="stat">
+          <p class="stat__figure num" data-countup="0">0</p>
+          <p class="stat__label">Online checks at load</p>
+        </div>
+        <div class="stat">
+          <p class="stat__figure num" data-countup="4">4</p>
+          <p class="stat__label">Instruments, one bundle</p>
+        </div>
+      </div>
+
+      <div class="cluster cluster--lg mt-6">
+        <a class="btn btn-ghost btn--sm" href="presets/index.html">Browse the preset library</a>
+        <p class="label label--micro">Tagged, searchable, plain text, and yours to edit.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================================================================
+       ILLUSTRATIVE QUOTES
+       ================================================================== -->
+  <section class="section section--elev" id="use">
+    <div class="wrap--wide">
+      <div class="sec-head" data-reveal>
+        <p class="sec-head__eyebrow">The kind of work we design for</p>
+        <h2 class="sec-head__title">Written for rooms, not for stores</h2>
+      </div>
+
+      <p class="disclaimer mb-5" data-reveal>
+        Illustrative examples. These quotes are written by SOUNDSHOP to show the kind of use we
+        design for. They are not real customer endorsements, and the people named do not exist.
+      </p>
+
+      <div class="grid">
+        <figure class="quote span-4" data-reveal>
+          <blockquote class="quote__text">
+            “I stopped reaching for a hardware poly on this record. Not because VANTA sounds
+            like one, but because it drifts like one and I stopped noticing the difference at
+            2am.”
+          </blockquote>
+          <figcaption class="quote__attr">Studio owner, small commercial room (illustrative, fictional)</figcaption>
+        </figure>
+
+        <figure class="quote span-4" data-reveal>
+          <blockquote class="quote__text">
+            “ANVIL is the only bus compressor in the session I do not automate. It holds the mix
+            together and gets out of the way, which is the entire job.”
+          </blockquote>
+          <figcaption class="quote__attr">Mix engineer, film and television post (illustrative, fictional)</figcaption>
+        </figure>
+
+        <figure class="quote span-4" data-reveal>
+          <blockquote class="quote__text">
+            “DRIFT is on a send in every template I build. The freeze control alone paid for it
+            in the first week of sound design.”
+          </blockquote>
+          <figcaption class="quote__attr">Sound designer, games (illustrative, fictional)</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================================================================
+       THE FULL SHOP
+       ================================================================== -->
+  <section class="section section--flush" id="bundle">
+    <div class="wrap--wide">
+      <div class="bundle" data-reveal>
+        <div class="stack">
+          <span class="badge badge--bundle">The Full Shop — 4 plugins — $299</span>
+          <h2 class="sec-head__title">All four, <span class="num accent">$299</span></h2>
+          <p class="lead">
+            Save <span class="num">$187</span> against buying separately. Every future 1.x
+            update included, on three machines, with the licence file on your own disk.
+          </p>
+        </div>
+        <div class="stack">
+          <div class="cluster">
+            <a class="btn btn-primary btn--lg" href="plugins/index.html">See the full shop — $299</a>
+            <a class="btn btn-ghost btn--lg" href="demo/flagship-demo.html">Try VANTA first</a>
+          </div>
+          <p class="label label--micro">No subscription. No iLok. No account required to demo.</p>
+        </div>
+      </div>
+
+      <p class="strip foot-links mt-7">
+        <a href="docs.html">Documentation</a><span class="strip__sep" aria-hidden="true"></span>
+        <a href="changelog.html">Changelog</a><span class="strip__sep" aria-hidden="true"></span>
+        <a href="presets/index.html">Preset library</a><span class="strip__sep" aria-hidden="true"></span>
+        <span>Written by the people who wrote the code</span>
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="foot-grid">
+    <div class="foot-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <p>SOUNDSHOP<br><span class="muted">Instruments for the deep end.</span></p>
+    </div>
+    <div><h3>Instruments</h3><ul>
+      <li><a href="plugins/flagship.html">VANTA</a></li>
+      <li><a href="plugins/drift.html">DRIFT</a></li>
+      <li><a href="plugins/prism.html">PRISM</a></li>
+      <li><a href="plugins/anvil.html">ANVIL</a></li>
+    </ul></div>
+    <div><h3>Resources</h3><ul>
+      <li><a href="presets/index.html">Preset library</a></li>
+      <li><a href="demo/flagship-demo.html">Playable demo</a></li>
+      <li><a href="docs.html">Documentation</a></li>
+      <li><a href="changelog.html">Changelog</a></li>
+    </ul></div>
+  </div>
+  <p class="foot-legal"><span class="muted">&copy; 2026 Soundshop. Every page here is static — no build step, no trackers.</span></p>
+</footer>
+
+<script src="assets/js/ui.js"></script>
+<script src="assets/js/synth.js"></script>
+<script src="assets/js/home.js"></script>
 </body>
 </html>
