@@ -725,10 +725,39 @@
               };
               var el = document.getElementById("group-store");
               if (!el) { return; }
+              // One place that draws the failure line, so the timeout below and the
+              // .catch at the end show exactly the same thing.
+              var loadFailed = function () {
+                el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">The shop could not be reached. <button type="button" data-store-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again</button></p>';
+                var retry = el.querySelector("[data-store-retry]");
+                if (retry) { retry.addEventListener("click", function () { location.reload(); }); }
+              };
               el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">Loading what\'s on sale…</p>';
-              fetch(BASE + "/api/v1/store/items?group=" + encodeURIComponent(GROUP))
-                .then(function (r) { if (!r.ok) { throw new Error("HTTP " + r.status); } return r.json(); })
+
+              // A request that never answers (captive wifi, a stalled proxy) never
+              // rejects, so without this the block would sit on "Loading what's on
+              // sale…" for ever and the hidden card buttons would stay hidden with
+              // no explanation. 12s — deliberately under the 15s the card-wiring
+              // observer below waits, so the two timings agree.
+              var done = false, timedOut = false;
+              var ctrl = window.AbortController ? new AbortController() : null;
+              var timer = setTimeout(function () {
+                if (done) return;
+                timedOut = true;
+                if (ctrl) { try { ctrl.abort(); } catch (err) { loadFailed(); } }  // rejects -> .catch below
+                else { loadFailed(); }                                             // no AbortController: draw it here
+              }, 12000);
+
+              fetch(BASE + "/api/v1/store/items?group=" + encodeURIComponent(GROUP), ctrl ? { signal: ctrl.signal } : undefined)
+                .then(function (r) {
+                  if (timedOut) { return null; }        // late answer: the failure line stands
+                  done = true;
+                  clearTimeout(timer);                  // a slow but good render is never killed
+                  if (!r.ok) { throw new Error("HTTP " + r.status); }
+                  return r.json();
+                })
                 .then(function (s) {
+                  if (!s) { return; }
                   if (!s.items) { throw new Error("bad payload"); }
                   if (!s.items.length) { el.innerHTML = '<p style="font:13px system-ui,sans-serif;color:#9ca3af">Nothing for sale right now.</p>'; return; }
                   el.innerHTML = s.items.map(function (it) {
@@ -826,9 +855,8 @@
                   });
                 })
                 .catch(function () {
-                  el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">The shop could not be reached. <button type="button" data-store-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again</button></p>';
-                  var retry = el.querySelector("[data-store-retry]");
-                  if (retry) { retry.addEventListener("click", function () { location.reload(); }); }
+                  clearTimeout(timer);
+                  loadFailed();
                 });
             })();
             </script>
