@@ -161,6 +161,56 @@
     color: var(--text-mute) !important;
   }
   #group-store > p a { color: var(--accent-text) !important; }
+
+  /* Page-local: loading / empty / failure states added around the pasted
+     block (proposal #98). These are our own elements, not the block's. */
+  .store-state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-3);
+    padding-block: var(--sp-3);
+    font-size: var(--fs-small);
+    color: var(--text-dim);
+  }
+  .store-state__msg { margin: 0; }
+  .store-state--error .store-state__msg { color: var(--text); }
+  .store-state__hint {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: var(--fs-label);
+    color: var(--text-mute);
+  }
+  .store-state__retry {
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    padding: var(--sp-2) var(--sp-4);
+    cursor: pointer;
+    transition: border-color var(--dur-2) var(--ease-mech), color var(--dur-2) var(--ease-mech);
+  }
+  .store-state__retry:hover { border-color: var(--accent); color: var(--accent-text); }
+  .store-state__retry[disabled] { opacity: 0.55; cursor: default; }
+  .store-state--loading .store-state__msg::after {
+    content: "";
+    display: inline-block;
+    inline-size: 0.55rem;
+    block-size: 0.55rem;
+    margin-inline-start: var(--sp-2);
+    border-radius: 50%;
+    background: var(--accent);
+    animation: store-pulse 1.1s var(--ease-mech) infinite;
+  }
+  @keyframes store-pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .store-state--loading .store-state__msg::after { animation: none; opacity: 0.8; }
+  }
 </style>
 </head>
 <body>
@@ -670,8 +720,14 @@
         <div class="panel">
           <div class="panel__head"><h3>On sale now</h3></div>
           <div class="panel__body">
-            <!-- Sell on your site: your items, a Buy button each. -->
-            <div id="group-store"></div>
+            <!-- Sell on your site: your items, a Buy button each.
+                 Edits to the pasted block are marked "#98:" — a regenerated
+                 block must be re-patched at those four points. -->
+            <div id="group-store">
+              <div class="store-state store-state--loading" data-store-state>
+                <p class="store-state__msg" role="status">Loading what's on sale…</p>
+              </div>
+            </div>
             <script>
             (function () {
               var BASE = "https://d8a.com";
@@ -680,37 +736,86 @@
                 return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
               };
               var el = document.getElementById("group-store");
-              fetch(BASE + "/api/v1/store/items?group=" + encodeURIComponent(GROUP))
-                .then(function (r) { return r.json(); })
-                .then(function (s) {
-                  if (!el || !s.items) return;
-                  if (!s.items.length) { el.innerHTML = '<p style="font:13px system-ui,sans-serif;color:#9ca3af">Nothing for sale right now.</p>'; return; }
-                  el.innerHTML = s.items.map(function (it) {
-                    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #e5e7eb;font:14px system-ui,sans-serif">' +
-                      '<div style="flex:1"><b>' + esc(it.name) + '</b>' +
-                      (it.description ? '<div style="font-size:12px;color:#6b7280">' + esc(it.description) + '</div>' : '') + '</div>' +
-                      '<span>' + esc(it.price) + '</span>' +
-                      '<a href="' + esc(it.payUrl) + '" data-item="' + esc(it.id) + '" style="background:#7c5cff;color:#fff;border-radius:999px;padding:6px 14px;text-decoration:none">Buy</a></div>';
-                  }).join("") + '<p style="font:11px system-ui,sans-serif;color:#9ca3af">Sold by <a href="' + esc(s.group.url) + '" style="color:#7c5cff">' + esc(s.group.name) + '</a></p>';
-                  el.addEventListener("click", function (e) {
-                    var a = e.target && e.target.closest ? e.target.closest("a[data-item]") : null;
-                    if (!a || !s.checkout.enabled) return;
-                    e.preventDefault();
-                    a.textContent = "Opening…";
-                    fetch(s.checkout.url, { method: "POST", headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ group: GROUP, item: a.getAttribute("data-item"), quantity: 1, returnUrl: location.href }) })
-                      .then(function (r) { return r.json(); })
-                      .then(function (d) { if (d.url) { location.href = d.url; } else { a.textContent = "Buy"; location.href = a.href; } })
-                      .catch(function () { location.href = a.href; });
+              if (!el) return;
+
+              /* #98: the last successful response, read by the one delegated
+                 click handler below so a retry never rebinds a second one. */
+              var store = null;
+              var inFlight = false;
+
+              /* #98: one delegated handler, bound once, outside the render. */
+              el.addEventListener("click", function (e) {
+                var a = e.target && e.target.closest ? e.target.closest("a[data-item]") : null;
+                if (!a || !store || !store.checkout || !store.checkout.enabled) return;
+                e.preventDefault();
+                a.textContent = "Opening…";
+                fetch(store.checkout.url, { method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ group: GROUP, item: a.getAttribute("data-item"), quantity: 1, returnUrl: location.href }) })
+                  .then(function (r) { return r.json(); })
+                  .then(function (d) { if (d.url) { location.href = d.url; } else { a.textContent = "Buy"; location.href = a.href; } })
+                  .catch(function () { location.href = a.href; });
+              });
+
+              /* #98: the three states this panel can be in before rows exist. */
+              var setState = function (kind, message, hint, withRetry) {
+                el.innerHTML = '<div class="store-state store-state--' + kind + '" data-store-state>' +
+                  '<p class="store-state__msg" role="status">' + esc(message) + '</p>' +
+                  (withRetry ? '<button class="store-state__retry" type="button" data-store-retry>Try again</button>' : '') +
+                  (hint ? '<p class="store-state__hint">' + esc(hint) + '</p>' : '') +
+                  '</div>';
+                var retry = el.querySelector("[data-store-retry]");
+                if (retry) { retry.addEventListener("click", function () { load(); }); }
+              };
+
+              var render = function (s) {
+                store = s;
+                if (!s || !s.items) { setState("error", "The shop sent something we could not read.", "Nothing was charged. Try again in a moment.", true); return; }
+                if (!s.items.length) { setState("empty", "Nothing is for sale right now.", "The plugin pages, the demos and the presets all keep working — write to us and we will sort it out.", true); return; }
+                el.innerHTML = s.items.map(function (it) {
+                  return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #e5e7eb;font:14px system-ui,sans-serif">' +
+                    '<div style="flex:1"><b>' + esc(it.name) + '</b>' +
+                    (it.description ? '<div style="font-size:12px;color:#6b7280">' + esc(it.description) + '</div>' : '') + '</div>' +
+                    '<span>' + esc(it.price) + '</span>' +
+                    '<a href="' + esc(it.payUrl) + '" data-item="' + esc(it.id) + '" style="background:#7c5cff;color:#fff;border-radius:999px;padding:6px 14px;text-decoration:none">Buy</a></div>';
+                }).join("") + '<p style="font:11px system-ui,sans-serif;color:#9ca3af">Sold by <a href="' + esc(s.group && s.group.url) + '" style="color:#7c5cff">' + esc(s.group && s.group.name) + '</a></p>';
+                /* #98: tell the card wiring below that fresh rows exist. */
+                el.dispatchEvent(new CustomEvent("store:loaded", { bubbles: true }));
+              };
+
+              /* #98: the fetch, wrapped so Try again can run it again. */
+              var load = function () {
+                if (inFlight) return;
+                inFlight = true;
+                var btn = el.querySelector("[data-store-retry]");
+                if (btn) {
+                  btn.disabled = true;
+                  btn.textContent = "Trying…";
+                  var msg = el.querySelector(".store-state__msg");
+                  if (msg) { msg.textContent = "Loading what's on sale…"; }
+                } else {
+                  setState("loading", "Loading what's on sale…", "", false);
+                }
+                fetch(BASE + "/api/v1/store/items?group=" + encodeURIComponent(GROUP))
+                  .then(function (r) {
+                    if (!r.ok) { throw new Error("HTTP " + r.status); }
+                    return r.json();
+                  })
+                  .then(function (s) { inFlight = false; render(s); })
+                  .catch(function () {
+                    inFlight = false;
+                    setState("error", "The shop could not be reached.", "No card details were sent and nothing was charged. Check your connection and try again.", true);
                   });
-                });
+              };
+
+              load();
             })();
             </script>
             <!-- Card wiring: point the hidden [data-store-item] buttons on this page at
                  the rows the block above renders. Reads that markup only — no second
                  fetch, no URL of its own; a click is forwarded to the row's own Buy
                  anchor so the delegated handler above does the checkout. If no row
-                 matches, the button simply stays hidden. -->
+                 matches, the button simply stays hidden. Re-runs on the block's
+                 store:loaded event, so a retry re-wires the cards (#98). -->
             <script>
             (function () {
               var store = document.getElementById("group-store");
@@ -719,7 +824,12 @@
               var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
               var wire = function () {
                 var rows = store.querySelectorAll("a[data-item]");
-                if (!rows.length) return false;
+                if (!rows.length) {
+                  /* No rows: loading, empty or failed. Hide the card buttons
+                     again so nothing dead is left on screen (#98). */
+                  Array.prototype.forEach.call(btns, function (btn) { btn.hidden = true; btn.onclick = null; });
+                  return false;
+                }
                 var wired = 0;
                 Array.prototype.forEach.call(btns, function (btn) {
                   var token = norm(btn.getAttribute("data-store-item"));
@@ -742,6 +852,10 @@
                 });
                 return wired > 0;
               };
+              /* #98: the block tells us when a render finished — including one
+                 that followed a Try again, long after the observer gave up. */
+              store.addEventListener("store:loaded", function () { wire(); });
+
               if (!wire() && window.MutationObserver) {
                 var obs = new MutationObserver(function () { if (wire()) obs.disconnect(); });
                 obs.observe(store, { childList: true, subtree: true });
@@ -771,9 +885,10 @@
 
           <div class="note">
             <p class="note__title">If the list is empty</p>
-            <p>The rows are fetched when the page loads. If nothing appears, either nothing is listed for sale at the
-              moment or the store could not be reached — the plugin pages, the demos and the presets all keep working
-              either way, and you can still write to us.</p>
+            <p>The rows are fetched when the page loads, and the panel says which of the two it is: “Nothing is for sale
+              right now” when the shop is listing nothing, “The shop could not be reached” with a <em>Try again</em>
+              button when the request failed. Nothing is charged in either case — the plugin pages, the demos and the
+              presets all keep working, and you can still write to us.</p>
           </div>
 
           <div class="cluster">
