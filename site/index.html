@@ -24,7 +24,26 @@
   }
 
   /* --- hero ------------------------------------------------------------- */
-  .hero { isolation: isolate; }
+  /* The playable panel now sits inside the hero, so the hero must not
+     reserve a full screen of its own height: .hero in assets/style.css sets
+     min-height: min(88vh, 880px), which would push the keys below the fold.
+     .hero is only used by this page, so this override affects nothing else. */
+  .hero {
+    isolation: isolate;
+    min-height: auto;
+    padding-block: clamp(24px, 3.4vw, 52px);
+  }
+  .hero > .wrap--wide > .stack--lg { gap: clamp(18px, 2.2vw, 32px); }
+  .hero__title { font-size: clamp(2rem, 1.2rem + 3.2vw, 3.75rem); max-width: 20ch; }
+
+  /* The instrument, above the fold. */
+  .hero__play { width: 100%; }
+  .hero__play .panel { box-shadow: var(--shadow-2, 0 18px 48px rgba(0, 0, 0, 0.38)); }
+  .hero__play .keybed { height: clamp(104px, 13vw, 150px); }
+  @media (max-width: 719px) {
+    .hero__play .keybed { height: clamp(96px, 22vw, 130px); }
+    .hero__play .play-hint { display: none; }
+  }
   .hero > .hero__canvas {
     position: absolute;
     inset: 0;
@@ -79,29 +98,10 @@
     margin: 0;
   }
 
-  .hero__cue {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-3);
-    font-family: var(--font-mono);
-    font-size: var(--fs-label);
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--text-mute);
-    text-decoration: none;
-    transition: color var(--dur-2) var(--ease-mech);
-  }
-  .hero__cue:hover { color: var(--accent-text); }
-  .hero__cue::after {
-    content: "";
-    width: 34px;
-    height: 1px;
-    background: currentColor;
-    transition: width var(--dur-3) var(--ease-snap);
-  }
-  .hero__cue:hover::after { width: 54px; }
+  /* .hero__cue (the old "Or play it right here" jump link) is gone: the
+     keys are in the hero now, so there is nothing left to jump to. */
 
-  .hero__strip { margin-block-start: clamp(28px, 4vw, 56px); }
+  .hero__strip { margin-block-start: clamp(20px, 2.6vw, 40px); }
 
   /* --- playable strip ---------------------------------------------------- */
   .play-grid {
@@ -224,6 +224,78 @@
 
         <h1 class="hero__title">Instruments for the <span class="hero__title-em">deep end</span>.</h1>
 
+        <!-- ==============================================================
+             PLAY IT — the mini-instrument lives in the hero, above the
+             fold. Every data-* hook below is read by assets/js/home.js:
+             it looks up [data-play-section] once and queries the panel,
+             keybed, preset row and transport controls inside it.
+             ============================================================== -->
+        <div class="hero__play" id="play" data-play-section>
+          <div class="panel" data-play-panel>
+            <div class="panel__head">
+              <span class="led" data-play-led aria-hidden="true"></span>
+              <span class="label" data-play-status role="status">Audio asleep — press a key</span>
+              <span class="push"></span>
+              <span class="label label--micro">Voices</span>
+              <span class="voice-leds" data-voice-leds aria-hidden="true">
+                <span class="led"></span><span class="led"></span><span class="led"></span><span class="led"></span>
+                <span class="led"></span><span class="led"></span><span class="led"></span><span class="led"></span>
+              </span>
+            </div>
+
+            <div class="panel__body stack stack--lg">
+
+              <div class="play-grid">
+                <div class="stack stack--sm">
+                  <span class="label label--micro">Preset</span>
+                  <div class="cluster cluster--sm" role="group" aria-label="VANTA presets" data-preset-row>
+                    <!-- Preset buttons are populated by assets/js/home.js -->
+                    <noscript><span class="muted">The four quick presets need JavaScript; the plugin itself does not.</span></noscript>
+                  </div>
+                </div>
+
+                <div class="stack stack--sm">
+                  <span class="label label--micro">Output</span>
+                  <div class="play-meter">
+                    <span class="meter" aria-hidden="true">
+                      <span class="meter__scale"></span>
+                      <span class="meter__bar" data-play-meter></span>
+                      <span class="meter__clip" data-play-clip></span>
+                    </span>
+                    <span class="label label--micro num" data-play-level>&minus;&infin; dB</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="keybed" data-keybed aria-hidden="true">
+                <div class="keybed__keys" data-keybed-keys></div>
+              </div>
+
+              <div class="play-grid">
+                <p class="play-hint">
+                  Click the keys, or type
+                  <kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd>
+                  with <kbd>W</kbd><kbd>E</kbd><kbd>T</kbd><kbd>Y</kbd><kbd>U</kbd> for the sharps.
+                  <kbd>Z</kbd><kbd>X</kbd> shift the octave.
+                </p>
+                <div class="cluster cluster--sm">
+                  <span class="label label--micro num" data-play-octave>C4</span>
+                  <button class="btn btn-ghost btn--sm" type="button" data-octave="-1" aria-label="Octave down">Oct &minus;</button>
+                  <button class="btn btn-ghost btn--sm" type="button" data-octave="1" aria-label="Octave up">Oct +</button>
+                  <button class="btn btn-ghost btn--sm" type="button" data-panic>All notes off</button>
+                </div>
+              </div>
+
+            </div>
+
+            <div class="panel__foot">
+              <span>Browser demo. Audio quality and voice count are limited by the browser; the plugin is not.</span>
+              <span class="push"></span>
+              <a class="btn btn-ghost btn--sm" href="demo/flagship-demo.html">Open the full demo</a>
+            </div>
+          </div>
+        </div>
+
         <p class="hero__sub">
           Four plugins, built and maintained in-house by the people who designed the DSP.
           VST3, AU, AAX and CLAP for macOS 11+ (Universal), Windows 10+ (x64) and Linux
@@ -235,10 +307,7 @@
           <a class="btn btn-ghost btn--lg" href="plugins/index.html">Browse instruments</a>
         </div>
 
-        <div class="cluster cluster--lg">
-          <p class="hero__note">Audio starts on your first keypress — never before it.</p>
-          <a class="hero__cue" href="#play">Or play it right here</a>
-        </div>
+        <p class="hero__note">Audio starts on your first keypress — never before it.</p>
 
         <p class="strip hero__strip">
           <span>VST3</span><span class="strip__sep" aria-hidden="true"></span>
@@ -249,83 +318,6 @@
           <span>Windows 10+ x64</span><span class="strip__sep" aria-hidden="true"></span>
           <span>Linux x64</span>
         </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ==================================================================
-       PLAY IT — inline mini-instrument
-       ================================================================== -->
-  <section class="section" id="play" data-play-section>
-    <div class="wrap--wide">
-      <div class="sec-head" data-reveal>
-        <p class="sec-head__eyebrow">Play it</p>
-        <h2 class="sec-head__title">VANTA, running in this tab</h2>
-        <p class="sec-head__sub">Real DSP, real presets, no download and no account.</p>
-      </div>
-
-      <div class="panel" data-play-panel data-reveal>
-        <div class="panel__head">
-          <span class="led" data-play-led aria-hidden="true"></span>
-          <span class="label" data-play-status role="status">Audio asleep — press a key</span>
-          <span class="push"></span>
-          <span class="label label--micro">Voices</span>
-          <span class="voice-leds" data-voice-leds aria-hidden="true">
-            <span class="led"></span><span class="led"></span><span class="led"></span><span class="led"></span>
-            <span class="led"></span><span class="led"></span><span class="led"></span><span class="led"></span>
-          </span>
-        </div>
-
-        <div class="panel__body stack stack--lg">
-
-          <div class="play-grid">
-            <div class="stack stack--sm">
-              <span class="label label--micro">Preset</span>
-              <div class="cluster cluster--sm" role="group" aria-label="VANTA presets" data-preset-row>
-                <!-- Preset buttons are populated by assets/js/home.js -->
-                <noscript><span class="muted">The four quick presets need JavaScript; the plugin itself does not.</span></noscript>
-              </div>
-            </div>
-
-            <div class="stack stack--sm">
-              <span class="label label--micro">Output</span>
-              <div class="play-meter">
-                <span class="meter" aria-hidden="true">
-                  <span class="meter__scale"></span>
-                  <span class="meter__bar" data-play-meter></span>
-                  <span class="meter__clip" data-play-clip></span>
-                </span>
-                <span class="label label--micro num" data-play-level>&minus;&infin; dB</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="keybed" data-keybed aria-hidden="true">
-            <div class="keybed__keys" data-keybed-keys></div>
-          </div>
-
-          <div class="play-grid">
-            <p class="play-hint">
-              Click the keys, or type
-              <kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd>
-              with <kbd>W</kbd><kbd>E</kbd><kbd>T</kbd><kbd>Y</kbd><kbd>U</kbd> for the sharps.
-              <kbd>Z</kbd><kbd>X</kbd> shift the octave.
-            </p>
-            <div class="cluster cluster--sm">
-              <span class="label label--micro num" data-play-octave>C4</span>
-              <button class="btn btn-ghost btn--sm" type="button" data-octave="-1" aria-label="Octave down">Oct &minus;</button>
-              <button class="btn btn-ghost btn--sm" type="button" data-octave="1" aria-label="Octave up">Oct +</button>
-              <button class="btn btn-ghost btn--sm" type="button" data-panic>All notes off</button>
-            </div>
-          </div>
-
-        </div>
-
-        <div class="panel__foot">
-          <span>Browser demo. Audio quality and voice count are limited by the browser; the plugin is not.</span>
-          <span class="push"></span>
-          <a class="btn btn-ghost btn--sm" href="demo/flagship-demo.html">Open the full demo</a>
-        </div>
       </div>
     </div>
   </section>
