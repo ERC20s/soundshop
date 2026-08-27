@@ -253,9 +253,20 @@
             if(typeof search.focus === 'function') search.focus();
           });
 
+          // Clears the search box, re-runs the filter (which re-shows every
+          // card, rewrites the status line and re-hides the clear button) and
+          // puts focus back in the search field.
+          function clearSearch(){
+            if(search){ search.value = ''; applyFilter(); if(typeof search.focus === 'function') search.focus(); }
+          }
+
           if(search){
             // Filter once now, so a restored query is honoured immediately.
             applyFilter();
+            // The clear button is un-hidden by applyFilter() whenever there is
+            // a query, so it needs a click handler or it looks clickable and
+            // does nothing. Bound once here, inside the fetch callback.
+            if(clearBtn) clearBtn.addEventListener('click', function(){ clearSearch(); });
             search.addEventListener('input', function(){ applyFilter(); });
             search.addEventListener('keydown', function(e){
               var key = e.key || e.keyCode;
@@ -264,10 +275,6 @@
                 clearSearch();
               }
             });
-          }
-
-          function clearSearch(){
-            if(search){ search.value = ''; applyFilter(); if(typeof search.focus === 'function') search.focus(); }
           }
 
         }).catch(function(){
