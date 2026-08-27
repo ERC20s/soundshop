@@ -669,9 +669,11 @@
       <!-- Return banner: the checkout below is handed a returnUrl built by returnTo(),
            which points back at this page with item= naming what was bought, so a
            buyer lands back here on a URL that says which item it was — whether they
-           came in on a deep link or just clicked a row. This reads only the return
-           keys off the query string and says what happened. Client-side hint, never
-           proof of payment.
+           came in on a deep link or just clicked a row. The query string alone is
+           only a hint and never proof of payment — anyone can type ?session_id=x —
+           so a positive return with a session id is confirmed with the shop
+           (POST /api/v1/store/confirm) before this says "Payment received", and a
+           positive return with no session id stays neutral.
            It also stands the ?item= deep link down after a successful payment: the
            buyer came in as ...?item=vanta#buy, so the URL they return on still
            carries item=vanta. Without the marker set here, the deep-link script
@@ -698,10 +700,12 @@
         if (!seen && q.has("session_id") && String(q.get("session_id") || "").trim()) { seen = true; good = true; }
         if (!seen || (!good && !bad)) return;
 
-        // Tell the ?item= script below what happened, before it runs. "paid" means
-        // it must leave the page alone; "cancelled" keeps today's behaviour,
-        // because that buyer still wants the row they came for.
-        document.documentElement.setAttribute("data-buy-return", good ? "paid" : "cancelled");
+        // Tell the ?item= script below what happened, before it runs. A positive
+        // return starts as "checking" — the shop has not answered yet, and it
+        // becomes "paid" only when it does; either way the ?item= script must
+        // leave the page alone. "cancelled" keeps today's behaviour, because
+        // that buyer still wants the row they came for.
+        document.documentElement.setAttribute("data-buy-return", good ? "checking" : "cancelled");
 
         // Name the thing that was just bought, when the ?item= token matches one of
         // the hidden card buttons on this page. The bundle button lives in a
@@ -721,17 +725,85 @@
           }
         }
 
+        var esc = function (s) {
+          return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+        };
+        var suffix = itemName ? " — " + esc(itemName) : "";
+        var mark = function (state) { document.documentElement.setAttribute("data-buy-return", state); };
+        var paint = function (cls, title, body) {
+          box.className = cls ? "note " + cls : "note";
+          box.innerHTML = '<p class="note__title">' + title + '</p><p>' + body + '</p>';
+        };
+        var DOCS = '<a href="../docs.html">the docs</a>';
+
+        // The id the shop handed back on the return URL. Read here, before the
+        // scrub below strips it off the address bar.
+        var sid = String(q.get("session_id") || "").trim();
+
         if (bad) {
-          box.className = "note note--warn";
-          box.innerHTML = '<p class="note__title">Nothing was charged</p>' +
-            '<p>The checkout was cancelled, so no payment was taken. The rows below are still live — pick an item and hit Buy whenever you are ready.</p>';
+          paint("note--warn", "Nothing was charged",
+            "The checkout was cancelled, so no payment was taken. The rows below are still live — pick an item and hit Buy whenever you are ready.");
+        } else if (!sid) {
+          // A positive-looking return with nothing the shop can be asked about
+          // (?paid=1 typed into the address bar, or a checkout that did not name
+          // the session). Never green: say where the buyer is, and point at the
+          // receipt, which is the real record.
+          mark("unconfirmed");
+          paint("", "Back from checkout" + suffix,
+            "You are back from the payment page, but this return does not carry anything the shop can confirm, so this page cannot say a payment was taken. Your emailed receipt is the record — see " + DOCS + " for installing and authorising.");
         } else {
-          box.className = "note note--good";
-          var esc = function (s) {
-            return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+          // Verify with the shop before saying anything green. Same host and the
+          // same 12s AbortController pattern as the store loader below.
+          mark("checking");
+          paint("", "Checking your payment…" + suffix,
+            "One moment — asking the shop to confirm this checkout.");
+
+          var settled = false, timedOut = false;
+          var ctrl = window.AbortController ? new AbortController() : null;
+          var failed = function () {
+            if (settled) { return; }
+            settled = true;
+            mark("unconfirmed");
+            paint("note--warn", "Could not confirm your payment" + suffix,
+              "The shop did not answer, so this page cannot say whether the payment went through. Nothing here has charged you again — if it did go through, your emailed receipt and licence are the record. See " + DOCS + " for installing and authorising.");
           };
-          box.innerHTML = '<p class="note__title">Payment received' + (itemName ? " — " + esc(itemName) : "") + '</p>' +
-            '<p>Thank you. Your licence file and installers go to the email address you used at checkout — see <a href="../docs.html">the docs</a> for installing and authorising.</p>';
+          var timer = setTimeout(function () {
+            if (settled) { return; }
+            timedOut = true;
+            if (ctrl) { try { ctrl.abort(); } catch (err) { failed(); } }  // rejects -> .catch below
+            else { failed(); }                                            // no AbortController: draw it here
+          }, 12000);
+
+          var opts = {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: sid })
+          };
+          if (ctrl) { opts.signal = ctrl.signal; }
+
+          fetch("https://d8a.com/api/v1/store/confirm", opts)
+            .then(function (r) {
+              if (timedOut) { return null; }        // late answer: the failure line stands
+              clearTimeout(timer);                  // a slow but good answer is never killed
+              if (!r.ok) { throw new Error("HTTP " + r.status); }
+              return r.json();
+            })
+            .then(function (payload) {
+              if (!payload || settled) { return; }
+              settled = true;
+              // Only the shop's own yes turns this green. Nothing else is read
+              // off the response, so no field name here is a guess.
+              if (payload.ok === true) {
+                mark("paid");
+                paint("note--good", "Payment received" + suffix,
+                  "Thank you. Your licence file and installers go to the email address you used at checkout — see " + DOCS + " for installing and authorising.");
+              } else {
+                mark("unconfirmed");
+                paint("note--warn", "Payment not confirmed" + suffix,
+                  "The shop has no completed payment for this checkout. If you did pay, your emailed receipt is the record — reply to it and we will sort it out. Otherwise the rows below are still live.");
+              }
+            })
+            .catch(function () { failed(); });
         }
         box.hidden = false;
         var sec = document.getElementById("buy");
@@ -739,8 +811,10 @@
         if (history.replaceState) {
           KEYS.forEach(function (k) { q.delete(k); });
           q.delete("session_id");
-          // On a paid return the deep link has done its job: drop it so a refresh
-          // cannot re-trigger the highlight, scroll and focus on a bought item.
+          // On any positive return the deep link has done its job: drop it so a
+          // refresh cannot re-trigger the highlight, scroll and focus on an item
+          // the buyer has just been through checkout for. (itemName was read
+          // above, so the banner keeps naming it.)
           if (good) { q.delete("item"); }
           var rest = q.toString();
           history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
@@ -1194,13 +1268,16 @@
                  the "could not be reached" line with its Try again button) one
                  status line goes in above the list — "not listed" when the shop
                  answered, "could not check" when it did not.
-                 After a successful payment it does nothing at all: the return
-                 banner above sets data-buy-return="paid" on <html> before this
-                 runs, and dragging a paid buyer back to a Buy button they have
-                 just used is how a second checkout gets started by accident. -->
+                 After any positive return from checkout it does nothing at all:
+                 the return banner above sets data-buy-return on <html> before
+                 this runs — "checking" while the shop is being asked, then
+                 "paid" or "unconfirmed" — and dragging that buyer back to a Buy
+                 button they may have just used is how a second checkout gets
+                 started by accident. Only "cancelled" keeps today's behaviour. -->
             <script>
             (function () {
-              if (document.documentElement.getAttribute("data-buy-return") === "paid") return;
+              var ret = document.documentElement.getAttribute("data-buy-return");
+              if (ret && ret !== "cancelled") return;   // paid, checking or unconfirmed: leave the page alone
               var m = /[?&]item=([^&#]*)/.exec(location.search);
               var token = m ? String(decodeURIComponent(m[1].replace(/\+/g, " "))).trim().toLowerCase() : "";
               var store = document.getElementById("group-store");
