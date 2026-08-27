@@ -1530,7 +1530,24 @@
                  This is a note in the buyer's browser, never proof of ownership:
                  nothing is disabled, so a genuine second licence is still one
                  click away, and a browser with storage blocked behaves exactly
-                 as it did before. -->
+                 as it did before.
+                 One purchase covers more than one row. The Full Shop bundle is
+                 "VANTA, DRIFT, PRISM and ANVIL in every format we ship, on one
+                 licence file", so after a bundle return the other four rows and
+                 cards are marked as covered too — otherwise the biggest
+                 double-charge on the page (scroll up, VANTA still offers a plain
+                 "Buy $149") is the one thing left unguarded. Covered is weaker
+                 than bought: the anchor keeps reading "Buy" and only one muted
+                 line says the item is included in the bundle. A token bought
+                 outright keeps its own wording and wins where both apply, and the
+                 covered lines are registered under the bundle's entry so the
+                 bundle's "Not you? Clear" removes every one of them. The covered
+                 tokens are read off this page's own hidden [data-store-item]
+                 buttons, so a fifth card added later is covered without editing
+                 this script. A bought token counts as the bundle if it is the
+                 page's own "bundle" token, or if the row it matched has an id or
+                 a name that reads like a bundle; if the shop names it anything
+                 else this whole block does nothing — a safe no-op. -->
             <script>
             (function () {
               var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
@@ -1578,6 +1595,40 @@
               var tokens = [];
               for (var t in items) { if (Object.prototype.hasOwnProperty.call(items, t)) tokens.push(t); }
               if (!tokens.length) return;                              // nothing bought, nothing to say
+
+              // Bundle reading. The page's own token is "bundle"; a shop that
+              // names it differently is still recognised if the token, or the id
+              // or the name of the row it matches, reads like a bundle. Anything
+              // else is not a bundle and nothing below runs for it.
+              var looksBundle = function (s) {
+                s = norm(s);
+                if (!s) return false;
+                return s === "bundle" || /(^|[^a-z])bundle([^a-z]|$)/.test(s) || /full[- ]?shop/.test(s);
+              };
+              var covered = {};                                        // token -> the bundle token covering it
+              var coveredToks = [];
+              var expanded = {};
+              // What the bundle covers: every other item this page offers, taken
+              // from the hidden card buttons rather than a hard-coded list, so a
+              // fifth card added later is covered without touching this script.
+              // A token bought outright is never demoted to "covered", and one
+              // bundle never covers another.
+              var expand = function (bundleTok) {
+                if (expanded[bundleTok]) return;
+                expanded[bundleTok] = true;
+                var btns = document.querySelectorAll("[data-store-item]");
+                for (var i = 0; i < btns.length; i++) {
+                  var tok = norm(btns[i].getAttribute("data-store-item"));
+                  if (!tok || tok === bundleTok || looksBundle(tok)) continue;
+                  if (Object.prototype.hasOwnProperty.call(items, tok)) continue;
+                  if (Object.prototype.hasOwnProperty.call(covered, tok)) continue;
+                  covered[tok] = bundleTok;
+                  coveredToks.push(tok);
+                }
+              };
+              for (var bi = 0; bi < tokens.length; bi++) {
+                if (looksBundle(tokens[bi])) expand(tokens[bi]);
+              }
 
               var NOTE = "You just paid for this — your licence goes to the email you used. Only buy again if you mean to.";
               var dated = function (ms) {
@@ -1635,18 +1686,29 @@
               // is left exactly as it is. Exact match only, on the row's
               // data-item id or its <b> name: marking the wrong row would be
               // worse than marking none.
-              var markRow = function (token) {
-                var st = slot(token);
-                if (st.rowDone) return true;
+              var findRow = function (token) {
                 var rows = store.querySelectorAll("a[data-item]");
-                if (!rows.length) return false;
+                if (!rows.length) return null;
                 var hit = null;
                 Array.prototype.forEach.call(rows, function (a) {
                   if (hit) return;
                   var row = a.parentNode, b = row ? row.querySelector("b") : null;
                   if (norm(a.getAttribute("data-item")) === token || norm(b && b.textContent) === token) { hit = a; }
                 });
+                return hit;
+              };
+              var markRow = function (token) {
+                var st = slot(token);
+                if (st.rowDone) return true;
+                var hit = findRow(token);
                 if (!hit) return false;
+                // Bundle by the row the shop actually rendered, for a shop that
+                // does not call it "bundle": id or name is enough.
+                if (!expanded[token]) {
+                  var brow = hit.parentNode, bb = brow ? brow.querySelector("b") : null;
+                  if (looksBundle(token) || looksBundle(hit.getAttribute("data-item")) ||
+                      looksBundle(bb && bb.textContent)) { expand(token); }
+                }
                 st.rowDone = true;
                 if (norm(hit.textContent) === "buy") { hit.textContent = "Buy again"; st.anchor = hit; }
                 var row = hit.parentNode;
@@ -1674,6 +1736,72 @@
                 st.cardDone = true;
                 return true;                                          // no card carries this token
               };
+
+              // Covered by a bundle. Weaker than bought on purpose: the row
+              // anchor and the card button keep saying "Buy", nothing is
+              // disabled and nothing is hidden — only one muted line says the
+              // item is already included. The line is pushed onto the bundle's
+              // own slot, so the bundle's "Not you? Clear" removes all of them
+              // together with its own line.
+              var bundleName = function (bundleTok) {
+                var hit = findRow(bundleTok);
+                var row = hit ? hit.parentNode : null;
+                var b = row ? row.querySelector("b") : null;
+                var n = b && b.textContent ? b.textContent.trim() : "";
+                return n || "The Full Shop bundle";
+              };
+              var coveredLine = function (token, gap) {
+                var bundleTok = covered[token];
+                var it = items[bundleTok] || { live: true, when: 0 };
+                var p = document.createElement("p");
+                p.className = "store-bought-line muted";
+                p.setAttribute("role", "status");
+                p.style.font = "13px system-ui,sans-serif";
+                p.style.color = "#9ca3af";
+                p.style.margin = gap || "0";
+                p.style.flexBasis = "100%";                            // .card__cta / .cluster are flex-wrap rows
+                p.textContent = it.live                                // never innerHTML
+                  ? "Included in " + bundleName(bundleTok) + ", which you just paid for — only buy it separately if you mean to."
+                  : "Included in " + bundleName(bundleTok) + ", bought on this device on " + dated(it.when) +
+                    " — only buy it separately if you mean to.";
+                slot(bundleTok).lines.push(p);
+                return p;
+              };
+              var cstate = {};
+              var cslot = function (token) {
+                if (!cstate[token]) { cstate[token] = { rowDone: false, cardDone: false }; }
+                return cstate[token];
+              };
+              var markCoveredRow = function (token) {
+                var st = cslot(token);
+                if (st.rowDone) return true;
+                var hit = findRow(token);
+                if (!hit) return false;
+                st.rowDone = true;
+                var row = hit.parentNode;
+                if (row && row.parentNode) {
+                  var next = row.nextSibling;
+                  var already = next && next.className && String(next.className).indexOf("store-bought-line") > -1;
+                  if (!already) { row.parentNode.insertBefore(coveredLine(token, "0 0 10px"), next); }
+                }
+                return true;
+              };
+              var markCoveredCard = function (token) {
+                var st = cslot(token);
+                if (st.cardDone) return true;
+                var btns = document.querySelectorAll("[data-store-item]");
+                for (var i = 0; i < btns.length; i++) {
+                  if (norm(btns[i].getAttribute("data-store-item")) !== token) continue;
+                  st.cardDone = true;
+                  var box = btns[i].parentNode;
+                  // A line for a token bought outright is already there and says
+                  // more: leave it alone.
+                  if (box && !box.querySelector(".store-bought-line")) { box.insertBefore(coveredLine(token, "0"), btns[i]); }
+                  return true;
+                }
+                st.cardDone = true;
+                return true;
+              };
               // One pass over every token: the card is only marked once the shop
               // has actually listed that row, so nothing on a card claims a
               // purchase the store block never confirmed listing. Done when every
@@ -1683,6 +1811,14 @@
                 var all = true;
                 for (var i = 0; i < tokens.length; i++) {
                   if (markRow(tokens[i])) { markCard(tokens[i]); }
+                  else { all = false; }
+                }
+                // Covered tokens can be added by the loop above (a bundle only
+                // recognised once its row arrived), so this runs second and
+                // reads the list as it stands now. A covered item the shop is
+                // not listing simply keeps the observer alive to its cap.
+                for (var j = 0; j < coveredToks.length; j++) {
+                  if (markCoveredRow(coveredToks[j])) { markCoveredCard(coveredToks[j]); }
                   else { all = false; }
                 }
                 return all;
