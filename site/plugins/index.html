@@ -940,7 +940,15 @@
                  price kept as "was …" — so the card and the button never disagree.
                  Before forwarding the click the row is stamped with this page's
                  token (data-page-item), so the return URL the row hands checkout
-                 names the item in the words this page uses. -->
+                 names the item in the words this page uses.
+                 A button that never wires no longer disappears in silence: once
+                 the store block has settled (rows, the "Nothing for sale" line,
+                 or the "could not be reached" line with its Try again button)
+                 each still-hidden button is replaced by one small muted line in
+                 its own container — "not on sale right now" when the shop
+                 answered, "could not be reached" when it did not — each pointing
+                 at the Buy section below. Nothing is said while the block is
+                 still loading, and a healthy shop draws no lines at all. -->
             <script>
             (function () {
               var store = document.getElementById("group-store");
@@ -980,6 +988,11 @@
                   var label = price ? "Buy " + priceEl.textContent.trim() : "Buy";
                   btn.textContent = label;
                   btn.hidden = false;
+                  btn._storeWired = true;
+                  // A late row wins over an earlier explanation: if this button
+                  // had already said why it was missing, drop that line.
+                  var said = btn.parentNode ? btn.parentNode.querySelector(".store-missing-line") : null;
+                  if (said && said.parentNode) { said.parentNode.removeChild(said); }
 
                   // Keep the card's own price honest. The button label already
                   // carries the store price, so a card reading "$149" beside a
@@ -1093,10 +1106,77 @@
                 });
                 return wired > 0;
               };
-              if (!wire() && window.MutationObserver) {
-                var obs = new MutationObserver(function () { if (wire()) obs.disconnect(); });
+
+              // Has the store block finished, one way or another? Same reading as
+              // the ?item= script below: "rows" = the shop answered with items,
+              // "empty" = it answered with none, "failed" = the loader drew its
+              // failure line and Try again button (that includes its own 12s
+              // timeout). "" = still loading, and while it is loading nothing on
+              // a card may claim an item is missing.
+              var settled = function () {
+                if (store.querySelector("a[data-item]")) return "rows";
+                if (store.querySelector("[data-store-retry]")) return "failed";
+                var ps = store.querySelectorAll("p");
+                for (var i = 0; i < ps.length; i++) {
+                  if (/nothing for sale/i.test(ps[i].textContent || "")) return "empty";
+                }
+                return "";
+              };
+              // The name to say out loud: the card's own title, so the wording is
+              // the one the buyer just read. The bundle button sits in a .cluster
+              // with no .card__title, so it keeps a plain noun.
+              var nameOf = function (btn) {
+                var body = btn.closest ? btn.closest(".card__body") : null;
+                var title = body ? body.querySelector(".card__title") : null;
+                var t = title && title.textContent ? title.textContent.trim() : "";
+                if (t) return t;
+                return norm(btn.getAttribute("data-store-item")) === "bundle" ? "The bundle" : "This item";
+              };
+              // One line per button, ever, and only where the button would have
+              // been. Text is set with textContent and the only markup is a link
+              // to the Buy section already on this page, which carries the
+              // shop's own failure message and its Try again button.
+              var explain = function (state) {
+                if (!state) return;
+                Array.prototype.forEach.call(btns, function (btn) {
+                  if (btn._storeWired || !btn.hidden) return;
+                  var box = btn.parentNode;
+                  if (!box || box.querySelector(".store-missing-line")) return;
+                  var p = document.createElement("p");
+                  p.className = "store-missing-line muted";
+                  p.setAttribute("role", "status");
+                  p.style.fontSize = "var(--fs-small)";
+                  p.style.margin = "0";
+                  p.style.flexBasis = "100%";                 // .card__cta / .cluster are flex-wrap rows
+                  var a = document.createElement("a");
+                  a.href = "#buy";
+                  if (state === "failed") {
+                    p.appendChild(document.createTextNode("The shop could not be reached — checkout is in "));
+                    a.textContent = "Buy";
+                    p.appendChild(a);
+                    p.appendChild(document.createTextNode("."));
+                  } else {
+                    p.appendChild(document.createTextNode(nameOf(btn) + " is not on sale right now — see "));
+                    a.textContent = "Buy";
+                    p.appendChild(a);
+                    p.appendChild(document.createTextNode("."));
+                  }
+                  box.insertBefore(p, btn);
+                });
+              };
+              // One pass: wire what the block offers, then — only once it has
+              // settled — let every button it did not reach say why.
+              var pass = function (force) {
+                wire();
+                var state = settled();
+                if (!state && force) { state = "failed"; }   // 15s and still nothing to go on
+                explain(state);
+                return !!state;
+              };
+              if (!pass(false) && window.MutationObserver) {
+                var obs = new MutationObserver(function () { if (pass(false)) obs.disconnect(); });
                 obs.observe(store, { childList: true, subtree: true });
-                setTimeout(function () { obs.disconnect(); }, 15000);
+                setTimeout(function () { obs.disconnect(); pass(true); }, 15000);
               }
             })();
             </script>
