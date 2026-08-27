@@ -738,12 +738,34 @@
           document.documentElement.setAttribute("data-buy-item", token);
         }
 
+        // The shop's own identifier for this payment, if it sent one back on the
+        // return URL. A buyer whose receipt email is slow or missing otherwise has
+        // no number to quote at us. The first key carrying a value wins; it is
+        // used only when it looks like an identifier (1-128 characters of
+        // A-Z a-z 0-9 _ -) and it still goes through esc() on the way out, so a
+        // hostile value renders nothing rather than markup. This is a record of
+        // the trip through checkout, never proof that money moved.
+        // It is read HERE, above the storage write below, because the keys that
+        // carry it are deleted from the address bar at the end of this script:
+        // read any later and there is nothing left to remember.
+        var esc = function (s) {
+          return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+        };
+        var REF_KEYS = ["session_id", "order", "order_id", "payment_intent", "reference", "ref", "transaction_id", "checkout_id"];
+        var ref = "";
+        for (var r = 0; r < REF_KEYS.length; r++) {
+          var rv = String(q.get(REF_KEYS[r]) || "").trim();
+          if (rv) { ref = rv; break; }
+        }
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(ref)) { ref = ""; }
+
         // Remember a paid return in this browser. Without this the marking below
         // lasts one page load: the URL token is deleted a few lines down, so a
         // refresh, a nav link back to Buy or a visit tomorrow shows the bought
         // row as a plain purple Buy under no banner at all — the one guard
-        // against a second charge gone. One namespaced key, token -> timestamp,
-        // read back by the "just bought" script further down.
+        // against a second charge gone. One namespaced key, token -> timestamp
+        // (or timestamp plus payment reference), read back by the "just bought"
+        // script further down and by assets/js/plugin.js on the product pages.
         // Paid only: a cancelled buyer has not paid, and a pending one may never.
         // Everything is inside try/catch — private mode, blocked storage or a
         // corrupt value is a silent no-op and the page behaves exactly as before.
@@ -757,12 +779,22 @@
               var parsed = JSON.parse(raw);
               if (parsed && typeof parsed === "object" && !(parsed instanceof Array)) { saved = parsed; }
             }
-            saved[token] = Date.now();
+            // Two shapes live in this key, on purpose. A bare number is the
+            // original "bought at this time" entry and still written when the
+            // return carried no reference; { t: <time>, ref: "<id>" } is the same
+            // entry plus the payment reference, so a buyer who reloads the page
+            // days later still has the number the docs tell them to quote. Every
+            // reader here and in assets/js/plugin.js accepts both, so nothing
+            // written by an earlier version of this page is lost.
+            saved[token] = ref ? { t: Date.now(), ref: ref } : Date.now();
             // A hand-crafted return URL could otherwise stuff this key: keep the
             // 24 most recent entries and drop the rest.
+            var stamp = function (v) {
+              return Number(v && typeof v === "object" ? v.t : v);
+            };
             var keys = Object.keys(saved);
             if (keys.length > 24) {
-              keys.sort(function (a, b) { return Number(saved[b]) - Number(saved[a]); });
+              keys.sort(function (a, b) { return stamp(saved[b]) - stamp(saved[a]); });
               var trimmed = {};
               for (var t = 0; t < 24; t++) { trimmed[keys[t]] = saved[keys[t]]; }
               saved = trimmed;
@@ -793,23 +825,7 @@
           }
         }
 
-        // The shop's own identifier for this payment, if it sent one back on the
-        // return URL. A buyer whose receipt email is slow or missing otherwise has
-        // no number to quote at us. The first key carrying a value wins; it is
-        // shown only when it looks like an identifier (1-128 characters of
-        // A-Z a-z 0-9 _ -) and it still goes through esc() on the way out, so a
-        // hostile value renders nothing rather than markup. This is a record of
-        // the trip through checkout, never proof that money moved.
-        var esc = function (s) {
-          return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
-        };
-        var REF_KEYS = ["session_id", "order", "order_id", "payment_intent", "reference", "ref", "transaction_id", "checkout_id"];
-        var ref = "";
-        for (var r = 0; r < REF_KEYS.length; r++) {
-          var rv = String(q.get(REF_KEYS[r]) || "").trim();
-          if (rv) { ref = rv; break; }
-        }
-        if (!/^[A-Za-z0-9_-]{1,128}$/.test(ref)) { ref = ""; }
+        // The reference itself was read further up, before the storage write.
         // Nothing is added when no reference came back, so there is no empty row.
         var refLine = ref
           ? '<p>Reference: <code style="font:12px ui-monospace,SFMono-Regular,Menlo,monospace">' + esc(ref) +
@@ -1573,17 +1589,31 @@
 
               // What this browser remembers, minus anything expired or unreadable.
               // Pruning is written straight back, so the key does not grow stale.
+              // Entries come in two shapes: a bare timestamp (what this page wrote
+              // before it kept references) and { t: <time>, ref: "<id>" }. Both are
+              // read here; an old numeric entry simply has no reference to show.
+              // The reference is re-checked against the same 1-128 character
+              // pattern the banner uses, because storage can be edited by hand.
+              var REF_OK = /^[A-Za-z0-9_-]{1,128}$/;
               var saved = read(), pruned = false, items = {};
               for (var k in saved) {
                 if (!Object.prototype.hasOwnProperty.call(saved, k)) continue;
-                var tok = norm(k), when = Number(saved[k]);
+                var rec = saved[k], obj = rec && typeof rec === "object" && !(rec instanceof Array);
+                var tok = norm(k), when = Number(obj ? rec.t : rec);
+                var sref = obj ? String(rec.ref == null ? "" : rec.ref) : "";
+                if (!REF_OK.test(sref)) { sref = ""; }
                 if (!tok || !isFinite(when) || when <= 0 || (Date.now() - when) > MAX_AGE) {
                   delete saved[k]; pruned = true; continue;
                 }
-                items[tok] = { when: when, live: false };
+                items[tok] = { when: when, live: false, ref: sref };
               }
               if (pruned) write(saved);
-              if (live) { items[live] = { when: 0, live: true }; }     // this trip wins the wording
+              // This trip wins the wording, but not the reference: the one just
+              // stored for this token is the same payment, so carry it across.
+              if (live) {
+                var prevLive = items[live];
+                items[live] = { when: 0, live: true, ref: prevLive ? prevLive.ref : "" };
+              }
               var tokens = [];
               for (var t in items) { if (Object.prototype.hasOwnProperty.call(items, t)) tokens.push(t); }
               // The Full Shop bundle covers the four plugins, so a buyer who has
@@ -1601,7 +1631,7 @@
                   var ctok = norm(cards[c].getAttribute("data-store-item"));
                   if (!ctok || ctok === "bundle") continue;
                   if (Object.prototype.hasOwnProperty.call(items, ctok)) continue;
-                  items[ctok] = { when: bundle.when, live: bundle.live, cover: "bundle" };
+                  items[ctok] = { when: bundle.when, live: bundle.live, cover: "bundle", ref: bundle.ref };
                   tokens.push(ctok);
                 }
               }
@@ -1642,21 +1672,28 @@
                 p.style.color = "#9ca3af";
                 p.style.margin = gap || "0";
                 p.style.flexBasis = "100%";                           // .card__cta / .cluster are flex-wrap rows
+                // The shop's reference for that payment, when one came back with
+                // the return and was stored with it. Text only, never innerHTML,
+                // and never worded as proof of payment: it is the number the docs
+                // ("Nothing has arrived") tell a buyer to quote at us, and without
+                // it a buyer whose receipt email never landed has nothing to say.
+                var refPart = it.ref ? " Reference " + it.ref + " — quote it if you contact us." : "";
                 if (it.cover) {
                   // Covered by a bundle, not bought on its own. No Clear button of
                   // its own: the line is filed under the bundle's slot, so the
                   // bundle's single "Not you? Clear" removes all of them at once.
                   p.textContent = "Included in The Full Shop bundle, " +
                     (it.live ? "which you just paid for" : "bought on this device on " + dated(it.when)) +
-                    " — only buy it separately if you mean to.";
+                    " — only buy it separately if you mean to." + refPart;
                   slot(it.cover).lines.push(p);
                   return p;
                 }
                 if (it.live) {
-                  p.textContent = NOTE;                               // never innerHTML
+                  p.textContent = NOTE + refPart;                     // never innerHTML
                 } else {
                   p.textContent = "Bought on this device on " + dated(it.when) +
-                    " — your licence went to the email you used. Only buy again if you mean to. ";
+                    " — your licence went to the email you used. Only buy again if you mean to." +
+                    refPart + " ";
                   var btn = document.createElement("button");
                   btn.type = "button";
                   btn.className = "store-bought-clear";
