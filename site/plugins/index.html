@@ -680,30 +680,66 @@
                 return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
               };
               var el = document.getElementById("group-store");
-              fetch(BASE + "/api/v1/store/items?group=" + encodeURIComponent(GROUP))
-                .then(function (r) { return r.json(); })
-                .then(function (s) {
-                  if (!el || !s.items) return;
-                  if (!s.items.length) { el.innerHTML = '<p style="font:13px system-ui,sans-serif;color:#9ca3af">Nothing for sale right now.</p>'; return; }
-                  el.innerHTML = s.items.map(function (it) {
-                    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #e5e7eb;font:14px system-ui,sans-serif">' +
-                      '<div style="flex:1"><b>' + esc(it.name) + '</b>' +
-                      (it.description ? '<div style="font-size:12px;color:#6b7280">' + esc(it.description) + '</div>' : '') + '</div>' +
-                      '<span>' + esc(it.price) + '</span>' +
-                      '<a href="' + esc(it.payUrl) + '" data-item="' + esc(it.id) + '" style="background:#7c5cff;color:#fff;border-radius:999px;padding:6px 14px;text-decoration:none">Buy</a></div>';
-                  }).join("") + '<p style="font:11px system-ui,sans-serif;color:#9ca3af">Sold by <a href="' + esc(s.group.url) + '" style="color:#7c5cff">' + esc(s.group.name) + '</a></p>';
-                  el.addEventListener("click", function (e) {
-                    var a = e.target && e.target.closest ? e.target.closest("a[data-item]") : null;
-                    if (!a || !s.checkout.enabled) return;
-                    e.preventDefault();
-                    a.textContent = "Opening…";
-                    fetch(s.checkout.url, { method: "POST", headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ group: GROUP, item: a.getAttribute("data-item"), quantity: 1, returnUrl: location.href }) })
-                      .then(function (r) { return r.json(); })
-                      .then(function (d) { if (d.url) { location.href = d.url; } else { a.textContent = "Buy"; location.href = a.href; } })
-                      .catch(function () { location.href = a.href; });
-                  });
-                });
+              if (!el) return;
+              var store = null;      // latest good response, read by the click handler
+              var inFlight = false;  // one request at a time, so Retry cannot stack
+
+              var say = function (msg, retry) {
+                el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">' + esc(msg) +
+                  (retry ? ' <button type="button" data-store-retry style="font:13px system-ui,sans-serif;background:none;border:0;color:#7c5cff;cursor:pointer;padding:0;text-decoration:underline">Try again</button>' : '') +
+                  '</p>';
+              };
+
+              var render = function (s) {
+                el.innerHTML = s.items.map(function (it) {
+                  return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #e5e7eb;font:14px system-ui,sans-serif">' +
+                    '<div style="flex:1"><b>' + esc(it.name) + '</b>' +
+                    (it.description ? '<div style="font-size:12px;color:#6b7280">' + esc(it.description) + '</div>' : '') + '</div>' +
+                    '<span>' + esc(it.price) + '</span>' +
+                    '<a href="' + esc(it.payUrl) + '" data-item="' + esc(it.id) + '" style="background:#7c5cff;color:#fff;border-radius:999px;padding:6px 14px;text-decoration:none">Buy</a></div>';
+                }).join("") + '<p style="font:11px system-ui,sans-serif;color:#9ca3af">Sold by <a href="' + esc(s.group && s.group.url) + '" style="color:#7c5cff">' + esc(s.group && s.group.name) + '</a></p>';
+              };
+
+              var load = function () {
+                if (inFlight) return;
+                inFlight = true;
+                say("Loading what's on sale…", false);
+                fetch(BASE + "/api/v1/store/items?group=" + encodeURIComponent(GROUP))
+                  .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
+                  .then(function (s) {
+                    if (!s || !s.items) { throw new Error("no items"); }
+                    store = s;
+                    if (!s.items.length) { say("Nothing is for sale right now.", false); return; }
+                    render(s);
+                  })
+                  .catch(function () { say("The shop could not be reached.", true); })
+                  .then(function () { inFlight = false; });
+              };
+
+              // Bound once, outside the fetch: works for the first load and every retry.
+              el.addEventListener("click", function (e) {
+                var t = e.target;
+                var btn = t && t.closest ? t.closest("button[data-store-retry]") : null;
+                if (btn) {
+                  e.preventDefault();
+                  if (inFlight) return;
+                  btn.disabled = true;
+                  btn.textContent = "Trying…";
+                  load();
+                  return;
+                }
+                var a = t && t.closest ? t.closest("a[data-item]") : null;
+                if (!a || !store || !store.checkout || !store.checkout.enabled) return;
+                e.preventDefault();
+                a.textContent = "Opening…";
+                fetch(store.checkout.url, { method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ group: GROUP, item: a.getAttribute("data-item"), quantity: 1, returnUrl: location.href }) })
+                  .then(function (r) { return r.json(); })
+                  .then(function (d) { if (d && d.url) { location.href = d.url; } else { a.textContent = "Buy"; location.href = a.href; } })
+                  .catch(function () { location.href = a.href; });
+              });
+
+              load();
             })();
             </script>
             <!-- Card wiring: point the hidden [data-store-item] buttons on this page at
