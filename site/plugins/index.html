@@ -832,12 +832,12 @@
           // this page can tell whether the money arrived.
           box.className = "note";
           box.innerHTML = '<p class="note__title">Payment still being confirmed' + namePart + '</p>' +
-            '<p>You are back from checkout, but the shop is still finishing this payment — some methods, such as bank transfer, settle later. Nothing more is needed from you here. The receipt emailed to the address you used at checkout is the record of what happened; once it clears, your licence file and installers follow to the same address — see <a href="../docs.html">the docs</a> for installing and authorising. Do not pay again for ' + itemPhrase + '.</p>' +
+            '<p>You are back from checkout, but the shop is still finishing this payment — some methods, such as bank transfer, settle later. Nothing more is needed from you here. The receipt emailed to the address you used at checkout is the record of what happened; once it clears, your licence file and installers follow to the same address — see <a href="../docs.html#delivery">what happens after you buy</a>. Do not pay again for ' + itemPhrase + '.</p>' +
             refLine;
         } else {
           box.className = "note note--good";
           box.innerHTML = '<p class="note__title">Payment received' + namePart + '</p>' +
-            '<p>Thank you. Your licence file and installers go to the email address you used at checkout — see <a href="../docs.html">the docs</a> for installing and authorising.</p>' +
+            '<p>Thank you. Your licence file and installers go to the email address you used at checkout — nothing downloads here. See <a href="../docs.html#delivery">what happens after you buy</a> for what arrives, how to place the licence file, and what to do if nothing turns up.</p>' +
             refLine;
         }
         box.hidden = false;
