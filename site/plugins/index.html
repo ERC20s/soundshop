@@ -670,8 +670,11 @@
            which points back at this page with item= naming what was bought, so a
            buyer lands back here on a URL that says which item it was — whether they
            came in on a deep link or just clicked a row. This reads only the return
-           keys off the query string and says what happened. Client-side hint, never
-           proof of payment.
+           keys off the query string — a client-side hint, never proof of payment,
+           because anyone can type ?session_id=fake_123 into the address bar. So a
+           positive return with a session id is only ever "Checking your payment…"
+           until the shop confirms that session; then, and only then, does the
+           banner go green. Anything else is one neutral "could not confirm" note.
            It also stands the ?item= deep link down after a successful payment: the
            buyer came in as ...?item=vanta#buy, so the URL they return on still
            carries item=vanta. Without the marker set here, the deep-link script
@@ -686,6 +689,10 @@
         var NO = ["0", "false", "cancel", "cancelled", "canceled", "fail", "failed", "failure", "error"];
         var KEYS = ["paid", "checkout", "payment", "status", "redirect_status"];
         var q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+        // The shop's own session id, read before the scrub at the end of this
+        // script deletes it. It is the only thing that lets us ask the shop
+        // whether this return was actually paid for.
+        var sid = String(q.get("session_id") || "").trim();
         var good = false, bad = false, seen = false;
         for (var i = 0; i < KEYS.length; i++) {
           if (!q.has(KEYS[i])) continue;
@@ -695,13 +702,17 @@
           else if (NO.indexOf(v) > -1) { bad = true; }
           else { return; }
         }
-        if (!seen && q.has("session_id") && String(q.get("session_id") || "").trim()) { seen = true; good = true; }
+        if (!seen && sid) { seen = true; good = true; }
         if (!seen || (!good && !bad)) return;
 
-        // Tell the ?item= script below what happened, before it runs. "paid" means
-        // it must leave the page alone; "cancelled" keeps today's behaviour,
-        // because that buyer still wants the row they came for.
-        document.documentElement.setAttribute("data-buy-return", good ? "paid" : "cancelled");
+        // Tell the ?item= script below what happened, before it runs. Only
+        // "cancelled" lets that script do its work, because that buyer still
+        // wants the row they came for. "checking" and "unconfirmed" leave the
+        // page alone exactly as "paid" does: someone who may already have paid
+        // must not be dragged back to a Buy button. "paid" is now set only by
+        // paintPaid(), i.e. only after the shop has confirmed the session.
+        var state = bad ? "cancelled" : (sid ? "checking" : "unconfirmed");
+        document.documentElement.setAttribute("data-buy-return", state);
 
         // Name the thing that was just bought, when the ?item= token matches one of
         // the hidden card buttons on this page. The bundle button lives in a
@@ -721,17 +732,37 @@
           }
         }
 
+        var esc = function (s) {
+          return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+        };
+
+        // The green banner, word for word what it has always said — but now it is
+        // a function, drawn only when the shop answers ok for this session.
+        var paintPaid = function () {
+          box.className = "note note--good";
+          box.innerHTML = '<p class="note__title">Payment received' + (itemName ? " — " + esc(itemName) : "") + '</p>' +
+            '<p>Thank you. Your licence file and installers go to the email address you used at checkout — see <a href="../docs.html">the docs</a> for installing and authorising.</p>';
+          document.documentElement.setAttribute("data-buy-return", "paid");
+        };
+        // One neutral outcome for everything that is not a confirmed sale: the
+        // shop said no, an HTTP error, a timeout, bad JSON, an unreachable shop.
+        // It never claims money was taken and never claims it was not.
+        var paintUnconfirmed = function () {
+          box.className = "note";
+          box.innerHTML = '<p class="note__title">We could not confirm this payment yet</p>' +
+            '<p>If the card went through, the shop\'s receipt email is the record of it, and your licence file and installers go to that address — see <a href="../docs.html">the docs</a>. Reloading this page does not charge you again.</p>';
+        };
+
         if (bad) {
           box.className = "note note--warn";
           box.innerHTML = '<p class="note__title">Nothing was charged</p>' +
             '<p>The checkout was cancelled, so no payment was taken. The rows below are still live — pick an item and hit Buy whenever you are ready.</p>';
+        } else if (state === "checking") {
+          box.className = "note";
+          box.innerHTML = '<p class="note__title">Checking your payment…</p>' +
+            '<p>One moment — we are confirming this with the shop.</p>';
         } else {
-          box.className = "note note--good";
-          var esc = function (s) {
-            return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
-          };
-          box.innerHTML = '<p class="note__title">Payment received' + (itemName ? " — " + esc(itemName) : "") + '</p>' +
-            '<p>Thank you. Your licence file and installers go to the email address you used at checkout — see <a href="../docs.html">the docs</a> for installing and authorising.</p>';
+          paintUnconfirmed();
         }
         box.hidden = false;
         var sec = document.getElementById("buy");
@@ -745,6 +776,45 @@
           var rest = q.toString();
           history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
         }
+
+        // Ask the shop. A return URL is not proof of payment — anyone can type
+        // ?session_id=fake_123 — so nothing goes green until the shop says this
+        // session was paid. Same 12s AbortController pattern as the store loader
+        // below, so a stalled proxy cannot leave the note on "Checking…" for ever.
+        if (state !== "checking") { return; }
+        if (!window.fetch) { paintUnconfirmed(); return; }   // no fetch: never claim a payment we cannot check
+        var settled = false, timedOut = false;
+        var ctrl = window.AbortController ? new AbortController() : null;
+        var timer = setTimeout(function () {
+          if (settled) return;
+          timedOut = true;
+          if (ctrl) { try { ctrl.abort(); } catch (err) {} }
+          paintUnconfirmed();
+        }, 12000);
+        var opts = {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: sid })
+        };
+        if (ctrl) { opts.signal = ctrl.signal; }
+        fetch("https://d8a.com/api/v1/store/confirm", opts)
+          .then(function (r) {
+            if (timedOut) { return null; }      // late answer: the neutral note stands
+            settled = true;
+            clearTimeout(timer);
+            if (!r.ok) { throw new Error("HTTP " + r.status); }
+            return r.json();
+          })
+          .then(function (payload) {
+            if (!payload) { return; }
+            if (payload.ok === true) { paintPaid(); } else { paintUnconfirmed(); }
+          })
+          .catch(function () {
+            if (timedOut) { return; }
+            settled = true;
+            clearTimeout(timer);
+            paintUnconfirmed();
+          });
       })();
       </script>
 
@@ -1194,13 +1264,16 @@
                  the "could not be reached" line with its Try again button) one
                  status line goes in above the list — "not listed" when the shop
                  answered, "could not check" when it did not.
-                 After a successful payment it does nothing at all: the return
-                 banner above sets data-buy-return="paid" on <html> before this
-                 runs, and dragging a paid buyer back to a Buy button they have
-                 just used is how a second checkout gets started by accident. -->
+                 After a checkout return it does nothing at all unless that return
+                 was a cancellation: the banner above sets data-buy-return on
+                 <html> before this runs — "checking" while the shop is being
+                 asked, then "paid" or "unconfirmed" — and dragging a buyer who
+                 may already have paid back to a Buy button they have just used is
+                 how a second checkout gets started by accident. -->
             <script>
             (function () {
-              if (document.documentElement.getAttribute("data-buy-return") === "paid") return;
+              var ret = document.documentElement.getAttribute("data-buy-return");
+              if (ret && ret !== "cancelled") return;
               var m = /[?&]item=([^&#]*)/.exec(location.search);
               var token = m ? String(decodeURIComponent(m[1].replace(/\+/g, " "))).trim().toLowerCase() : "";
               var store = document.getElementById("group-store");
