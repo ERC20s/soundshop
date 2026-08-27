@@ -491,6 +491,24 @@
         </div>
 
         <div class="stack">
+          <!-- Already bought on this device. Ships hidden and is unhidden only by
+               SSPlugin.initBoughtNote(), when this browser remembers a paid checkout
+               return for "drift" — or for "bundle", which covers all four plugins.
+               A note kept in a browser, never proof of ownership: nothing here is
+               disabled and the checkout link below still works. -->
+          <div class="note note--good" hidden
+               data-bought-note data-bought-item="drift" data-bought-covered-by="bundle">
+            <p class="note__title">Already bought on this device</p>
+            <p>This browser remembers a purchase covering DRIFT<span data-bought-cover hidden> — the Full
+              Shop bundle</span><span data-bought-date data-bought-date-prefix=", bought "></span>. Nothing
+              downloads on this site: your licence goes to the email address you used at checkout.
+              <a href="../docs.html#delivery">After you buy — where your product arrives</a> says what to look
+              for and what to do if it never turned up.</p>
+            <p class="muted">Not your purchase, or buying a second licence? The
+              <a href="index.html?item=drift#buy">checkout for DRIFT</a> is still open, and the plugins page
+              can clear this note.</p>
+          </div>
+
           <div class="panel">
             <div class="panel__head"><h3>Cheaper as part of the rack</h3></div>
             <div class="panel__body stack">
