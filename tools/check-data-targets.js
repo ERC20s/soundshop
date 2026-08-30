@@ -9,8 +9,8 @@
  * What it does:
  *  - walks site/ and reads every .html file;
  *  - finds attributes data-demo-src and data-presets-src inside each HTML file;
- *  - skips external values (http:, https:, data:, mailto:, protocol-relative //),
- *    bare fragments (#...), and empty values;
+ *  - warns on external/absolute values (http:, https:, data:, mailto:, protocol-relative //),
+ *    bare fragments (#...), and empty values are skipped silently;
  *  - strips query and hash, decodes percent-encodings, and resolves targets:
  *    - leading '/' targets are stripped of the leading slash and resolved against
  *      the repository's site/ directory (so '/demo/foo.html' -> SITE_DIR/demo/foo.html);
@@ -93,6 +93,7 @@ function main() {
 
   const files = walkHtml(SITE_DIR).sort();
   const missing = [];
+  const warnings = [];
   let checked = 0;
 
   for (const file of files) {
@@ -102,7 +103,19 @@ function main() {
     while ((m = ATTR_RE.exec(text)) !== null) {
       const target = m[1] !== undefined ? m[1] : m[2];
       const line = lineOf(text, m.index);
-      if (isExternal(target)) continue;
+
+      // treat empty values and bare fragments as okay and skip silently
+      const raw = String(target === undefined ? '' : target);
+      const tTrim = raw.trim();
+      if (tTrim === '' || tTrim.startsWith('#')) continue;
+
+      // protocol-relative '//' and scheme-prefixed values are considered external/absolute
+      if (tTrim.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(tTrim)) {
+        warnings.push({ file, line, target: raw });
+        continue;
+      }
+
+      // local target: check it exists on disk
       checked++;
       const clean = cleanTarget(target);
       if (clean === '') continue; // treat empty after cleaning as okay
@@ -118,6 +131,13 @@ function main() {
     }
   }
 
+  if (warnings.length) {
+    console.error('\ncheck-data-targets: external/absolute target warnings (' + warnings.length + '):\n');
+    for (const w of warnings) {
+      console.error(rel(w.file) + ':' + w.line + '  ' + w.target);
+    }
+  }
+
   if (missing.length) {
     console.error('\ncheck-data-targets: missing ' + missing.length + ' target(s):\n');
     for (const m of missing) {
@@ -129,6 +149,7 @@ function main() {
   }
 
   console.log('check-data-targets: all data-demo-src and data-presets-src targets exist. Scanned ' + files.length + ' HTML file(s). Checked ' + checked + ' data-* targets.');
+  if (warnings.length) console.log('check-data-targets: noted ' + warnings.length + ' external/absolute data-* target(s).');
   process.exitCode = 0;
 }
 
