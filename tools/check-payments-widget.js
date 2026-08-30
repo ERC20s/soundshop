@@ -87,6 +87,38 @@ const canonicalPaymentsBlock = `  <!-- Sell on your site: your items, a Buy butt
   })();
   </script>`;
 
+async function extractGroupFromPluginsPage(root) {
+  // Read the plugins index specifically — that's the authoritative page this check targets
+  const p = path.join(root, 'plugins', 'index.html');
+  let txt;
+  try {
+    txt = await fs.readFile(p, 'utf8');
+  } catch (err) {
+    return null;
+  }
+
+  const scriptTagRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  const attrSrcRe = /\bsrc\b\s*=\s*/i;
+  const moduleTypeRe = /\btype\b\s*=\s*["']?\s*module\s*["']?/i;
+  const groupAssignRe = /\bGROUP\b\s*=\s*['"]([^'"]+)['"]/;
+
+  let match;
+  while ((match = scriptTagRe.exec(txt)) !== null) {
+    const attr = match[1] || '';
+    const body = match[2] || '';
+    if (attrSrcRe.test(attr) || moduleTypeRe.test(attr)) continue; // ignore external or module scripts
+    const m = groupAssignRe.exec(body);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+function extractGroupFromCanonicalBlock(block) {
+  const groupAssignRe = /\bGROUP\b\s*=\s*['"]([^'"]+)['"]/;
+  const m = groupAssignRe.exec(block);
+  return m ? m[1] : null;
+}
+
 async function main() {
   const root = path.resolve(process.cwd(), 'site');
   let htmlFiles = [];
@@ -105,7 +137,19 @@ async function main() {
   const scriptTagRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
   const attrSrcRe = /\bsrc\b\s*=\s*/i;
   const moduleTypeRe = /\btype\b\s*=\s*["']?\s*module\s*["']?/i;
-  const groupAssignRe = /\bGROUP\b\s*=\s*['"]([^'"]+)['"]/g;
+  const groupAssignRe = /\bGROUP\b\s*=\s*['"]([^'\"]+)['"]/g;
+
+  // Derive the expected GROUP from the plugins page, then canonical block, then fallback
+  let expectedGroup = null;
+  try {
+    const fromPlugins = await extractGroupFromPluginsPage(root);
+    const fromCanonical = extractGroupFromCanonicalBlock(canonicalPaymentsBlock);
+    expectedGroup = fromPlugins || fromCanonical || 'soundshop';
+  } catch (err) {
+    expectedGroup = 'soundshop';
+  }
+
+  console.log('Resolved expected GROUP:', expectedGroup);
 
   const problems = [];
   let filesScanned = 0;
@@ -140,7 +184,7 @@ async function main() {
       groupAssignRe.lastIndex = 0;
       while ((m2 = groupAssignRe.exec(body)) !== null) {
         const val = m2[1];
-        if (val !== 'soundshop') {
+        if (val !== expectedGroup) {
           const startIndex = match.index + m2.index; // position in file
           const before = txt.slice(0, startIndex);
           const lineNumber = before.split('\n').length;
@@ -160,17 +204,17 @@ async function main() {
         console.error('-----\n');
       } else if (p.type === 'group-assign') {
         console.error('File:', p.file);
-        console.error('Issue: GROUP assigned a non-soundshop value (' + p.value + ') at line', p.lineNumber);
+        console.error('Issue: GROUP assigned a non-' + expectedGroup + ' value (' + p.value + ') at line', p.lineNumber);
         console.error('Preview:\n' + p.preview.split('\n').map(l => '  ' + l).join('\n'));
         console.error('-----\n');
       }
     }
-    console.error('Scanned', filesScanned, 'HTML file(s).');
+    console.error('Scanned', filesScanned, 'HTML file(s). Expected GROUP:', expectedGroup);
     process.exitCode = 1;
     return;
   }
 
-  console.log('No pasted canonical payments block found, and no GROUP overrides detected. Scanned', filesScanned, 'HTML file(s).');
+  console.log('No pasted canonical payments block found, and no GROUP overrides detected. Scanned', filesScanned, 'HTML file(s). Expected GROUP:', expectedGroup);
   process.exitCode = 0;
 }
 
