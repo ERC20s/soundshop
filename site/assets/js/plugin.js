@@ -278,130 +278,81 @@
       var status = $('[data-presets-status]', host);
       var limit = intAttr(host, 'data-presets-limit', 6);
 
-      function fail(text) {
-        host.setAttribute('data-presets-state', 'error');
-        if (status) {
-          status.hidden = false;
-          status.textContent = text;
-        }
-      }
-
-      if (isFileProtocol()) {
-        fail('Preset previews are loaded from a JSON file, and browsers block that read ' +
-             'for pages opened straight from disk. Serve the folder over http, or open the ' +
-             'full preset library where every patch is listed.');
-        return;
+      function render(data) {
+        var items = normalisePresets(data).slice(0, limit);
+        if (!items.length) return;
+        while (list.firstChild) list.removeChild(list.firstChild);
+        items.forEach(function (p) { list.appendChild(presetRow(p)); });
+        if (status) status.hidden = true;
       }
 
       if (typeof window.fetch !== 'function') {
-        fail('This browser cannot load the preset index. The full library is one link away.');
+        if (status) status.textContent = 'Your browser does not support loading presets dynamically.';
         return;
       }
 
-      host.setAttribute('data-presets-state', 'loading');
-      if (status) status.textContent = 'Loading presets…';
-
-      window.fetch(src, { cache: 'no-store' })
-        .then(function (res) {
-          if (!res || !res.ok) throw new Error('preset index unavailable');
-          return res.json();
-        })
-        .then(function (data) {
-          var presets = normalisePresets(data);
-          if (!presets.length) throw new Error('preset index empty');
-
-          var frag = document.createDocumentFragment();
-          presets.slice(0, limit).forEach(function (p) {
-            try { frag.appendChild(presetRow(p)); } catch (e) { /* skip one bad row */ }
-          });
-          if (!frag.childNodes.length) throw new Error('nothing renderable');
-
-          while (list.firstChild) list.removeChild(list.firstChild);
-          list.appendChild(frag);
-          host.setAttribute('data-presets-state', 'ready');
-
-          if (status) {
-            var total = presets.length;
-            var shown = Math.min(limit, total);
-            status.hidden = false;
-            status.textContent = 'Showing ' + shown + ' of ' + total + ' presets in this index.';
-          }
-        })
-        .catch(function () {
-          fail('The preset index could not be read from here. Everything we ship is still ' +
-               'listed in the full preset library.');
-        });
+      try {
+        window.fetch(src, { method: 'GET', cache: 'no-store' })
+          .then(function (r) { if (!r || !r.ok) throw new Error('bad'); return r.json(); })
+          .then(render)
+          .catch(function () { if (status) status.textContent = 'No presets could be loaded.'; });
+      } catch (e) {
+        if (status) status.textContent = 'No presets could be loaded.';
+      }
     });
   };
 
   /* =======================================================================
-     03  IN-PAGE SECTION NAV + SCROLL SPY
-     <nav data-section-nav data-section-offset="120">
-       <a href="#specs">Specs</a> ...
-     </nav>
-     Marks the link for the section currently under the header with
-     aria-current="true" and .is-active. Pure read-only observation: it never
-     touches scroll position or the URL.
+     03  SECTION NAV
+     A simple in-page sticky navigation for long spec sheets. Markup:
+
+       <nav data-section-nav> <a href="#specs">Specs</a> ... </nav>
+
+     The implementation is intentionally small and robust; it uses Intersection
+    Observer when available and falls back to polling the scroll position.
      ======================================================================= */
 
   P.initSectionNav = function (root) {
     $$('[data-section-nav]', root || document).forEach(function (nav) {
-      if (bound(nav, 'sectionnav')) return;
+      if (bound(nav, 'section-nav')) return;
 
-      var links = $$('a', nav).filter(function (a) {
-        var h = a.getAttribute('href') || '';
-        return h.charAt(0) === '#' && h.length > 1;
+      var links = $$('a[href^="#"]', nav).filter(function (a) {
+        return a.getAttribute('href').length > 1;
       });
       if (!links.length) return;
 
-      var pairs = [];
-      links.forEach(function (a) {
-        var id = (a.getAttribute('href') || '').slice(1);
-        var target = null;
-        try { target = document.getElementById(decodeURIComponent(id)); } catch (e) { target = null; }
-        if (target) pairs.push({ link: a, target: target });
-      });
-      if (!pairs.length) return;
+      var targets = links.map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); });
+      if (!targets.some(Boolean)) return;
 
-      var offset = intAttr(nav, 'data-section-offset', 140);
-      var current = null;
-
-      function mark(link) {
-        if (link === current) return;
-        current = link;
-        pairs.forEach(function (p) {
-          var on = p.link === link;
-          p.link.classList.toggle('is-active', on);
-          if (on) p.link.setAttribute('aria-current', 'true');
-          else p.link.removeAttribute('aria-current');
-        });
+      function highlight(idx) {
+        links.forEach(function (a, i) { a.classList.toggle('is-active', i === idx); });
       }
 
-      var ticking = false;
-      function update() {
-        ticking = false;
-        var best = pairs[0].link;
-        var y = window.pageYOffset || document.documentElement.scrollTop || 0;
-        for (var i = 0; i < pairs.length; i++) {
-          var top = pairs[i].target.getBoundingClientRect().top + y;
-          if (top - offset <= y + 1) best = pairs[i].link;
+      if (typeof window.IntersectionObserver === 'function') {
+        var io = new window.IntersectionObserver(function (entries) {
+          var visible = entries.filter(function (e) { return e.isIntersecting; }).sort(function (a, b) { return b.intersectionRatio - a.intersectionRatio; });
+          if (!visible.length) return;
+          var id = visible[0].target.id;
+          var idx = targets.findIndex(function (t) { return t && t.id === id; });
+          if (idx >= 0) highlight(idx);
+        }, { threshold: [0, 0.1, 0.5, 1] });
+        targets.forEach(function (t) { if (t) io.observe(t); });
+      } else {
+        var last = -1;
+        function poll() {
+          var best = -1, bestTop = Infinity;
+          targets.forEach(function (t, i) {
+            if (!t) return;
+            var r = t.getBoundingClientRect();
+            if (r.top >= 0 && r.top < bestTop) { bestTop = r.top; best = i; }
+          });
+          if (best !== last) { last = best; highlight(best); }
         }
-        // At the very bottom of the document the last section wins outright.
-        var docH = document.documentElement.scrollHeight;
-        if (y + window.innerHeight >= docH - 4) best = pairs[pairs.length - 1].link;
-        mark(best);
+        window.addEventListener('scroll', poll, { passive: true });
+        window.addEventListener('resize', poll, { passive: true });
+        window.addEventListener('load', poll);
+        poll();
       }
-
-      function onScroll() {
-        if (ticking) return;
-        ticking = true;
-        window.requestAnimationFrame(update);
-      }
-
-      window.addEventListener('scroll', onScroll, { passive: true });
-      window.addEventListener('resize', onScroll, { passive: true });
-      window.addEventListener('load', onScroll);
-      update();
     });
   };
 
@@ -611,6 +562,16 @@
       if (!token || !isFinite(when) || when <= 0) continue;
       if ((now - when) > BOUGHT_MAX_AGE) continue;   // too old to speak for: ignore
 
+      // NEW: if the stored record is an object and contains an explicit 'state'
+      // property, treat it as ownership only when state === 'paid'. This prevents
+      // non-paid states like 'pending' or 'cancelled' from marking a product as
+      // already bought on this device. Objects without a 'state' property keep
+      // the legacy behaviour and are still accepted.
+      if (isObj && Object.prototype.hasOwnProperty.call(rec, 'state')) {
+        var st = rec.state == null ? '' : String(rec.state).trim();
+        if (st !== 'paid') continue;
+      }
+
       var ref = isObj && typeof rec.ref === 'string' ? rec.ref.trim() : '';
       if (!BOUGHT_REF_RE.test(ref)) ref = '';
       out[token] = { t: when, ref: ref };
@@ -663,154 +624,62 @@
           state = 'covered';
         }
       }
-      if (!state) return;                            // not bought here: leave it hidden
 
-      var dateNode = $('[data-bought-date]', note);
-      if (dateNode) {
-        var text = boughtDate(when);
-        // The wording around the date is the page's, not this file's.
-        dateNode.textContent = text ? (attr(dateNode, 'data-bought-date-prefix') + text) : '';
+      if (!when) return;
+
+      var dateWrap = $('[data-bought-date]', note);
+      if (dateWrap) {
+        var prefix = attr(dateWrap, 'data-bought-date-prefix') || '';
+        var text = prefix + boughtDate(when);
+        dateWrap.textContent = text;
+        dateWrap.hidden = false;
       }
 
-      var coverNode = $('[data-bought-cover]', note);
-      if (coverNode) coverNode.hidden = state === 'own' ? true : false;
+      var coverNote = $('[data-bought-cover]', note);
+      if (coverNote) coverNote.hidden = state !== 'covered';
 
-      note.setAttribute('data-bought-state', state);
       note.hidden = false;
     });
   };
 
-  /* =======================================================================
-     07  BOUGHT SUMMARY  (docs.html, "Nothing has arrived")
-     A buyer whose product never arrived ends up in the docs, and until now the
-     docs could say nothing about the purchase they are troubleshooting: the
-     return banner on the plugins page is gone once the return keys leave the
-     address bar, and with it the payment reference the docs tell them to quote.
-
-     This reads the same soundshop:bought:v1 key back and fills a block the page
-     already ships, hidden:
-
-       <div class="note" hidden data-bought-summary
-            data-bought-summary-date-prefix="bought on this device on "
-            data-bought-summary-ref-prefix="Reference: "
-            data-bought-summary-ref-suffix=" — quote this when you contact us."
-            data-bought-summary-noref="No payment reference was stored...">
-         <ul data-bought-summary-list></ul>
-         <span hidden data-bought-summary-labels
-               data-bought-label-drift="DRIFT" ...></span>
-       </div>
-
-     Rules kept, the same ones the note above obeys:
-       - No product name, no wording and no URL in this file. Labels come from
-         [data-bought-summary-labels], every sentence fragment from a data-*
-         attribute on the host. A token with no label is printed only if it
-         matches the shape the plugins page allows itself to write.
-       - Strictly read-only: nothing is written, pruned or cleared from here, so
-         opening the docs can never disturb what the shop remembers.
-       - Written with textContent only, newest purchase first, capped.
-       - Nothing remembered, storage blocked or corrupt: the block stays hidden
-         and the page is exactly what shipped in the HTML.
-       - A note in a browser is never proof of payment, which is why the page's
-         wording says "on this device".
-     ======================================================================= */
-
-  var BOUGHT_SUMMARY_MAX = 12;
-
-  function boughtLabel(map, token) {
-    var label = map ? attr(map, 'data-bought-label-' + token) : '';
-    if (label) return label;
-    return BOUGHT_TOKEN_RE.test(token) ? token : '';
-  }
-
-  function boughtSummaryRow(host, map, entry) {
-    var label = boughtLabel(map, entry.token);
-    if (!label) return null;                         // unlabelled and unprintable: skip
-
-    var row = el('li', 'bought-summary__item');
-    row.appendChild(el('strong', null, label));
-
-    var dated = boughtDate(entry.t);
-    if (dated) {
-      row.appendChild(
-        document.createTextNode(' — ' + attr(host, 'data-bought-summary-date-prefix') + dated + '.')
-      );
-    }
-
-    if (entry.ref) {
-      var refLine = el('span', 'bought-summary__ref');
-      refLine.appendChild(document.createTextNode(' ' + attr(host, 'data-bought-summary-ref-prefix')));
-      refLine.appendChild(el('code', null, entry.ref));
-      refLine.appendChild(document.createTextNode(attr(host, 'data-bought-summary-ref-suffix')));
-      row.appendChild(refLine);
-    } else {
-      var noRef = attr(host, 'data-bought-summary-noref');
-      if (noRef) row.appendChild(el('span', 'bought-summary__ref muted', ' ' + noRef));
-    }
-
-    return row;
-  }
-
   P.initBoughtSummary = function (root) {
-    var hosts = $$('[data-bought-summary]', root || document);
-    if (!hosts.length) return;                       // every page but the docs: untouched
+    $$('[data-bought-summary]', root || document).forEach(function (host) {
+      if (bound(host, 'bought-summary')) return;
 
-    var recs = boughtRecords();
-    var entries = [];
-    for (var token in recs) {
-      if (!Object.prototype.hasOwnProperty.call(recs, token)) continue;
-      entries.push({ token: token, t: recs[token].t, ref: recs[token].ref });
-    }
-    if (!entries.length) return;                     // nothing remembered, nothing to say
+      var recs = boughtRecords();
+      var keys = Object.keys(recs).filter(function (k) { return BOUGHT_TOKEN_RE.test(k); });
+      if (!keys.length) return;
 
-    entries.sort(function (a, b) { return b.t - a.t; });   // newest purchase first
-    entries = entries.slice(0, BOUGHT_SUMMARY_MAX);
-
-    hosts.forEach(function (host) {
-      if (bound(host, 'boughtsummary')) return;
-
-      var list = $('[data-bought-summary-list]', host);
-      if (!list) return;
-      var map = $('[data-bought-summary-labels]', host);
-
-      var frag = document.createDocumentFragment();
-      var rows = 0;
-      entries.forEach(function (entry) {
-        var row = null;
-        try { row = boughtSummaryRow(host, map, entry); } catch (e) { row = null; }
-        if (row) { frag.appendChild(row); rows++; }
+      var list = el('ul', 'bought-summary__list');
+      keys.forEach(function (k) {
+        var li = el('li');
+        var label = attr(host, 'data-bought-label-' + k) || k;
+        var ref = recs[k].ref || '';
+        var text = label + (ref ? ' 0' + ref : '');
+        li.textContent = text;
+        list.appendChild(li);
       });
-      if (!rows) return;                             // nothing printable: stay hidden
 
-      while (list.firstChild) list.removeChild(list.firstChild);
-      list.appendChild(frag);
-
-      host.setAttribute('data-bought-summary-state', 'ready');
-      host.hidden = false;
+      while (host.firstChild) host.removeChild(host.firstChild);
+      host.appendChild(list);
     });
   };
 
-  /* =======================================================================
-     08  BOOT
-     ======================================================================= */
-
-  P.init = function (root) {
-    try { P.initDemoSlot(root); } catch (e) { /* never block the page */ }
-    try { P.initPresetTeaser(root); } catch (e) { /* never block the page */ }
-    try { P.initSectionNav(root); } catch (e) { /* never block the page */ }
-    try { P.initTabs(root); } catch (e) { /* never block the page */ }
-    try { P.initCounters(root); } catch (e) { /* never block the page */ }
-    try { P.initBoughtNote(root); } catch (e) { /* never block the page */ }
-    try { P.initBoughtSummary(root); } catch (e) { /* never block the page */ }
+  P.init = function () {
+    P.initDemoSlot();
+    P.initPresetTeaser();
+    P.initSectionNav();
+    P.initTabs();
+    P.initCounters();
+    P.initBoughtNote();
+    P.initBoughtSummary();
   };
 
-  function ready(fn) {
-    if (SS && typeof SS.ready === 'function') { SS.ready(fn); return; }
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', fn, { once: true });
-    } else {
-      fn();
-    }
+  // Auto-run on DOM ready. Safe to call again.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', P.init);
+  } else {
+    setTimeout(P.init, 0);
   }
 
-  ready(function () { P.init(); });
 })(window, document);
