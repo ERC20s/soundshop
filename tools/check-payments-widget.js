@@ -87,6 +87,16 @@ const canonicalPaymentsBlock = `  <!-- Sell on your site: your items, a Buy butt
   })();
   </script>`;
 
+// Replace JavaScript strings and comments with spaces (preserving newlines) so
+// GROUP=... searches ignore text that only appears inside quotes or comments.
+function stripJsStringsAndComments(src) {
+  if (!src) return src;
+  // Matches: double-quoted strings, single-quoted strings, template literals,
+  // block comments /* ... */ and line comments //...
+  const re = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^\\`])*`|\/\*[\s\S]*?\*\/|\/\/[^\n\r]*)/g;
+  return src.replace(re, m => m.replace(/[^\n]/g, ' '));
+}
+
 async function extractGroupFromPluginsPage(root) {
   // Read the plugins index specifically — that's the authoritative page this check targets
   const p = path.join(root, 'plugins', 'index.html');
@@ -107,7 +117,8 @@ async function extractGroupFromPluginsPage(root) {
     const attr = match[1] || '';
     const body = match[2] || '';
     if (attrSrcRe.test(attr) || moduleTypeRe.test(attr)) continue; // ignore external or module scripts
-    const m = groupAssignRe.exec(body);
+    const scrubbed = stripJsStringsAndComments(body);
+    const m = groupAssignRe.exec(scrubbed);
     if (m) return m[1];
   }
   return null;
@@ -137,7 +148,7 @@ async function main() {
   const scriptTagRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
   const attrSrcRe = /\bsrc\b\s*=\s*/i;
   const moduleTypeRe = /\btype\b\s*=\s*["']?\s*module\s*["']?/i;
-  const groupAssignRe = /\bGROUP\b\s*=\s*['"]([^'\"]+)['"]/g;
+  const groupAssignRe = /\bGROUP\b\s*=\s*['"]([^\'"]+)['"]/g;
 
   // Derive the expected GROUP from the plugins page, then canonical block, then fallback
   let expectedGroup = null;
@@ -182,7 +193,8 @@ async function main() {
       // For each assignment within this script body
       let m2;
       groupAssignRe.lastIndex = 0;
-      while ((m2 = groupAssignRe.exec(body)) !== null) {
+      const scrubbedBody = stripJsStringsAndComments(body);
+      while ((m2 = groupAssignRe.exec(scrubbedBody)) !== null) {
         const val = m2[1];
         if (val !== expectedGroup) {
           const startIndex = match.index + m2.index; // position in file
