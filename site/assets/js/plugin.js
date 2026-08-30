@@ -650,18 +650,55 @@
       var keys = Object.keys(recs).filter(function (k) { return BOUGHT_TOKEN_RE.test(k); });
       if (!keys.length) return;
 
-      var list = el('ul', 'bought-summary__list');
+      var list = $('[data-bought-summary-list]', host);
+      if (!list) return;
+
+      // Clear the list first
+      while (list.firstChild) list.removeChild(list.firstChild);
+
+      // Get the labels element - it has all the data-bought-label-* attributes
+      var labelsEl = $('[data-bought-summary-labels]', host);
+
+      // Read formatting options from the host
+      var datePrefix = attr(host, 'data-bought-summary-date-prefix') || '';
+      var refPrefix = attr(host, 'data-bought-summary-ref-prefix') || '';
+      var refSuffix = attr(host, 'data-bought-summary-ref-suffix') || '';
+      var norefMsg = attr(host, 'data-bought-summary-noref') || '';
+
+      var validCount = 0;
       keys.forEach(function (k) {
-        var li = el('li');
-        var label = attr(host, 'data-bought-label-' + k) || k;
+        // Get label: first from data-bought-summary-labels, then fallback to host, then token itself
+        var label = '';
+        if (labelsEl) label = attr(labelsEl, 'data-bought-label-' + k);
+        if (!label) label = attr(host, 'data-bought-label-' + k);
+        if (!label) label = k;
+
+        var text = label;
+
+        // Add date if we have a date prefix
+        if (datePrefix) {
+          var date = boughtDate(recs[k].t);
+          if (date) text += ' ' + datePrefix + date;
+        }
+
+        // Add reference or no-reference message
         var ref = recs[k].ref || '';
-        var text = label + (ref ? ' 0' + ref : '');
+        if (ref) {
+          text += ' ' + refPrefix + ref + refSuffix;
+        } else if (norefMsg) {
+          text += ' ' + norefMsg;
+        }
+
+        var li = el('li');
         li.textContent = text;
         list.appendChild(li);
+        validCount++;
       });
 
-      while (host.firstChild) host.removeChild(host.firstChild);
-      host.appendChild(list);
+      // Unhide the host only if we added at least one item
+      if (validCount > 0) {
+        host.hidden = false;
+      }
     });
   };
 
