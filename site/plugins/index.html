@@ -293,6 +293,122 @@
   })();
   </script>
 
+  <!-- Handle group-store:paid event to record purchase in browser memory -->
+  <script>
+  (function () {
+    var BOUGHT_KEY = 'soundshop:bought:v1';
+    var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;  // 60 days
+
+    // Map product names/IDs to internal tokens
+    function getProductToken(itemName, itemId) {
+      var name = String(itemName || itemId || '').trim().toLowerCase();
+
+      // Handle bundle names
+      if (name === 'the full shop' || name === 'bundle' || name === 'full shop') {
+        return 'bundle';
+      }
+
+      // Handle individual plugin names
+      if (name === 'vanta' || name === 'vanta - wavetable synth') {
+        return 'vanta';
+      }
+      if (name === 'drift' || name === 'drift - spectral delay') {
+        return 'drift';
+      }
+      if (name === 'prism' || name === 'prism - reverb') {
+        return 'prism';
+      }
+      if (name === 'anvil' || name === 'anvil - punch compressor') {
+        return 'anvil';
+      }
+
+      // Try to extract token from name if it contains one
+      var tokens = ['bundle', 'vanta', 'drift', 'prism', 'anvil'];
+      for (var i = 0; i < tokens.length; i++) {
+        if (name.indexOf(tokens[i]) !== -1) {
+          return tokens[i];
+        }
+      }
+
+      // Unknown product, log and return null
+      return null;
+    }
+
+    // Prune expired records from localStorage
+    function pruneExpiredRecords() {
+      try {
+        var raw = window.localStorage.getItem(BOUGHT_KEY);
+        if (!raw) return;
+        var parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+
+        var now = Date.now();
+        var changed = false;
+        for (var key in parsed) {
+          if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
+          var rec = parsed[key];
+          var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
+          var when = Number(isObj ? rec.t : rec);
+          if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
+            delete parsed[key];
+            changed = true;
+          }
+        }
+        if (changed) {
+          window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(parsed));
+        }
+      } catch (e) {
+        // localStorage unavailable or corrupt, silently ignore
+      }
+    }
+
+    // Listen for the 'group-store:paid' event fired by the payment widget
+    document.addEventListener('group-store:paid', function (evt) {
+      var order = evt && evt.detail;
+      if (!order) return;
+
+      var token = getProductToken(order.itemName, order.itemId);
+      if (!token) {
+        // Unknown product, silently ignore
+        return;
+      }
+
+      try {
+        var now = Date.now();
+        var bought = {};
+
+        // Read existing records
+        var raw = window.localStorage.getItem(BOUGHT_KEY);
+        if (raw) {
+          try {
+            var parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              bought = parsed;
+            }
+          } catch (e) {
+            // Corrupt data, start fresh
+          }
+        }
+
+        // Record this purchase
+        bought[token] = {
+          t: now,
+          ref: String(order.id || '').trim(),
+          state: 'paid'
+        };
+
+        // Write back to localStorage
+        window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(bought));
+
+        // Prune expired records
+        pruneExpiredRecords();
+      } catch (e) {
+        // localStorage unavailable or full, silently ignore
+      }
+    });
+  })();
+  </script>
+
       <div class="strip mt-6">
         <span>VST3</span><span class="strip__sep" aria-hidden="true"></span>
         <span>AU</span><span class="strip__sep" aria-hidden="true"></span>
