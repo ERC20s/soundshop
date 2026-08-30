@@ -12,10 +12,12 @@ const SITE_DIR = path.join(REPO_ROOT, 'site');
 
 const ATTR_RE = /\b(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
 const FETCH_RE = /\bfetch\(\s*(?:'([^']*)'|"([^']*)")/g;
+// Detect template-literal fetch calls: fetch(`...`)
+const FETCH_TEMPLATE_RE = /\bfetch\(\s*`([^`]*)`/g;
 const STYLE_BLOCK_RE = /<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi;
 const SCRIPT_TAG_RE = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
 const ATTR_SRC_RE = /\bsrc\b\s*=/i;
-const CSS_URL_RE = /\burl\(\s*(?:'([^']*)'|"([^"]*)"|([^)'"\s]+))\s*\)/gi;
+const CSS_URL_RE = /\burl\(\s*(?:'([^']*)'|"([^']*)"|([^)'"\s]+))\s*\)/gi;
 const CSS_IMPORT_RE = /@import\s+(?:'([^']*)'|"([^']*)")/gi;
 // new: capture inline style="..." or style='...'
 const STYLE_ATTR_RE = /\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
@@ -116,6 +118,16 @@ function collectFromFile(file, text, problems) {
         problems.push({ file, line: lineOf(text, m.index), target, preview: previewLine(text, lineOf(text, m.index)) });
       }
     }
+
+    // also handle template-literal fetch calls in .js files: fetch(`...`)
+    FETCH_TEMPLATE_RE.lastIndex = 0;
+    while ((m = FETCH_TEMPLATE_RE.exec(text)) !== null) {
+      const target = m[1];
+      if (!target) continue;
+      if (target.startsWith('/') && !target.startsWith('//') && !isSkippable(target)) {
+        problems.push({ file, line: lineOf(text, m.index), target, preview: previewLine(text, lineOf(text, m.index)) });
+      }
+    }
   }
 
   // If this is HTML, also check inline <style> and <script> bodies and inline style="..." attributes
@@ -148,6 +160,17 @@ function collectFromFile(file, text, problems) {
       FETCH_RE.lastIndex = 0;
       while ((m2 = FETCH_RE.exec(body)) !== null) {
         const target = m2[1] !== undefined ? m2[1] : m2[2];
+        if (!target) continue;
+        const absIndex = m.index + m[0].indexOf(body) + m2.index;
+        if (target.startsWith('/') && !target.startsWith('//') && !isSkippable(target)) {
+          problems.push({ file, line: lineOf(text, absIndex), target, preview: previewLine(text, lineOf(text, absIndex)) });
+        }
+      }
+
+      // scan inline script for fetch(`...`) template-literals
+      FETCH_TEMPLATE_RE.lastIndex = 0;
+      while ((m2 = FETCH_TEMPLATE_RE.exec(body)) !== null) {
+        const target = m2[1];
         if (!target) continue;
         const absIndex = m.index + m[0].indexOf(body) + m2.index;
         if (target.startsWith('/') && !target.startsWith('//') && !isSkippable(target)) {
