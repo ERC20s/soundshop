@@ -15,8 +15,10 @@ const FETCH_RE = /\bfetch\(\s*(?:'([^']*)'|"([^']*)")/g;
 const STYLE_BLOCK_RE = /<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi;
 const SCRIPT_TAG_RE = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
 const ATTR_SRC_RE = /\bsrc\b\s*=/i;
-const CSS_URL_RE = /\burl\(\s*(?:'([^']*)'|"([^']*)"|([^)'"\s]+))\s*\)/gi;
+const CSS_URL_RE = /\burl\(\s*(?:'([^']*)'|"([^"]*)"|([^)'"\s]+))\s*\)/gi;
 const CSS_IMPORT_RE = /@import\s+(?:'([^']*)'|"([^']*)")/gi;
+// new: capture inline style="..." or style='...'
+const STYLE_ATTR_RE = /\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
 
 function walk(dir, out) {
   out = out || [];
@@ -116,12 +118,22 @@ function collectFromFile(file, text, problems) {
     }
   }
 
-  // If this is HTML, also check inline <style> and <script> bodies
+  // If this is HTML, also check inline <style> and <script> bodies and inline style="..." attributes
   if (ext === '.html' || ext === '.htm') {
     // inline style blocks
     STYLE_BLOCK_RE.lastIndex = 0;
     while ((m = STYLE_BLOCK_RE.exec(text)) !== null) {
       const body = m[1] || '';
+      const base = m.index + m[0].indexOf(body);
+      collectCss(body, base, file, problems);
+    }
+
+    // inline style="..." attributes — scan attribute values as CSS text
+    STYLE_ATTR_RE.lastIndex = 0;
+    while ((m = STYLE_ATTR_RE.exec(text)) !== null) {
+      const body = m[1] !== undefined ? m[1] : m[2] || '';
+      if (!body) continue;
+      // compute absolute index in file so line numbers match preview and other reports
       const base = m.index + m[0].indexOf(body);
       collectCss(body, base, file, problems);
     }
