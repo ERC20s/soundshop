@@ -52,16 +52,18 @@ const SITE_DATA_DIR = path.join(SITE_DIR, 'data');
 // href= / src= but not data-src=, data-demo-src=, etc.
 const ATTR_RE = /(?<![\w-])(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
 // fetch('literal') / fetch("literal")
-const FETCH_RE = /\bfetch\(\s*(?:'([^']*)'|"([^"]*)")/g;
+const FETCH_RE = /\bfetch\(\s*(?:'([^']*)'|"([^']*)")/g;
+// fetch(`literal`)
+const FETCH_TEMPLATE_RE = /\bfetch\(\s*`([^`]*)`/g;
 // ['a', "b", ...] — arrays of two or more string literals, treated as a fallback list
-const GROUP_RE = /\[\s*((?:'[^']*'|"[^"]*")(?:\s*,\s*(?:'[^']*'|"[^"]*"))+)\s*\]/g;
-const STRING_RE = /'([^']*)'|"([^"]*)"/g;
+const GROUP_RE = /\[\s*((?:'[^']*'|"[^']*")(?:\s*,\s*(?:'[^']*'|"[^']*"))+)\s*\]/g;
+const STRING_RE = /'([^']*)'|"([^']*)"/g;
 // <style> ... </style> blocks inside an HTML document
 const STYLE_BLOCK_RE = /<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi;
 // url(foo) / url('foo') / url("foo")
-const CSS_URL_RE = /\burl\(\s*(?:'([^']*)'|"([^"]*)"|([^)'"\s]+))\s*\)/gi;
+const CSS_URL_RE = /\burl\(\s*(?:'([^']*)'|"([^']*)"|([^)'"\s]+))\s*\)/gi;
 // @import 'foo'; / @import "foo";  (the @import url(...) form is covered by CSS_URL_RE)
-const CSS_IMPORT_RE = /@import\s+(?:'([^']*)'|"([^"]*)")/gi;
+const CSS_IMPORT_RE = /@import\s+(?:'([^']*)'|"([^']*)")/gi;
 
 function walk(dir, out) {
   out = out || [];
@@ -229,6 +231,13 @@ function collect(file, text) {
     singles.push({ target, line: lineOf(text, m.index) });
   }
 
+  // also capture fetch(`...`) template-literal usages
+  FETCH_TEMPLATE_RE.lastIndex = 0;
+  while ((m = FETCH_TEMPLATE_RE.exec(text)) !== null) {
+    const target = m[1];
+    singles.push({ target, line: lineOf(text, m.index) });
+  }
+
   GROUP_RE.lastIndex = 0;
   while ((m = GROUP_RE.exec(text)) !== null) {
     const targets = [];
@@ -283,61 +292,47 @@ function main() {
       checked++;
       const resolvedAll = local.map((t) => resolveTarget(t, file));
       if (!local.some((t) => existsSomewhere(resolveCandidates(t, file)))) {
-        missing.push({
-          file,
-          line,
-          target: '[' + local.join(', ') + ']',
-          resolved: resolvedAll.map(rel).join(' | '),
-        });
+        missing.push({ file, line, target: local.join(', '), resolved: resolvedAll.join(' | ') });
       }
     }
   }
 
-  const dataFiles = walkJson(DATA_DIR).concat(walkJson(SITE_DATA_DIR)).sort();
-  for (const file of dataFiles) {
-    const text = fs.readFileSync(file, 'utf8');
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      warnings.push(rel(file) + ': could not parse as JSON (' + e.message + ')');
-      continue;
-    }
-
-    const linkObjects = [];
-    findLinkObjects(data, linkObjects);
-
-    for (const links of linkObjects) {
-      for (const key of Object.keys(links)) {
-        const target = links[key];
-        if (typeof target !== 'string' || isExternal(target)) continue;
+  // Also scan data/ and site/data/ for links: { ... } objects
+  const jsonFiles = walkJson(DATA_DIR).concat(walkJson(SITE_DATA_DIR)).sort();
+  for (const jf of jsonFiles) {
+    let parsed = null;
+    try { parsed = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch (e) { warnings.push({ file: jf, message: 'Failed to parse JSON: ' + e.message }); continue; }
+    const objs = [];
+    findLinkObjects(parsed, objs);
+    for (const obj of objs) {
+      for (const [k, v] of Object.entries(obj)) {
+        if (typeof v !== 'string') continue;
+        if (isExternal(v)) continue;
         checked++;
-        const resolved = resolveTarget(target, file);
-        if (!existsOnDisk(resolved)) {
-          const idx = text.indexOf('"' + target + '"');
-          const line = idx >= 0 ? lineOf(text, idx) : 1;
-          missing.push({ file, line, target, resolved });
+        if (!existsSomewhere(resolveCandidates(v, jf))) {
+          missing.push({ file: jf, line: 1, target: v, resolved: resolveTarget(v, jf) });
         }
       }
     }
   }
 
-  for (const miss of missing) {
-    const resolved = typeof miss.resolved === 'string' && miss.resolved.includes(' | ')
-      ? miss.resolved
-      : rel(miss.resolved);
-    console.log(rel(miss.file) + ':' + miss.line + '  ' + miss.target + ' -> ' + resolved);
+  if (missing.length) {
+    console.error('\nMissing', missing.length, 'target(s):\n');
+    for (const m of missing) {
+      console.error(rel(m.file) + ':' + m.line + '  ' + m.target + ' -> ' + (m.resolved || ''));
+    }
+    console.error('\nScanned', files.length, 'file(s) under site/ and', jsonFiles.length, 'JSON files.');
+    process.exitCode = 1;
+    return;
   }
 
-  for (const w of warnings) {
-    console.log('warning: ' + w);
+  if (warnings.length) {
+    console.error('\nWarnings:\n');
+    for (const w of warnings) console.error(rel(w.file) + ': ' + w.message);
   }
 
-  console.log(
-    'check-links: ' + files.length + ' site file(s), ' + dataFiles.length + ' data file(s), ' +
-    checked + ' internal target(s), ' + missing.length + ' missing, ' + warnings.length + ' warning(s)'
-  );
-  process.exit(missing.length > 0 ? 1 : 0);
+  console.log('All link targets resolved. Scanned', files.length, 'file(s) under site/ and', jsonFiles.length, 'JSON files.');
+  process.exitCode = 0;
 }
 
 main();
