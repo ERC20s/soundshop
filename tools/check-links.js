@@ -128,7 +128,10 @@ function cleanTarget(target) {
 function resolveTarget(target, file) {
   const clean = cleanTarget(target);
   if (clean === '') return null; // "page.html#section" style self-links
-  if (clean.startsWith('/')) return path.join(SITE_DIR, clean);
+  if (clean.startsWith('/')) {
+    const stripped = clean.replace(/^\/+/,'');
+    return path.resolve(SITE_DIR, stripped);
+  }
   return path.resolve(path.dirname(file), clean);
 }
 
@@ -153,7 +156,10 @@ function docDirs() {
 function resolveCandidates(target, file) {
   const clean = cleanTarget(target);
   if (clean === '') return [];
-  if (clean.startsWith('/')) return [path.join(SITE_DIR, clean)];
+  if (clean.startsWith('/')) {
+    const stripped = clean.replace(/^\/+/,'');
+    return [path.resolve(SITE_DIR, stripped)];
+  }
 
   const out = [path.resolve(path.dirname(file), clean)];
   if (/\.js$/i.test(file)) {
@@ -287,21 +293,19 @@ function main() {
     }
 
     for (const { targets, line } of groups) {
-      const local = targets.filter((t) => !isExternal(t));
-      if (local.length === 0) continue;
-      checked++;
-      const resolvedAll = local.map((t) => resolveTarget(t, file));
-      if (!local.some((t) => existsSomewhere(resolveCandidates(t, file)))) {
-        missing.push({ file, line, target: local.join(', '), resolved: resolvedAll.join(' | ') });
+      const candidates = [];
+      for (const t of targets) {
+        if (isExternal(t)) continue;
+        candidates.push(...resolveCandidates(t, file));
       }
+      if (!existsSomewhere(candidates)) missing.push({ file, line, target: '[' + targets.join(', ') + ']', resolved: null });
     }
   }
 
-  // Also scan data/ and site/data/ for links: { ... } objects
-  const jsonFiles = walkJson(DATA_DIR).concat(walkJson(SITE_DATA_DIR)).sort();
-  for (const jf of jsonFiles) {
-    let parsed = null;
-    try { parsed = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch (e) { warnings.push({ file: jf, message: 'Failed to parse JSON: ' + e.message }); continue; }
+  // Check JSON data/ and site/data/ for any nested { links: { ... } } objects.
+  for (const j of walkJson(DATA_DIR).concat(walkJson(SITE_DATA_DIR)).sort()) {
+    let parsed;
+    try { parsed = JSON.parse(fs.readFileSync(j, 'utf8')); } catch (e) { warnings.push({ file: j, message: 'failed to parse JSON: ' + e.message }); continue; }
     const objs = [];
     findLinkObjects(parsed, objs);
     for (const obj of objs) {
@@ -309,30 +313,21 @@ function main() {
         if (typeof v !== 'string') continue;
         if (isExternal(v)) continue;
         checked++;
-        if (!existsSomewhere(resolveCandidates(v, jf))) {
-          missing.push({ file: jf, line: 1, target: v, resolved: resolveTarget(v, jf) });
-        }
+        const resolved = resolveTarget(v, j);
+        if (!existsSomewhere(resolveCandidates(v, j))) missing.push({ file: j, line: 1, target: v, resolved });
       }
     }
   }
 
-  if (missing.length) {
-    console.error('\nMissing', missing.length, 'target(s):\n');
-    for (const m of missing) {
-      console.error(rel(m.file) + ':' + m.line + '  ' + m.target + ' -> ' + (m.resolved || ''));
-    }
-    console.error('\nScanned', files.length, 'file(s) under site/ and', jsonFiles.length, 'JSON files.');
-    process.exitCode = 1;
-    return;
+  for (const w of warnings) console.error('check-links: warning: ' + rel(w.file) + ': ' + w.message);
+  for (const m of missing) console.error('' + rel(m.file) + ':' + m.line + '  ' + m.target + ' -> ' + (m.resolved ? rel(m.resolved) : '??'));
+  if (missing.length > 0) {
+    console.error('\ncheck-links: ' + missing.length + ' missing targets, ' + checked + ' checked');
+    process.exit(1);
   }
 
-  if (warnings.length) {
-    console.error('\nWarnings:\n');
-    for (const w of warnings) console.error(rel(w.file) + ': ' + w.message);
-  }
-
-  console.log('All link targets resolved. Scanned', files.length, 'file(s) under site/ and', jsonFiles.length, 'JSON files.');
-  process.exitCode = 0;
+  console.log('check-links: ok — ' + checked + ' targets checked');
+  process.exit(0);
 }
 
-main();
+if (require.main === module) main();
