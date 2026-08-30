@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * tools/check-data-targets.js — check data-demo-src and data-presets-src targets
+ * tools/check-data-targets.js — check data-demo-src, data-presets-src and data-src targets
  *
  * Usage: node tools/check-data-targets.js
  * Needs: Node 18 or newer. No npm packages.
  *
  * What it does:
  *  - walks site/ and reads every .html file;
- *  - finds attributes data-demo-src and data-presets-src inside each HTML file;
+ *  - finds attributes data-demo-src, data-presets-src and data-src inside each HTML file;
  *  - warns on external/absolute values (http:, https:, data:, mailto:, protocol-relative //),
  *    bare fragments (#...), and empty values are skipped silently;
  *  - strips query and hash, decodes percent-encodings, and resolves targets:
@@ -25,7 +25,7 @@ const path = require('path');
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SITE_DIR = path.join(REPO_ROOT, 'site');
 
-const ATTR_RE = /\b(?:data-demo-src|data-presets-src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+const ATTR_RE = /\b(?:data-demo-src|data-presets-src|data-src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
 
 function walkHtml(dir, out) {
   out = out || [];
@@ -148,7 +148,7 @@ function main() {
     return;
   }
 
-  console.log('check-data-targets: all data-demo-src and data-presets-src targets exist. Scanned ' + files.length + ' HTML file(s). Checked ' + checked + ' data-* targets.');
+  console.log('check-data-targets: all data-demo-src, data-presets-src and data-src targets exist. Scanned ' + files.length + ' HTML file(s). Checked ' + checked + ' data-* targets.');
   if (warnings.length) console.log('check-data-targets: noted ' + warnings.length + ' external/absolute data-* target(s).');
   process.exitCode = 0;
 }
