@@ -297,6 +297,16 @@
       if (!tok || !isFinite(when) || when <= 0 || (Date.now() - when) > MAX_AGE) {
         delete saved[k]; pruned = true; continue;
       }
+
+      // If the stored record is an object and carries an explicit 'state' property,
+      // only treat it as ownership when state === 'paid'. Non-paid states such as
+      // 'pending' or 'cancelled' are ignored for the purposes of marking rows and
+      // cards, but the entry is not removed from localStorage here to avoid data loss.
+      if (obj && Object.prototype.hasOwnProperty.call(rec, 'state')) {
+        var st = rec.state == null ? '' : String(rec.state).trim();
+        if (st !== 'paid') { continue; }
+      }
+
       items[tok] = { when: when, live: false, ref: sref };
     }
     if (pruned) write(saved);
@@ -330,75 +340,34 @@
       if (!state[tok]) { state[tok] = { rowDone: false, cardDone: false, anchor: null, lines: [] }; }
       return state[tok];
     };
-    var clear = function (tok) {
-      forget(tok);
-      var st = state[tok];
-      if (!st) return;
-      for (var i = 0; i < st.lines.length; i++) {
-        if (st.lines[i].parentNode) { st.lines[i].parentNode.removeChild(st.lines[i]); }
-      }
-      st.lines = [];
-      if (st.anchor && norm(st.anchor.textContent) === "buy again") { st.anchor.textContent = "Buy"; }
-    };
-    var line = function (tok, gap) {
-      var it = items[tok];
-      var p = document.createElement("p");
-      p.className = "store-bought-line muted";
-      p.setAttribute("role", "status");
-      p.style.font = "13px system-ui,sans-serif";
-      p.style.color = "#9ca3af";
-      p.style.margin = gap || "0";
-      p.style.flexBasis = "100%";
-      if (items[tok].ref) {
-        var t = document.createElement("span");
-        t.textContent = "Reference: " + items[tok].ref;
-        p.appendChild(t);
-      }
-      var when = items[tok].when;
-      if (when) {
-        var d = document.createElement("span");
-        d.textContent = " — bought on " + dated(when);
-        p.appendChild(d);
-      }
-      if (items[tok].cover) {
-        var b = document.createElement("b");
-        b.textContent = "Included in The Full Shop bundle";
-        p.appendChild(b);
-      }
-      if (!items[tok].cover) {
-        var btn = document.createElement("button");
-        btn.type = "button";
-        btn.style.cssText = "font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline";
-        btn.textContent = "Not you? Clear";
-        btn.addEventListener("click", function () { clear(tok); });
-        p.appendChild(btn);
-      }
-      slot(tok).lines.push(p);
+
+    var line = function (tok, pad) {
+      var p = document.createElement('p');
+      p.setAttribute('data-bought-note', tok);
+      if (pad) p.style.padding = pad;
+      p.style.font = '13px system-ui, sans-serif';
+      p.style.color = 'var(--text-dim)';
+      p.style.margin = '0.75rem 0 0';
+      p.style.lineHeight = '1.25';
+      p.textContent = NOTE;
       return p;
     };
+
     var markRow = function (tok) {
-      var row = document.querySelector("[data-store-item-row='" + tok + "']");
+      var row = document.querySelector("[data-store-row='" + tok + "']");
       if (!row) return false;
       var st = slot(tok);
       if (st.rowDone) return true;
-      var wrap = row.querySelector("[data-store-row-done]");
-      if (!wrap) {
-        wrap = document.createElement("div");
-        wrap.setAttribute("data-store-row-done", "");
-        wrap.style.display = "flex";
-        wrap.style.flexDirection = "column";
-        row.insertBefore(wrap, row.firstChild);
-      }
-      var p = line(tok, "0 0 0 0");
-      wrap.appendChild(p);
-      var btn = row.querySelector("[data-store-buy]");
-      if (btn) {
-        st.anchor = btn;
-        if (btn.textContent && norm(btn.textContent) === "buy") { btn.textContent = "Buy again"; }
-      }
+      var r = row.querySelector('.row__title');
+      var wrap = r ? r.parentNode : null;
+      var note = document.createElement('div');
+      note.className = 'row__buy-note';
+      note.appendChild(line(tok));
+      if (wrap) wrap.appendChild(note);
       st.rowDone = true;
       return true;
     };
+
     var markCard = function (tok) {
       var card = document.querySelector("[data-store-item='" + tok + "']");
       if (!card) return false;
