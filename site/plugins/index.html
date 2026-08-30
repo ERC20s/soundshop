@@ -297,6 +297,16 @@
       if (!tok || !isFinite(when) || when <= 0 || (Date.now() - when) > MAX_AGE) {
         delete saved[k]; pruned = true; continue;
       }
+
+      // If the stored record is an object and contains an explicit 'state'
+      // property, treat it as ownership only when state === 'paid'. This makes
+      // the plugins page ignore non-paid states like 'pending' or 'cancelled'
+      // while leaving such entries intact in localStorage (do not delete them).
+      if (obj && Object.prototype.hasOwnProperty.call(rec, 'state')) {
+        var st = rec.state == null ? '' : String(rec.state).trim();
+        if (st !== 'paid') { continue; }
+      }
+
       items[tok] = { when: when, live: false, ref: sref };
     }
     if (pruned) write(saved);
@@ -360,20 +370,12 @@
         d.textContent = " — bought on " + dated(when);
         p.appendChild(d);
       }
-      if (items[tok].cover) {
-        var b = document.createElement("b");
-        b.textContent = "Included in The Full Shop bundle";
-        p.appendChild(b);
-      }
-      if (!items[tok].cover) {
-        var btn = document.createElement("button");
-        btn.type = "button";
-        btn.style.cssText = "font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline";
-        btn.textContent = "Not you? Clear";
-        btn.addEventListener("click", function () { clear(tok); });
-        p.appendChild(btn);
-      }
-      slot(tok).lines.push(p);
+      var b = document.createElement("button");
+      b.className = "link";
+      b.type = "button";
+      b.textContent = "Clear";
+      b.addEventListener("click", function () { clear(tok); });
+      p.appendChild(b);
       return p;
     };
     var markRow = function (tok) {
@@ -381,21 +383,10 @@
       if (!row) return false;
       var st = slot(tok);
       if (st.rowDone) return true;
-      var wrap = row.querySelector("[data-store-row-done]");
-      if (!wrap) {
-        wrap = document.createElement("div");
-        wrap.setAttribute("data-store-row-done", "");
-        wrap.style.display = "flex";
-        wrap.style.flexDirection = "column";
-        row.insertBefore(wrap, row.firstChild);
-      }
-      var p = line(tok, "0 0 0 0");
-      wrap.appendChild(p);
-      var btn = row.querySelector("[data-store-buy]");
-      if (btn) {
-        st.anchor = btn;
-        if (btn.textContent && norm(btn.textContent) === "buy") { btn.textContent = "Buy again"; }
-      }
+      var anchor = row.querySelector("a");
+      if (anchor) { st.anchor = anchor; if (norm(anchor.textContent) === "buy") { anchor.textContent = "Buy again"; } }
+      var p = line(tok, "0 0 var(--sp-4) 0");
+      row.appendChild(p);
       st.rowDone = true;
       return true;
     };
