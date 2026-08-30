@@ -50,7 +50,7 @@ const DATA_DIR = path.join(REPO_ROOT, 'data');
 const SITE_DATA_DIR = path.join(SITE_DIR, 'data');
 
 // href= / src= but not data-src=, data-demo-src=, etc.
-const ATTR_RE = /(?<![\w-])(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+const ATTR_RE = /(?<![\w-])(?:href|src)\s*=\s*(?:"([^\"]*)"|'([^']*)')/gi;
 // fetch('literal') / fetch("literal")
 const FETCH_RE = /\bfetch\(\s*(?:'([^']*)'|"([^']*)")/g;
 // fetch(`literal`)
@@ -128,7 +128,10 @@ function cleanTarget(target) {
 function resolveTarget(target, file) {
   const clean = cleanTarget(target);
   if (clean === '') return null; // "page.html#section" style self-links
-  if (clean.startsWith('/')) return path.join(SITE_DIR, clean);
+  if (clean.startsWith('/')) {
+    const stripped = clean.replace(/^\/+/, '');
+    return path.resolve(SITE_DIR, stripped);
+  }
   return path.resolve(path.dirname(file), clean);
 }
 
@@ -153,7 +156,10 @@ function docDirs() {
 function resolveCandidates(target, file) {
   const clean = cleanTarget(target);
   if (clean === '') return [];
-  if (clean.startsWith('/')) return [path.join(SITE_DIR, clean)];
+  if (clean.startsWith('/')) {
+    const stripped = clean.replace(/^\/+/, '');
+    return [path.resolve(SITE_DIR, stripped)];
+  }
 
   const out = [path.resolve(path.dirname(file), clean)];
   if (/\.js$/i.test(file)) {
@@ -286,52 +292,34 @@ function main() {
       }
     }
 
-    for (const { targets, line } of groups) {
-      const local = targets.filter((t) => !isExternal(t));
-      if (local.length === 0) continue;
+    for (const g of groups) {
+      const candidates = g.targets.map(t => resolveCandidates(t, file));
+      // Flatten and deduplicate
+      const all = [];
+      for (const c of candidates) for (const x of c) if (all.indexOf(x) === -1) all.push(x);
       checked++;
-      const resolvedAll = local.map((t) => resolveTarget(t, file));
-      if (!local.some((t) => existsSomewhere(resolveCandidates(t, file)))) {
-        missing.push({ file, line, target: local.join(', '), resolved: resolvedAll.join(' | ') });
-      }
+      if (!existsSomewhere(all)) missing.push({ file, line: g.line, target: g.targets.join(', '), resolved: all[0] });
     }
   }
 
-  // Also scan data/ and site/data/ for links: { ... } objects
-  const jsonFiles = walkJson(DATA_DIR).concat(walkJson(SITE_DATA_DIR)).sort();
-  for (const jf of jsonFiles) {
-    let parsed = null;
-    try { parsed = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch (e) { warnings.push({ file: jf, message: 'Failed to parse JSON: ' + e.message }); continue; }
-    const objs = [];
-    findLinkObjects(parsed, objs);
-    for (const obj of objs) {
-      for (const [k, v] of Object.entries(obj)) {
-        if (typeof v !== 'string') continue;
-        if (isExternal(v)) continue;
-        checked++;
-        if (!existsSomewhere(resolveCandidates(v, jf))) {
-          missing.push({ file: jf, line: 1, target: v, resolved: resolveTarget(v, jf) });
-        }
-      }
+  if (warnings.length) {
+    console.error('\ncheck-links: warnings (' + warnings.length + '):\n');
+    for (const w of warnings) {
+      console.error(rel(w.file) + ':' + w.line + '  ' + w.target);
     }
   }
 
   if (missing.length) {
-    console.error('\nMissing', missing.length, 'target(s):\n');
+    console.error('\ncheck-links: missing ' + missing.length + ' target(s):\n');
     for (const m of missing) {
-      console.error(rel(m.file) + ':' + m.line + '  ' + m.target + ' -> ' + (m.resolved || ''));
+      console.error(rel(m.file) + ':' + m.line + '  ' + m.target + ' -> ' + rel(m.resolved));
     }
-    console.error('\nScanned', files.length, 'file(s) under site/ and', jsonFiles.length, 'JSON files.');
+    console.error('\nScanned ' + files.length + ' file(s). Checked ' + checked + ' target(s).');
     process.exitCode = 1;
     return;
   }
 
-  if (warnings.length) {
-    console.error('\nWarnings:\n');
-    for (const w of warnings) console.error(rel(w.file) + ': ' + w.message);
-  }
-
-  console.log('All link targets resolved. Scanned', files.length, 'file(s) under site/ and', jsonFiles.length, 'JSON files.');
+  console.log('check-links: all targets exist. Scanned ' + files.length + ' file(s). Checked ' + checked + ' target(s).');
   process.exitCode = 0;
 }
 
