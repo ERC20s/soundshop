@@ -32,6 +32,17 @@ function previewText(s, maxChars = 320) {
   return trimmed.slice(0, maxChars) + '\n...';
 }
 
+function containsModuleKeyword(text) {
+  // reuse the crude detection used in tools/check-js-syntax.js
+  // matches an 'import' or 'export' at line start or after a newline with optional whitespace
+  const re = /(^|\n)\s*(import|export)\b/gi;
+  return re.exec(text);
+}
+
+function lineCountUpTo(text, index) {
+  return text.slice(0, index).split('\n').length;
+}
+
 async function main() {
   const root = path.resolve(process.cwd(), 'site');
   let htmlFiles = [];
@@ -75,7 +86,17 @@ async function main() {
       // Compute 1-based line number where this script tag starts
       const startIndex = match.index;
       const before = txt.slice(0, startIndex);
-      const lineNumber = before.split('\n').length;
+      let lineNumber = before.split('\n').length;
+
+      // detect top-level module import/export tokens inside inline script
+      const modMatch = containsModuleKeyword(body);
+      if (modMatch) {
+        const indexInBody = modMatch.index + (modMatch[1] ? modMatch[1].length : 0);
+        const offsetLine = lineCountUpTo(body, indexInBody);
+        const problemLine = lineNumber + (offsetLine - 1);
+        problems.push({ file, scriptIndex, lineNumber: problemLine, type: 'module', message: "Top-level 'import' or 'export' in inline script — use type=\"module\" or remove module syntax", preview: previewText(body) });
+        continue; // skip parsing via new Function
+      }
 
       try {
         // Only check syntax — don't execute. new Function parses code.
@@ -92,8 +113,12 @@ async function main() {
     console.error('\nInline script syntax check failed — found', problems.length, 'problem(s):\n');
     for (const p of problems) {
       console.error('File:', p.file);
-      console.error('Script #:', p.scriptIndex, ' (starts at line', p.lineNumber + ')');
-      console.error('Error:', p.error);
+      console.error('Script #:', p.scriptIndex, '(starts at line', p.lineNumber + ')');
+      if (p.type === 'module') {
+        console.error('Error:', p.message);
+      } else {
+        console.error('Error:', p.error);
+      }
       console.error('Preview:\n' + p.preview.split('\n').map(l => '  ' + l).join('\n'));
       console.error('-----\n');
     }
