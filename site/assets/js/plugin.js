@@ -79,7 +79,7 @@
       try { return SS.prefersReducedMotion(); } catch (e) { /* fall through */ }
     }
     try {
-      return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      return !!(window.matchMedia && window.matchMedia('(prefers-motion: reduce)').matches);
     } catch (e) { return false; }
   }
 
@@ -650,18 +650,64 @@
       var keys = Object.keys(recs).filter(function (k) { return BOUGHT_TOKEN_RE.test(k); });
       if (!keys.length) return;
 
-      var list = el('ul', 'bought-summary__list');
+      // Find the existing list element in the host
+      var list = $('[data-bought-summary-list]', host);
+      if (!list) return;
+
+      // Find the labels container
+      var labelsContainer = $('[data-bought-summary-labels]', host);
+
+      // Get formatting attributes from the host
+      var datePrefix = attr(host, 'data-bought-summary-date-prefix') || '';
+      var refPrefix = attr(host, 'data-bought-summary-ref-prefix') || '';
+      var refSuffix = attr(host, 'data-bought-summary-ref-suffix') || '';
+      var norefMsg = attr(host, 'data-bought-summary-noref') || '';
+
+      // Clear any existing items in the list
+      while (list.firstChild) list.removeChild(list.firstChild);
+
+      // Add items for each purchase
       keys.forEach(function (k) {
         var li = el('li');
-        var label = attr(host, 'data-bought-label-' + k) || k;
+
+        // Get the label from the labels container, fall back to the host, or use the token
+        var label;
+        if (labelsContainer) {
+          label = attr(labelsContainer, 'data-bought-label-' + k) || k;
+        } else {
+          label = attr(host, 'data-bought-label-' + k) || k;
+        }
+
+        // Get the purchase date
+        var when = recs[k].t;
+        var dateStr = boughtDate(when);
+
+        // Get the payment reference
         var ref = recs[k].ref || '';
-        var text = label + (ref ? ' 0' + ref : '');
-        li.textContent = text;
+
+        // Set the product name as the initial content
+        li.textContent = label;
+
+        // Add the purchase date on a new line
+        if (dateStr) {
+          li.appendChild(document.createElement('br'));
+          li.appendChild(document.createTextNode(datePrefix + dateStr));
+        }
+
+        // Add the payment reference or the noref message on a new line
+        if (ref) {
+          li.appendChild(document.createElement('br'));
+          li.appendChild(document.createTextNode(refPrefix + ref + refSuffix));
+        } else if (norefMsg) {
+          li.appendChild(document.createElement('br'));
+          li.appendChild(document.createTextNode(norefMsg));
+        }
+
         list.appendChild(li);
       });
 
-      while (host.firstChild) host.removeChild(host.firstChild);
-      host.appendChild(list);
+      // Unhide the purchase summary container
+      host.hidden = false;
     });
   };
 
