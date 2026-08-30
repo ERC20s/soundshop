@@ -56,7 +56,7 @@ const FETCH_RE = /\bfetch\(\s*(?:'([^']*)'|"([^']*)")/g;
 // fetch(`literal`)
 const FETCH_TEMPLATE_RE = /\bfetch\(\s*`([^`]*)`/g;
 // ['a', "b", ...] — arrays of two or more string literals, treated as a fallback list
-const GROUP_RE = /\[\s*((?:'[^']*'|"[^']*")(?:\s*,\s*(?:'[^']*'|"[^']*"))+)\s*\]/g;
+const GROUP_RE = /\[\s*((?:'[^']*'|"[^']*")(?:\s*,\s*(?:'[^']*'|"[^']*"))+ )\s*\]/g;
 const STRING_RE = /'([^']*)'|"([^']*)"/g;
 // <style> ... </style> blocks inside an HTML document
 const STYLE_BLOCK_RE = /<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi;
@@ -128,7 +128,13 @@ function cleanTarget(target) {
 function resolveTarget(target, file) {
   const clean = cleanTarget(target);
   if (clean === '') return null; // "page.html#section" style self-links
-  if (clean.startsWith('/')) return path.join(SITE_DIR, clean);
+  if (clean.startsWith('/')) {
+    // A leading '/' is a site-root path in the site, but path.join(SITE_DIR, '/foo')
+    // would ignore SITE_DIR on POSIX. Strip leading slashes and resolve against
+    // SITE_DIR to ensure "/foo" -> site/foo rather than an absolute FS path.
+    const stripped = clean.replace(/^\/+/, '');
+    return path.resolve(SITE_DIR, stripped);
+  }
   return path.resolve(path.dirname(file), clean);
 }
 
@@ -153,7 +159,10 @@ function docDirs() {
 function resolveCandidates(target, file) {
   const clean = cleanTarget(target);
   if (clean === '') return [];
-  if (clean.startsWith('/')) return [path.join(SITE_DIR, clean)];
+  if (clean.startsWith('/')) {
+    const stripped = clean.replace(/^\/+/, '');
+    return [path.resolve(SITE_DIR, stripped)];
+  }
 
   const out = [path.resolve(path.dirname(file), clean)];
   if (/\.js$/i.test(file)) {
