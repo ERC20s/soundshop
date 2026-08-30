@@ -246,305 +246,133 @@
     </div>
   </section>
 
-  <nav class="subnav" aria-label="On this page" data-section-nav data-section-nav-root>
-    <div class="subnav__inner wrap--wide">
+  <nav class="subnav" aria-label="On this page" data-section-nav data-section-nav-target="#main">
+    <div class="subnav__inner wrap">
       <a href="#overview" class="is-active">Overview</a>
-      <a href="#whats-in">What's in the bundle</a>
+      <a href="#whats-in">What's in</a>
       <a href="#compare">Compare</a>
-      <a href="#faq">Buying FAQ</a>
+      <a href="#products">Products</a>
     </div>
   </nav>
 
-  <!-- Rest of page omitted for brevity in this view; behaviour scripts follow -->
+  <section class="section" id="whats-in">
+    <div class="wrap">
+      <h2 class="sec-head__title">What's in the bundle</h2>
+      <p class="cat-card__para">Four instruments: VANTA, DRIFT, PRISM and ANVIL. Each ships as a single installer per-platform with VST3, AU and AAX where supported.</p>
+    </div>
+  </section>
 
-  <script>
-  (function () {
-    var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
-    var store = document.getElementById("group-store");
-    if (!store) return;
-    var KEY = "soundshop:bought:v1";
-    var MAX_AGE = 60 * 24 * 60 * 60 * 1000;                 // 60 days
-    var read = function () {
-      try {
-        var raw = window.localStorage.getItem(KEY);
-        if (!raw) return {};
-        var o = JSON.parse(raw);
-        return (o && typeof o === "object" && !(o instanceof Array)) ? o : {};
-      } catch (e) { return {}; }
-    };
-    var write = function (o) {
-      try { window.localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { }
-    };
-    var forget = function (tok) {
-      var o = read();
-      if (Object.prototype.hasOwnProperty.call(o, tok)) { delete o[tok]; write(o); }
-    };
+  <section class="section" id="compare">
+    <div class="wrap">
+      <h2 class="sec-head__title">Compare the instruments</h2>
+      <table class="cat-compare">
+        <thead>
+          <tr><th></th><th>VANTA</th><th>DRIFT</th><th>PRISM</th><th>ANVIL</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Engine</th><td>Spectral</td><td>Granular</td><td>Additive</td><td>Physical</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 
-    var ret = document.documentElement.getAttribute("data-buy-return");
-    // Treat only paid returns as the live item for per-row marking. Pending returns
-    // will show a neutral banner but will not relabel rows as "You just paid for this".
-    var live = (ret === "paid")
-      ? norm(document.documentElement.getAttribute("data-buy-item")) : "";
+  <section class="section" id="products">
+    <div class="wrap">
+      <h2 class="sec-head__title">Products</h2>
+      <div class="cat-grid">
+        <div class="card">
+          <h3>VANTA</h3>
+          <p class="cat-card__para">A dark, wide pad engine.</p>
+          <a class="btn" href="anvil.html">View</a>
+        </div>
+        <div class="card">
+          <h3>DRIFT</h3>
+          <p class="cat-card__para">A granular texturing tool.</p>
+          <a class="btn" href="drift.html">View</a>
+        </div>
+        <div class="card">
+          <h3>PRISM</h3>
+          <p class="cat-card__para">The additive workshop.</p>
+          <a class="btn" href="prism.html">View</a>
+        </div>
+        <div class="card">
+          <h3>ANVIL</h3>
+          <p class="cat-card__para">A punchy physical percussion instrument.</p>
+          <a class="btn" href="anvil.html">View</a>
+        </div>
+      </div>
 
-    var REF_OK = /^[A-Za-z0-9_-]{1,128}$/;
-    var saved = read(), pruned = false, items = {};
-    for (var k in saved) {
-      if (!Object.prototype.hasOwnProperty.call(saved, k)) continue;
-      var rec = saved[k], obj = rec && typeof rec === "object" && !(rec instanceof Array);
-      var tok = norm(k), when = Number(obj ? rec.t : rec);
-      var sref = obj ? String(rec.ref == null ? "" : rec.ref) : "";
-      if (!REF_OK.test(sref)) { sref = ""; }
-      if (!tok || !isFinite(when) || when <= 0 || (Date.now() - when) > MAX_AGE) {
-        delete saved[k]; pruned = true; continue;
-      }
+      <div id="group-store"></div>
+      <div id="buy-return" aria-live="polite"></div>
 
-      // If the stored record is an object and contains an explicit 'state'
-      // property, treat it as ownership only when state === 'paid'. This makes
-      // the plugins page ignore non-paid states like 'pending' or 'cancelled'
-      // while leaving such entries intact in localStorage (do not delete them).
-      if (obj && Object.prototype.hasOwnProperty.call(rec, 'state')) {
-        var st = rec.state == null ? '' : String(rec.state).trim();
-        if (st !== 'paid') { continue; }
-      }
-
-      items[tok] = { when: when, live: false, ref: sref };
-    }
-    if (pruned) write(saved);
-    if (live) {
-      var prevLive = items[live];
-      items[live] = { when: 0, live: true, ref: prevLive ? prevLive.ref : "" };
-    }
-    var tokens = [];
-    for (var t in items) { if (Object.prototype.hasOwnProperty.call(items, t)) tokens.push(t); }
-    if (Object.prototype.hasOwnProperty.call(items, "bundle")) {
-      var bundle = items["bundle"];
-      var cards = document.querySelectorAll("[data-store-item]");
-      for (var c = 0; c < cards.length; c++) {
-        var ctok = norm(cards[c].getAttribute("data-store-item"));
-        if (!ctok || ctok === "bundle") continue;
-        if (Object.prototype.hasOwnProperty.call(items, ctok)) continue;
-        items[ctok] = { when: bundle.when, live: bundle.live, cover: "bundle", ref: bundle.ref };
-        tokens.push(ctok);
-      }
-    }
-    if (!tokens.length) return;
-
-    var NOTE = "You just paid for this — your licence goes to the email you used. Only buy again if you mean to.";
-    var dated = function (ms) {
-      var d = new Date(ms);
-      try { return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); }
-      catch (e) { return d.toDateString(); }
-    };
-    var state = {};
-    var slot = function (tok) {
-      if (!state[tok]) { state[tok] = { rowDone: false, cardDone: false, anchor: null, lines: [] }; }
-      return state[tok];
-    };
-    var clear = function (tok) {
-      forget(tok);
-      var st = state[tok];
-      if (!st) return;
-      for (var i = 0; i < st.lines.length; i++) {
-        if (st.lines[i].parentNode) { st.lines[i].parentNode.removeChild(st.lines[i]); }
-      }
-      st.lines = [];
-      if (st.anchor && norm(st.anchor.textContent) === "buy again") { st.anchor.textContent = "Buy"; }
-    };
-    var line = function (tok, gap) {
-      var it = items[tok];
-      var p = document.createElement("p");
-      p.className = "store-bought-line muted";
-      p.setAttribute("role", "status");
-      p.style.font = "13px system-ui,sans-serif";
-      p.style.color = "#9ca3af";
-      p.style.margin = gap || "0";
-      p.style.flexBasis = "100%";
-      if (items[tok].ref) {
-        var t = document.createElement("span");
-        t.textContent = "Reference: " + items[tok].ref;
-        p.appendChild(t);
-      }
-      var when = items[tok].when;
-      if (when) {
-        var d = document.createElement("span");
-        d.textContent = " — bought on " + dated(when);
-        p.appendChild(d);
-      }
-      var b = document.createElement("button");
-      b.className = "link";
-      b.type = "button";
-      b.textContent = "Clear";
-      b.addEventListener("click", function () { clear(tok); });
-      p.appendChild(b);
-      return p;
-    };
-    var markRow = function (tok) {
-      var row = document.querySelector("[data-store-item-row='" + tok + "']");
-      if (!row) return false;
-      var st = slot(tok);
-      if (st.rowDone) return true;
-      var anchor = row.querySelector("a");
-      if (anchor) { st.anchor = anchor; if (norm(anchor.textContent) === "buy") { anchor.textContent = "Buy again"; } }
-      var p = line(tok, "0 0 var(--sp-4) 0");
-      row.appendChild(p);
-      st.rowDone = true;
-      return true;
-    };
-    var markCard = function (tok) {
-      var card = document.querySelector("[data-store-item='" + tok + "']");
-      if (!card) return false;
-      var st = slot(tok);
-      if (st.cardDone) return true;
-      var body = card.closest ? card.closest('.card__body') : null;
-      var target = body || card;
-      var p = line(tok, "0 0 var(--sp-4) 0");
-      target.appendChild(p);
-      st.cardDone = true;
-      return true;
-    };
-
-    var itemsList = document.querySelectorAll("[data-store-item]");
-    for (var i = 0; i < itemsList.length; i++) {
-      var tok = norm(itemsList[i].getAttribute('data-store-item'));
-      if (!tok) continue;
-      if (items[tok]) {
-        if (items[tok].live) { markRow(tok); }
-        markCard(tok);
-      }
-    }
-
-  })();
-  </script>
+    </div>
+  </section>
 
   <script>
     (function () {
-      var BASE = 'https://d8a.com/api';
-      var GROUP = 'soundshop';
+
+      var esc = function (s) { return String(s).replace(/[&<>'"]/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; }); };
+
+      // Buy-return handling: when a buyer returns from the checkout with d8a_order
+      // the platform verifies it and we show a small banner. The logic here sets
+      // data-buy-return on the documentElement to 'paid'|'pending' and also stores
+      // data-buy-item and data-buy-ref when present.
       (function () {
-        var el = document.getElementById("group-store");
-        if (!el) return;
-        el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">Loading what\'s on sale…</p>';
+        var params = (location.search || '').replace(/^\?/, '').split(/&/).filter(Boolean).reduce(function (acc, kv) {
+          var m = kv.match(/^([^=]+)=(.*)$/);
+          if (!m) return acc; acc[decodeURIComponent(m[1])] = decodeURIComponent(m[2]); return acc;
+        }, {});
 
-        var xhr = new XMLHttpRequest();
-        xhr.open('GET', BASE + '/groups/' + GROUP + '/store.json');
-        xhr.timeout = 12000;
-        xhr.onload = function () {
-          if (xhr.status < 200 || xhr.status >= 300) { el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">The shop could not be reached. <button type="button" data-store-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again</button></p>'; return; }
-          try { el.innerHTML = xhr.responseText; } catch (e) { el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">The shop could not be reached. <button type="button" data-store-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again</button></p>'; }
-        };
-        xhr.ontimeout = function () { el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">The shop could not be reached. <button type="button" data-store-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again</button></p>'; };
-        xhr.onerror = function () { el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">The shop could not be reached. <button type="button" data-store-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again</button></p>'; };
-        xhr.send();
-      })();
+        var order = params.d8a_order;
+        var ref = params.d8a_ref;
+        var itemName = params.d8a_item_name;
 
-      // Buy-return handling: read URL for a checkout return and persist to localStorage
-      (function () {
-        if (typeof URLSearchParams !== 'function') return;
-        var q = new URLSearchParams(location.search || '');
-        var OK = ['ok','paid','succeeded','success','completed'];
-        var NO = ['no','failed','cancelled','canceled'];
-        var PENDING = ['pend','pending','processing'];
-        var KEYS = ["paid","checkout","payment","status","redirect_status","session_id","order","order_id","payment_intent","reference","ref","transaction_id","checkout_id"];
-        var seen = false;
-        var good = false, bad = false, pend = false;
-        for (var i = 0; i < KEYS.length; i++) {
-          if (!q.has(KEYS[i])) continue;
-          seen = true;
-          var v = String(q.get(KEYS[i]) || "").trim().toLowerCase();
-          if (OK.indexOf(v) > -1) { good = true; }
-          else if (NO.indexOf(v) > -1) { bad = true; }
-          else if (PENDING.indexOf(v) > -1) { pend = true; }
-          else { pend = true; }
-        }
-        if (!seen && q.has("session_id") && String(q.get("session_id") || "").trim()) { seen = true; good = true; }
-        if (!seen || (!good && !bad && !pend)) return;
-        if (bad) { pend = false; good = false; }
-        else if (pend) { good = false; }
+        if (!order) return;
 
-        document.documentElement.setAttribute("data-buy-return", bad ? "cancelled" : (pend ? "pending" : "paid"));
+        // Map a verified order state into our UI attributes. The platform is the
+        // source of truth — we call /api/v1/store/orders/ID?group=batch-synthshop
+        var BASE = 'https://d8a.com';
+        fetch(BASE + '/api/v1/store/orders/' + encodeURIComponent(order) + '?group=batch-synthshop')
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) {
+            var state = d && d.paid ? 'paid' : (d && d.pending ? 'pending' : 'not-paid');
+            document.documentElement.setAttribute('data-buy-return', state === 'not-paid' ? 'not-paid' : state);
+            if (itemName) document.documentElement.setAttribute('data-buy-item', itemName);
+            if (ref) document.documentElement.setAttribute('data-buy-ref', ref);
 
-        var token = String(q.get("item") || "").trim().toLowerCase();
-        // Only set data-buy-item for confirmed (paid) returns. Pending returns no longer
-        // mark the page-level live item to avoid a misleading "You just paid for this" row label.
-        if (token && good) {
-          document.documentElement.setAttribute("data-buy-item", token);
-        }
+            // Build the banner note HTML and insert into #buy-return.
+            var refLine = ref
+              ? '<p>Reference: <code style="font:12px ui-monospace,SFMono-Regular,Menlo,monospace">' + esc(ref) +
+                '</code> — quote this if you contact us.</p>'
+              : "";
 
-        var esc = function (s) {
-          return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
-        };
-        var REF_KEYS = ["session_id", "order", "order_id", "payment_intent", "reference", "ref", "transaction_id", "checkout_id"];
-        var ref = "";
-        for (var r = 0; r < REF_KEYS.length; r++) {
-          var rv = String(q.get(REF_KEYS[r]) || "").trim();
-          if (rv) { ref = rv; break; }
-        }
-        if (!/^[A-Za-z0-9_-]{1,128}$/.test(ref)) { ref = ""; }
+            var namePart = itemName ? ' — ' + esc(itemName) : "";
+            var itemPhrase = itemName ? esc(itemName) : 'this item';
 
-        if (good && token && /^[a-z0-9][a-z0-9 ._-]{0,63}$/.test(token)) {
-          try {
-            var BKEY = "soundshop:bought:v1";
-            var saved = {};
-            var raw = window.localStorage.getItem(BKEY);
-            if (raw) {
-              var parsed = JSON.parse(raw);
-              if (parsed && typeof parsed === "object" && !(parsed instanceof Array)) { saved = parsed; }
+            var note = '';
+            if (document.documentElement.getAttribute('data-buy-return') === 'paid') {
+              note = '<div class="note note--good" role="status" aria-live="polite"'
+                + '>'
+                + '<p class="note__title">Thanks — your purchase is confirmed' + namePart + '</p>'
+                + '<div class="note__body"><p>Your licence will arrive by email shortly.' + (ref ? ' Reference: ' + esc(ref) : '') + '</p>'
+                + (itemName ? '<p><a href="#" onclick="document.documentElement.removeAttribute(\'data-buy-item\');return false;">Hide</a></p>' : '')
+                + '</div></div>';
+            } else if (document.documentElement.getAttribute('data-buy-return') === 'pending') {
+              note = '<div class="note note--info" role="status" aria-live="polite">'
+                + '<p class="note__title">Your payment is still being processed' + namePart + '</p>'
+                + '<div class="note__body"><p>If this was you, wait a few moments and then reload this page. If it fails we will send an email.</p></div></div>';
+            } else {
+              note = '<div class="note note--bad" role="status" aria-live="polite"'
+                + '>'
+                + '<p class="note__title">Payment not completed</p>'
+                + '<div class="note__body"><p>Your payment did not complete. No purchase was recorded.</p></div></div>';
             }
-            saved[token] = { t: Date.now(), ref: ref || '', state: 'paid' };
-            var stamp = function (v) {
-              return Number(v && typeof v === "object" ? v.t : v);
-            };
-            var keys = Object.keys(saved);
-            if (keys.length > 24) {
-              keys.sort(function (a, b) { return stamp(saved[b]) - stamp(saved[a]); });
-              var trimmed = {};
-              for (var t = 0; t < 24; t++) { trimmed[keys[t]] = saved[keys[t]]; }
-              saved = trimmed;
-            }
-            window.localStorage.setItem(BKEY, JSON.stringify(saved));
-          } catch (e) { }
-        }
 
-        var itemName = "";
-        if (token === "bundle") {
-          itemName = "The Full Shop bundle";
-        } else if (token) {
-          var btns = document.querySelectorAll("[data-store-item]");
-          for (var j = 0; j < btns.length; j++) {
-            if (String(btns[j].getAttribute("data-store-item") || "").trim().toLowerCase() !== token) continue;
-            var body = btns[j].closest ? btns[j].closest(".card__body") : null;
-            var title = body ? body.querySelector(".card__title") : null;
-            if (title && title.textContent.trim()) { itemName = title.textContent.trim(); }
-            break;
-          }
-        }
+            var el = document.getElementById('buy-return');
+            if (el) { el.innerHTML = note + refLine; }
 
-        var refLine = ref
-          ? '<p>Reference: <code style="font:12px ui-monospace,SFMono-Regular,Menlo,monospace">' + esc(ref) +
-            '</code> — quote this if you contact us.</p>'
-          : "";
-
-        var namePart = itemName ? " — " + esc(itemName) : "";
-        var itemPhrase = itemName ? esc(itemName) : "this item";
-
-        var note = '';
-        if (document.documentElement.getAttribute("data-buy-return") === 'paid') {
-          note = '<div class="note note--good" role="status" aria-live="polite">'
-            + '<p class="note__title">Thanks — your purchase is confirmed' + namePart + '</p>'
-            + '<div class="note__body"><p>Your licence will arrive by email shortly.' + (ref ? ' Reference: ' + esc(ref) : '') + '</p>'
-            + (itemName ? '<p><a href="#" onclick="document.documentElement.removeAttribute(\'data-buy-item\');return false;">Hide</a></p>' : '')
-            + '</div></div>';
-        } else if (document.documentElement.getAttribute("data-buy-return") === 'pending') {
-          note = '<div class="note note--info" role="status" aria-live="polite">'
-            + '<p class="note__title">Your payment is still being processed' + namePart + '</p>'
-            + '<div class="note__body"><p>If this was you, wait a few moments and then reload this page. If it fails we will send an email.</p></div></div>';
-        } else {
-          note = '<div class="note note--bad" role="status" aria-live="polite">'
-            + '<p class="note__title">Payment not completed'</n + '></p><div class="note__body"><p>Your payment did not complete. No purchase was recorded.</p></div></div>';
-        }
-
-        var el = document.getElementById('buy-return');
-        if (el) { el.innerHTML = note + refLine; }
+          })
+          .catch(function () { /* network hiccup — do nothing */ });
 
       })();
 
