@@ -338,69 +338,48 @@
     var state = {};
     var slot = function (tok) {
       if (!state[tok]) { state[tok] = { rowDone: false, cardDone: false, anchor: null, lines: [] }; }
-      return state[tok];
-    };
-    var clear = function (tok) {
-      forget(tok);
       var st = state[tok];
-      if (!st) return;
-      for (var i = 0; i < st.lines.length; i++) {
-        if (st.lines[i].parentNode) { st.lines[i].parentNode.removeChild(st.lines[i]); }
-      }
-      st.lines = [];
-      if (st.anchor && norm(st.anchor.textContent) === "buy again") { st.anchor.textContent = "Buy"; }
-    };
-    var line = function (tok, gap) {
-      var it = items[tok];
-      var p = document.createElement("p");
-      p.className = "store-bought-line muted";
-      p.setAttribute("role", "status");
-      p.style.font = "13px system-ui,sans-serif";
-      p.style.color = "#9ca3af";
-      p.style.margin = gap || "0";
-      p.style.flexBasis = "100%";
-      if (items[tok].ref) {
-        var t = document.createElement("span");
-        t.textContent = "Reference: " + items[tok].ref;
-        p.appendChild(t);
-      }
-      var when = items[tok].when;
-      if (when) {
-        var d = document.createElement("span");
-        d.textContent = " — bought on " + dated(when);
-        p.appendChild(d);
-      }
-      var b = document.createElement("button");
-      b.className = "link";
-      b.type = "button";
-      b.textContent = "Clear";
-      b.addEventListener("click", function () { clear(tok); });
-      p.appendChild(b);
-      return p;
-    };
-    var markRow = function (tok) {
-      var row = document.querySelector("[data-store-item-row='" + tok + "']");
-      if (!row) return false;
-      var st = slot(tok);
-      if (st.rowDone) return true;
-      var anchor = row.querySelector("a");
-      if (anchor) { st.anchor = anchor; if (norm(anchor.textContent) === "buy") { anchor.textContent = "Buy again"; } }
-      var p = line(tok, "0 0 var(--sp-4) 0");
-      row.appendChild(p);
-      st.rowDone = true;
-      return true;
-    };
-    var markCard = function (tok) {
-      var card = document.querySelector("[data-store-item='" + tok + "']");
-      if (!card) return false;
-      var st = slot(tok);
-      if (st.cardDone) return true;
-      var body = card.closest ? card.closest('.card__body') : null;
-      var target = body || card;
-      var p = line(tok, "0 0 var(--sp-4) 0");
-      target.appendChild(p);
-      st.cardDone = true;
-      return true;
+      var markRow = function () {
+        if (st.rowDone) return false;
+        var rows = document.querySelectorAll('[data-store-item="' + tok + '"]');
+        for (var r = 0; r < rows.length; r++) {
+          var rr = rows[r].closest ? rows[r].closest('.cat-compare__row') : null;
+          if (!rr) continue;
+          var cell = rr.querySelector('.cat-compare__note') || rr.querySelector('td');
+          if (!cell) continue;
+          var span = document.createElement('span');
+          span.textContent = NOTE;
+          span.style.display = 'inline-block';
+          span.style.marginLeft = '8px';
+          span.style.fontSize = '12px';
+          span.style.color = 'var(--text-mute)';
+          cell.appendChild(span);
+        }
+        st.rowDone = true;
+        return true;
+      };
+
+      var markCard = function () {
+        if (st.cardDone) return false;
+        var cards = document.querySelectorAll('[data-store-item]');
+        for (var c = 0; c < cards.length; c++) {
+          if (String(cards[c].getAttribute('data-store-item') || '').trim().toLowerCase() !== tok) continue;
+          var body = cards[c].closest ? cards[c].closest('.card__body') : null;
+          if (!body) continue;
+          var target = body.querySelector('.card__meta');
+          if (!target) target = body;
+          var p = document.createElement('p');
+          p.style.font = '13px system-ui,sans-serif';
+          p.style.color = 'var(--text-mute)';
+          p.style.margin = '0 0 var(--sp-4) 0';
+          p.textContent = NOTE;
+          target.appendChild(p);
+        }
+        st.cardDone = true;
+        return true;
+      };
+
+      return { markRow: markRow, markCard: markCard };
     };
 
     var itemsList = document.querySelectorAll("[data-store-item]");
@@ -413,6 +392,69 @@
       }
     }
 
+  })();
+  </script>
+
+  <!-- Sell on your site: your items, a Buy button each. After a payment the buyer
+       returns here with ?d8a_order=<id>; the widget verifies it with the platform and
+       fires "group-store:paid" (window.groupStorePaid) — release the product there. -->
+  <div id="group-store"></div>
+  <script>
+  (function () {
+    var BASE = "https://d8a.com";
+    var GROUP = "batch-synthshop";
+    var esc = function (s) {
+      return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+    };
+    var el = document.getElementById("group-store");
+    // The handshake: an order id is only proof once the platform says so.
+    var verify = function (id) {
+      return fetch(BASE + "/api/v1/store/orders/" + encodeURIComponent(id) + "?group=" + encodeURIComponent(GROUP))
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { return d && d.paid ? d.order : null; })
+        .catch(function () { return null; });
+    };
+    window.groupStoreVerify = verify;
+    var back = (location.search.match(/[?&]d8a_order=([A-Za-z0-9_-]+)/) || [])[1];
+    if (back) verify(back).then(function (o) {
+      if (!o) return;
+      window.groupStorePaid = o;
+      if (el && el.parentNode) {
+        var p = document.createElement("p");
+        p.setAttribute("data-paid", o.id);
+        p.style.cssText = "font:13px system-ui,sans-serif;color:#059669";
+        p.innerHTML = "Paid: " + esc(o.itemName) + (o.quantity > 1 ? " \u00d7" + o.quantity : "") + " \u2014 order " + esc(o.id);
+        el.parentNode.insertBefore(p, el);
+      }
+      document.dispatchEvent(new CustomEvent("group-store:paid", { detail: o }));
+    });
+    fetch(BASE + "/api/v1/store/items?group=" + encodeURIComponent(GROUP))
+      .then(function (r) { return r.json(); })
+      .then(function (s) {
+        if (!el || !s.items) return;
+        if (!s.items.length) { el.innerHTML = '<p style="font:13px system-ui,sans-serif;color:#9ca3af">Nothing for sale right now.</p>'; return; }
+        el.innerHTML = s.items.map(function (it) {
+          return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #e5e7eb;font:14px system-ui,sans-serif">' +
+            '<div style="flex:1"><b>' + esc(it.name) + '</b>' +
+            (it.description ? '<div style="font-size:12px;color:#6b7280">' + esc(it.description) + '</div>' : '') + '</div>' +
+            '<span>' + esc(it.price) + '</span>' +
+            '<a href="' + esc(it.payUrl) + '" data-item="' + esc(it.id) + '" style="background:#7c5cff;color:#fff;border-radius:999px;padding:6px 14px;text-decoration:none">Buy</a></div>';
+        }).join("") + '<p style="font:11px system-ui,sans-serif;color:#9ca3af">Sold by <a href="' + esc(s.group.url) + '" style="color:#7c5cff">' + esc(s.group.name) + '</a></p>';
+        el.addEventListener("click", function (e) {
+          var a = e.target && e.target.closest ? e.target.closest("a[data-item]") : null;
+          if (!a || !s.checkout.enabled) return;
+          e.preventDefault();
+          a.textContent = "Opening2
+6";
+          // Come back to this page — minus any earlier receipt on the URL.
+          var here = location.href.replace(/([?&])d8a_order=[^&#]*&?/, "$1").replace(/[?&](#|$)/, "$1");
+          fetch(s.checkout.url, { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ group: GROUP, item: a.getAttribute("data-item"), quantity: 1, returnUrl: here }) })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { if (d.url) { location.href = d.url; } else { a.textContent = "Buy"; location.href = a.href; } })
+            .catch(function () { location.href = a.href; });
+        });
+      });
   })();
   </script>
 
