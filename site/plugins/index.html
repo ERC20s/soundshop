@@ -400,6 +400,17 @@
         // Write back to localStorage
         window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(bought));
 
+        // Refresh the purchase summary display immediately after recording
+        // Clear the bound() guard marker so initBoughtSummary() can re-run
+        var summaryEl = document.querySelector('[data-bought-summary]');
+        if (summaryEl) {
+          summaryEl.removeAttribute('data-ssp-bought-summary');
+          // Re-initialize and unhide the purchase summary if plugin.js is available
+          if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
+            window.SSPlugin.initBoughtSummary();
+          }
+        }
+
         // Prune expired records
         pruneExpiredRecords();
       } catch (e) {
