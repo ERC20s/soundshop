@@ -128,7 +128,10 @@ function cleanTarget(target) {
 function resolveTarget(target, file) {
   const clean = cleanTarget(target);
   if (clean === '') return null; // "page.html#section" style self-links
-  if (clean.startsWith('/')) return path.join(SITE_DIR, clean);
+  if (clean.startsWith('/')) {
+    const stripped = clean.replace(/^\/+/, '');
+    return path.resolve(SITE_DIR, stripped);
+  }
   return path.resolve(path.dirname(file), clean);
 }
 
@@ -153,7 +156,10 @@ function docDirs() {
 function resolveCandidates(target, file) {
   const clean = cleanTarget(target);
   if (clean === '') return [];
-  if (clean.startsWith('/')) return [path.join(SITE_DIR, clean)];
+  if (clean.startsWith('/')) {
+    const stripped = clean.replace(/^\/+/, '');
+    return [path.resolve(SITE_DIR, stripped)];
+  }
 
   const out = [path.resolve(path.dirname(file), clean)];
   if (/\.js$/i.test(file)) {
@@ -286,53 +292,53 @@ function main() {
       }
     }
 
-    for (const { targets, line } of groups) {
-      const local = targets.filter((t) => !isExternal(t));
-      if (local.length === 0) continue;
-      checked++;
-      const resolvedAll = local.map((t) => resolveTarget(t, file));
-      if (!local.some((t) => existsSomewhere(resolveCandidates(t, file)))) {
-        missing.push({ file, line, target: local.join(', '), resolved: resolvedAll.join(' | ') });
+    for (const g of groups) {
+      let any = false;
+      for (const t of g.targets) {
+        if (isExternal(t)) { any = true; break; }
+        if (existsSomewhere(resolveCandidates(t, file))) { any = true; break; }
       }
+      if (!any) missing.push({ file, line: g.line, target: g.targets.join(', '), resolved: null });
     }
   }
 
-  // Also scan data/ and site/data/ for links: { ... } objects
-  const jsonFiles = walkJson(DATA_DIR).concat(walkJson(SITE_DATA_DIR)).sort();
-  for (const jf of jsonFiles) {
-    let parsed = null;
-    try { parsed = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch (e) { warnings.push({ file: jf, message: 'Failed to parse JSON: ' + e.message }); continue; }
-    const objs = [];
-    findLinkObjects(parsed, objs);
-    for (const obj of objs) {
-      for (const [k, v] of Object.entries(obj)) {
-        if (typeof v !== 'string') continue;
-        if (isExternal(v)) continue;
-        checked++;
-        if (!existsSomewhere(resolveCandidates(v, jf))) {
-          missing.push({ file: jf, line: 1, target: v, resolved: resolveTarget(v, jf) });
+  // JSON link checks
+  for (const dir of [DATA_DIR, SITE_DATA_DIR]) {
+    for (const jf of walkJson(dir).sort()) {
+      let parsed = null;
+      try {
+        parsed = JSON.parse(fs.readFileSync(jf, 'utf8'));
+      } catch (e) {
+        warnings.push({ file: jf, message: 'JSON parse error: ' + e.message });
+        continue;
+      }
+
+      const linkObjs = [];
+      findLinkObjects(parsed, linkObjs);
+      for (const obj of linkObjs) {
+        for (const [k, v] of Object.entries(obj)) {
+          if (typeof v !== 'string') continue;
+          if (isExternal(v)) continue;
+          checked++;
+          const resolved = path.resolve(path.dirname(jf), cleanTarget(v));
+          if (!existsSomewhere([resolved])) missing.push({ file: jf, line: 1, target: v, resolved });
         }
       }
     }
   }
 
-  if (missing.length) {
-    console.error('\nMissing', missing.length, 'target(s):\n');
+  for (const w of warnings) console.error('warning: ' + w.file + ': ' + w.message);
+
+  if (missing.length > 0) {
     for (const m of missing) {
-      console.error(rel(m.file) + ':' + m.line + '  ' + m.target + ' -> ' + (m.resolved || ''));
+      const r = m.resolved ? ' -> ' + rel(m.resolved) : '';
+      console.error(rel(m.file) + ':' + m.line + '  ' + m.target + r);
     }
-    console.error('\nScanned', files.length, 'file(s) under site/ and', jsonFiles.length, 'JSON files.');
-    process.exitCode = 1;
-    return;
+    console.error('\n' + missing.length + ' missing');
+    process.exit(1);
   }
 
-  if (warnings.length) {
-    console.error('\nWarnings:\n');
-    for (const w of warnings) console.error(rel(w.file) + ': ' + w.message);
-  }
-
-  console.log('All link targets resolved. Scanned', files.length, 'file(s) under site/ and', jsonFiles.length, 'JSON files.');
-  process.exitCode = 0;
+  console.log('checked ' + checked + ' targets in ' + files.length + ' files');
 }
 
-main();
+if (require.main === module) main();
