@@ -321,7 +321,7 @@
               var parsed = JSON.parse(raw);
               if (parsed && typeof parsed === "object" && !(parsed instanceof Array)) { saved = parsed; }
             }
-            saved[token] = ref ? { t: Date.now(), ref: ref } : Date.now();
+            saved[token] = { t: Date.now(), ref: ref || '', state: 'paid' };
             var stamp = function (v) {
               return Number(v && typeof v === "object" ? v.t : v);
             };
@@ -632,58 +632,8 @@
       slot(tok).lines.push(p);
       return p;
     };
-    var markRow = function (token) {
-      var st = slot(token);
-      if (st.rowDone) return true;
-      var rows = store.querySelectorAll("a[data-item]");
-      if (!rows.length) return false;
-      var hit = null;
-      Array.prototype.forEach.call(rows, function (a) {
-        if (hit) return;
-        var row = a.parentNode, b = row ? row.querySelector("b") : null;
-        if (norm(a.getAttribute("data-item")) === token || norm(b && b.textContent) === token) { hit = a; }
-      });
-      if (!hit) return false;
-      st.rowDone = true;
-      if (!items[token].cover && norm(hit.textContent) === "buy") { hit.textContent = "Buy again"; st.anchor = hit; }
-      var row = hit.parentNode;
-      if (row && row.parentNode) {
-        var next = row.nextSibling;
-        var already = next && next.className && String(next.className).indexOf("store-bought-line") > -1;
-        if (!already) { row.parentNode.insertBefore(line(token, "0 0 10px"), next); }
-      }
-      return true;
-    };
-    var markCard = function (token) {
-      var st = slot(token);
-      if (st.cardDone) return true;
-      var btns = document.querySelectorAll("[data-store-item]");
-      for (var i = 0; i < btns.length; i++) {
-        if (norm(btns[i].getAttribute("data-store-item")) !== token) continue;
-        st.cardDone = true;
-        var box = btns[i].parentNode;
-        if (box && !box.querySelector(".store-bought-line")) { box.insertBefore(line(token, "0"), btns[i]); }
-        return true;
-      }
-      st.cardDone = true;
-      return true;
-    };
-    var pass = function () {
-      var all = true;
-      for (var i = 0; i < tokens.length; i++) {
-        if (markRow(tokens[i])) { markCard(tokens[i]); }
-        else { all = false; }
-      }
-      return all;
-    };
-    if (pass()) return;
-    if (!window.MutationObserver) return;
-    var obs = new MutationObserver(function () { if (pass()) obs.disconnect(); });
-    obs.observe(store, { childList: true, subtree: true });
-    setTimeout(function () { obs.disconnect(); }, 15000);
-  })();
-  </script>
-
+    var markRow = function 
+</script>
 </main>
 </body>
 </html>
