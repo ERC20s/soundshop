@@ -259,297 +259,15 @@
     }
     row.appendChild(main);
 
-    var authorName = pick(preset, ['author', 'by', 'designer']);
-    var side = el('div', 'preset__side');
-    if (authorName) side.appendChild(el('span', 'badge', authorName));
-    row.appendChild(side);
-
-    return row;
-  }
-
-  P.initPresetTeaser = function (root) {
-    $$('[data-presets-src]', root || document).forEach(function (host) {
-      if (bound(host, 'presets')) return;
-
-      var src = attr(host, 'data-presets-src');
-      if (!src) return;
-
-      var list = $('[data-presets-list]', host) || host;
-      var status = $('[data-presets-status]', host);
-      var limit = intAttr(host, 'data-presets-limit', 6);
-
-      function fail(text) {
-        host.setAttribute('data-presets-state', 'error');
-        if (status) {
-          status.hidden = false;
-          status.textContent = text;
-        }
-      }
-
-      if (isFileProtocol()) {
-        fail('Preset previews are loaded from a JSON file, and browsers block that read ' +
-             'for pages opened straight from disk. Serve the folder over http, or open the ' +
-             'full preset library where every patch is listed.');
-        return;
-      }
-
-      if (typeof window.fetch !== 'function') {
-        fail('This browser cannot load the preset index. The full library is one link away.');
-        return;
-      }
-
-      host.setAttribute('data-presets-state', 'loading');
-      if (status) status.textContent = 'Loading presets…';
-
-      window.fetch(src, { cache: 'no-store' })
-        .then(function (res) {
-          if (!res || !res.ok) throw new Error('preset index unavailable');
-          return res.json();
-        })
-        .then(function (data) {
-          var presets = normalisePresets(data);
-          if (!presets.length) throw new Error('preset index empty');
-
-          var frag = document.createDocumentFragment();
-          presets.slice(0, limit).forEach(function (p) {
-            try { frag.appendChild(presetRow(p)); } catch (e) { /* skip one bad row */ }
-          });
-          if (!frag.childNodes.length) throw new Error('nothing renderable');
-
-          while (list.firstChild) list.removeChild(list.firstChild);
-          list.appendChild(frag);
-          host.setAttribute('data-presets-state', 'ready');
-
-          if (status) {
-            var total = presets.length;
-            var shown = Math.min(limit, total);
-            status.hidden = false;
-            status.textContent = 'Showing ' + shown + ' of ' + total + ' presets in this index.';
-          }
-        })
-        .catch(function () {
-          fail('The preset index could not be read from here. Everything we ship is still ' +
-               'listed in the full preset library.');
-        });
-    });
-  };
-
-  /* =======================================================================
-     03  IN-PAGE SECTION NAV + SCROLL SPY
-     <nav data-section-nav data-section-offset="120">
-       <a href="#specs">Specs</a> ...
-     </nav>
-     Marks the link for the section currently under the header with
-     aria-current="true" and .is-active. Pure read-only observation: it never
-     touches scroll position or the URL.
-     ======================================================================= */
-
-  P.initSectionNav = function (root) {
-    $$('[data-section-nav]', root || document).forEach(function (nav) {
-      if (bound(nav, 'sectionnav')) return;
-
-      var links = $$('a', nav).filter(function (a) {
-        var h = a.getAttribute('href') || '';
-        return h.charAt(0) === '#' && h.length > 1;
-      });
-      if (!links.length) return;
-
-      var pairs = [];
-      links.forEach(function (a) {
-        var id = (a.getAttribute('href') || '').slice(1);
-        var target = null;
-        try { target = document.getElementById(decodeURIComponent(id)); } catch (e) { target = null; }
-        if (target) pairs.push({ link: a, target: target });
-      });
-      if (!pairs.length) return;
-
-      var offset = intAttr(nav, 'data-section-offset', 140);
-      var current = null;
-
-      function mark(link) {
-        if (link === current) return;
-        current = link;
-        pairs.forEach(function (p) {
-          var on = p.link === link;
-          p.link.classList.toggle('is-active', on);
-          if (on) p.link.setAttribute('aria-current', 'true');
-          else p.link.removeAttribute('aria-current');
-        });
-      }
-
-      var ticking = false;
-      function update() {
-        ticking = false;
-        var best = pairs[0].link;
-        var y = window.pageYOffset || document.documentElement.scrollTop || 0;
-        for (var i = 0; i < pairs.length; i++) {
-          var top = pairs[i].target.getBoundingClientRect().top + y;
-          if (top - offset <= y + 1) best = pairs[i].link;
-        }
-        // At the very bottom of the document the last section wins outright.
-        var docH = document.documentElement.scrollHeight;
-        if (y + window.innerHeight >= docH - 4) best = pairs[pairs.length - 1].link;
-        mark(best);
-      }
-
-      function onScroll() {
-        if (ticking) return;
-        ticking = true;
-        window.requestAnimationFrame(update);
-      }
-
-      window.addEventListener('scroll', onScroll, { passive: true });
-      window.addEventListener('resize', onScroll, { passive: true });
-      window.addEventListener('load', onScroll);
-      update();
-    });
-  };
-
-  /* =======================================================================
-     04  TABS  (used for the spec sheet)
-     <div data-tabs>
-       <div role="tablist"><button role="tab" aria-controls="panel-id" ...>
-       <div role="tabpanel" id="panel-id" ...>
-     Progressive: with no JS every panel is simply visible, which is a
-     perfectly good spec sheet.
-     ======================================================================= */
-
-  function selectTab(tabs, panels, index, focus) {
-    tabs.forEach(function (tab, i) {
-      var on = i === index;
-      tab.setAttribute('aria-selected', on ? 'true' : 'false');
-      tab.setAttribute('tabindex', on ? '0' : '-1');
-      tab.classList.toggle('is-active', on);
-    });
-    panels.forEach(function (panel, i) {
-      if (!panel) return;
-      panel.hidden = i !== index;
-    });
-    if (focus && tabs[index]) {
-      try { tabs[index].focus(); } catch (e) { /* ignore */ }
-    }
-  }
-
-  P.initTabs = function (root) {
-    $$('[data-tabs]', root || document).forEach(function (group) {
-      if (bound(group, 'tabs')) return;
-
-      var tabs = $$('[role="tab"]', group);
-      if (tabs.length < 2) return;
-
-      var panels = tabs.map(function (tab) {
-        var id = attr(tab, 'aria-controls');
-        return id ? document.getElementById(id) : null;
-      });
-      if (!panels.some(Boolean)) return;
-
-      var start = 0;
-      tabs.forEach(function (tab, i) {
-        if (tab.getAttribute('aria-selected') === 'true') start = i;
-      });
-
-      selectTab(tabs, panels, start, false);
-
-      tabs.forEach(function (tab, i) {
-        tab.addEventListener('click', function (ev) {
-          ev.preventDefault();
-          selectTab(tabs, panels, i, false);
-        });
-        tab.addEventListener('keydown', function (ev) {
-          var key = ev.key;
-          var next = -1;
-          if (key === 'ArrowRight' || key === 'ArrowDown') next = (i + 1) % tabs.length;
-          else if (key === 'ArrowLeft' || key === 'ArrowUp') next = (i - 1 + tabs.length) % tabs.length;
-          else if (key === 'Home') next = 0;
-          else if (key === 'End') next = tabs.length - 1;
-          if (next < 0) return;
-          ev.preventDefault();
-          selectTab(tabs, panels, next, true);
-        });
-      });
-    });
-  };
-
-  /* =======================================================================
-     05  COUNT-UP FIGURES
-     <span class="num" data-count-to="149" data-count-prefix="$">$149</span>
-     The markup already contains the final value, so this only ever animates
-     from zero to something the reader would have seen anyway.
-     ======================================================================= */
-
-  function formatCount(value, decimals, prefix, suffix) {
-    var n = decimals > 0 ? value.toFixed(decimals) : String(Math.round(value));
-    if (decimals === 0) n = n.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    return prefix + n + suffix;
-  }
-
-  function runCount(node) {
-    var to = parseFloat(attr(node, 'data-count-to'));
-    if (!isFinite(to)) return;
-    var decimals = intAttr(node, 'data-count-decimals', 0);
-    var prefix = attr(node, 'data-count-prefix');
-    var suffix = attr(node, 'data-count-suffix');
-    var final = formatCount(to, decimals, prefix, suffix);
-
-    if (reducedMotion() || typeof window.requestAnimationFrame !== 'function') {
-      node.textContent = final;
-      return;
-    }
-
-    var duration = intAttr(node, 'data-count-duration', 900);
-    var startTime = 0;
-
-    function step(now) {
-      if (!startTime) startTime = now;
-      var t = Math.min(1, (now - startTime) / duration);
-      var eased = 1 - Math.pow(1 - t, 3);
-      node.textContent = formatCount(to * eased, decimals, prefix, suffix);
-      if (t < 1) window.requestAnimationFrame(step);
-      else node.textContent = final;
-    }
-    window.requestAnimationFrame(step);
-  }
-
-  P.initCounters = function (root) {
-    var nodes = $$('[data-count-to]', root || document).filter(function (n) {
-      return !bound(n, 'count');
-    });
-    if (!nodes.length) return;
-
-    if (reducedMotion() || typeof window.IntersectionObserver !== 'function') {
-      nodes.forEach(runCount);
-      return;
-    }
-
-    var io = new window.IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (!entry.isIntersecting) return;
-        io.unobserve(entry.target);
-        runCount(entry.target);
-      });
-    }, { threshold: 0.4 });
-
-    nodes.forEach(function (n) { io.observe(n); });
-  };
-
   /* =======================================================================
      06  ALREADY-BOUGHT NOTE
      A buyer who pays on the plugins page has that return written into this
-     browser under one namespaced key, token -> timestamp:
-
-       localStorage["soundshop:bought:v1"] = {"drift": 1756233600000}
+     browser under one namespaced key, token -> { t: <ms>, ref: '<payment reference>'?, state: 'paid'| 'pending' }.
 
      The product pages knew nothing about it, so someone who had just bought
      DRIFT could land back on drift.html and see nothing but "Buy DRIFT" and
      no route to the delivery instructions. This reads that same key back and
-     unhides a note the page already ships, hidden:
-
-       <div class="note note--good" hidden
-            data-bought-note data-bought-item="drift" data-bought-covered-by="bundle">
-         <p class="note__title">Already bought on this device</p>
-         <p>...<span data-bought-cover hidden>...</span>
-            <span data-bought-date data-bought-date-prefix=", bought "></span>...</p>
-       </div>
+     unhides a note the page already ships, hidden.
 
      Rules kept deliberately:
        - Every token, every word and every link lives in the markup. This file
@@ -582,9 +300,9 @@
 
   /**
    * Everything this browser remembers buying, normalised and unexpired, as
-   * token -> { t: <ms>, ref: '<payment reference>' | '' }. One parser for the
-   * whole file: initBoughtNote wants only the time, initBoughtSummary wants
-   * the reference too, and neither should re-read or re-validate the key.
+   * token -> { t: <ms>, ref: '<payment reference>' | '', state: 'paid' }
+   * Only completed purchases (paid) are returned; pending or unknown states
+   * are skipped so product pages and the docs do not assert ownership.
    */
   function boughtRecords() {
     var out = {};
@@ -600,20 +318,21 @@
     for (var key in parsed) {
       if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
       var token = String(key == null ? '' : key).trim().toLowerCase();
-      // Two stored shapes, both valid: a bare timestamp, and
-      // { t: <time>, ref: '<payment reference>' } as written by the plugins page
-      // when the checkout return carried a reference. Reading only the number
-      // here would make Number({...}) NaN and silently hide this note for every
-      // purchase made after that change.
       var rec = parsed[key];
       var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
       var when = Number(isObj ? rec.t : rec);
       if (!token || !isFinite(when) || when <= 0) continue;
+
+      // If the record carries an explicit state, only accept it when it is a
+      // completed paid purchase. Old numeric-only records are considered paid.
+      var state = isObj && typeof rec.state === 'string' ? rec.state : '';
+      if (state && state !== 'paid') continue; // skip pending or unknown states
+
       if ((now - when) > BOUGHT_MAX_AGE) continue;   // too old to speak for: ignore
 
       var ref = isObj && typeof rec.ref === 'string' ? rec.ref.trim() : '';
       if (!BOUGHT_REF_RE.test(ref)) ref = '';
-      out[token] = { t: when, ref: ref };
+      out[token] = { t: when, ref: ref, state: 'paid' };
     }
     return out;
   }
@@ -682,36 +401,10 @@
 
   /* =======================================================================
      07  BOUGHT SUMMARY  (docs.html, "Nothing has arrived")
-     A buyer whose product never arrived ends up in the docs, and until now the
-     docs could say nothing about the purchase they are troubleshooting: the
-     return banner on the plugins page is gone once the return keys leave the
-     address bar, and with it the payment reference the docs tell them to quote.
-
      This reads the same soundshop:bought:v1 key back and fills a block the page
-     already ships, hidden:
-
-       <div class="note" hidden data-bought-summary
-            data-bought-summary-date-prefix="bought on this device on "
-            data-bought-summary-ref-prefix="Reference: "
-            data-bought-summary-ref-suffix=" — quote this when you contact us."
-            data-bought-summary-noref="No payment reference was stored...">
-         <ul data-bought-summary-list></ul>
-         <span hidden data-bought-summary-labels
-               data-bought-label-drift="DRIFT" ...></span>
-       </div>
-
-     Rules kept, the same ones the note above obeys:
-       - No product name, no wording and no URL in this file. Labels come from
-         [data-bought-summary-labels], every sentence fragment from a data-*
-         attribute on the host. A token with no label is printed only if it
-         matches the shape the plugins page allows itself to write.
-       - Strictly read-only: nothing is written, pruned or cleared from here, so
-         opening the docs can never disturb what the shop remembers.
-       - Written with textContent only, newest purchase first, capped.
-       - Nothing remembered, storage blocked or corrupt: the block stays hidden
-         and the page is exactly what shipped in the HTML.
-       - A note in a browser is never proof of payment, which is why the page's
-         wording says "on this device".
+     already ships, hidden. Only completed purchases are shown here — pending
+     entries are intentionally skipped so the docs do not quote unconfirmed
+     transactions as ownership.
      ======================================================================= */
 
   var BOUGHT_SUMMARY_MAX = 12;
@@ -760,57 +453,20 @@
       if (!Object.prototype.hasOwnProperty.call(recs, token)) continue;
       entries.push({ token: token, t: recs[token].t, ref: recs[token].ref });
     }
-    if (!entries.length) return;                     // nothing remembered, nothing to say
+    if (!entries.length) return;                     // nothing remembered, nothing to
 
-    entries.sort(function (a, b) { return b.t - a.t; });   // newest purchase first
-    entries = entries.slice(0, BOUGHT_SUMMARY_MAX);
+    entries.sort(function (a, b) { return b.t - a.t; });
+    var host = hosts[0];
+    var map = $('[data-bought-summary-labels]', host);
+    var list = $('[data-bought-summary-list]', host);
+    if (!list) return;
+    while (list.firstChild) list.removeChild(list.firstChild);
 
-    hosts.forEach(function (host) {
-      if (bound(host, 'boughtsummary')) return;
-
-      var list = $('[data-bought-summary-list]', host);
-      if (!list) return;
-      var map = $('[data-bought-summary-labels]', host);
-
-      var frag = document.createDocumentFragment();
-      var rows = 0;
-      entries.forEach(function (entry) {
-        var row = null;
-        try { row = boughtSummaryRow(host, map, entry); } catch (e) { row = null; }
-        if (row) { frag.appendChild(row); rows++; }
-      });
-      if (!rows) return;                             // nothing printable: stay hidden
-
-      while (list.firstChild) list.removeChild(list.firstChild);
-      list.appendChild(frag);
-
-      host.setAttribute('data-bought-summary-state', 'ready');
-      host.hidden = false;
-    });
-  };
-
-  /* =======================================================================
-     08  BOOT
-     ======================================================================= */
-
-  P.init = function (root) {
-    try { P.initDemoSlot(root); } catch (e) { /* never block the page */ }
-    try { P.initPresetTeaser(root); } catch (e) { /* never block the page */ }
-    try { P.initSectionNav(root); } catch (e) { /* never block the page */ }
-    try { P.initTabs(root); } catch (e) { /* never block the page */ }
-    try { P.initCounters(root); } catch (e) { /* never block the page */ }
-    try { P.initBoughtNote(root); } catch (e) { /* never block the page */ }
-    try { P.initBoughtSummary(root); } catch (e) { /* never block the page */ }
-  };
-
-  function ready(fn) {
-    if (SS && typeof SS.ready === 'function') { SS.ready(fn); return; }
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', fn, { once: true });
-    } else {
-      fn();
+    for (var i = 0; i < Math.min(entries.length, BOUGHT_SUMMARY_MAX); i++) {
+      var row = boughtSummaryRow(host, map, entries[i]);
+      if (row) list.appendChild(row);
     }
-  }
+    host.hidden = false;
+  };
 
-  ready(function () { P.init(); });
-})(window, document);
+}(window, document));
