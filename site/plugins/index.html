@@ -246,353 +246,290 @@
     </div>
   </section>
 
-  <nav class="subnav" aria-label="On this page" data-section-nav data-section-nav-root>
-    <div class="subnav__inner wrap--wide">
-      <a href="#overview" class="is-active">Overview</a>
-      <a href="#whats-in">What's in the bundle</a>
-      <a href="#compare">Compare</a>
-      <a href="#faq">Buying FAQ</a>
+  <nav class="subnav" aria-label="On this page" data-section-nav data
+  ></nav>
+
+  <section class="section" id="whats-in">
+    <div class="wrap--wide">
+      <h2 class="sec-head__title">What's in The Full Shop</h2>
+      <p class="cat-card__para">Four carefully designed instruments: VANTA, DRIFT, PRISM and ANVIL. Each ships with platform-specific
+        builds and a single licence that covers three activations.</p>
     </div>
-  </nav>
+  </section>
 
-  <!-- Rest of page omitted for brevity in this view; behaviour scripts follow -->
+  <section class="section mt-6" id="shop">
+    <div class="wrap--wide">
 
-  <script>
-  (function () {
-    var norm = function (s) { return String(s == null ? "" : s).trim().toLowerCase(); };
-    var store = document.getElementById("group-store");
-    if (!store) return;
-    var KEY = "soundshop:bought:v1";
-    var MAX_AGE = 60 * 24 * 60 * 60 * 1000;                 // 60 days
-    var read = function () {
-      try {
-        var raw = window.localStorage.getItem(KEY);
-        if (!raw) return {};
-        var o = JSON.parse(raw);
-        return (o && typeof o === "object" && !(o instanceof Array)) ? o : {};
-      } catch (e) { return {}; }
-    };
-    var write = function (o) {
-      try { window.localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { }
-    };
-    var forget = function (tok) {
-      var o = read();
-      if (Object.prototype.hasOwnProperty.call(o, tok)) { delete o[tok]; write(o); }
-    };
+      <h2 class="sec-head__title">Buy single items</h2>
+      <div id="group-store"></div>
 
-    var ret = document.documentElement.getAttribute("data-buy-return");
-    // Treat only paid returns as the live item for per-row marking. Pending returns
-    // will show a neutral banner but will not relabel rows as "You just paid for this".
-    var live = (ret === "paid")
-      ? norm(document.documentElement.getAttribute("data-buy-item")) : "";
+      <div id="buy-return"></div>
 
-    var REF_OK = /^[A-Za-z0-9_-]{1,128}$/;
-    var saved = read(), pruned = false, items = {};
-    for (var k in saved) {
-      if (!Object.prototype.hasOwnProperty.call(saved, k)) continue;
-      var rec = saved[k], obj = rec && typeof rec === "object" && !(rec instanceof Array);
-      var tok = norm(k), when = Number(obj ? rec.t : rec);
-      var sref = obj ? String(rec.ref == null ? "" : rec.ref) : "";
-      if (!REF_OK.test(sref)) { sref = ""; }
-      if (!tok || !isFinite(when) || when <= 0 || (Date.now() - when) > MAX_AGE) {
-        delete saved[k]; pruned = true; continue;
-      }
+    </div>
+  </section>
 
-      // If the stored record is an object and contains an explicit 'state'
-      // property, treat it as ownership only when state === 'paid'. This makes
-      // the plugins page ignore non-paid states like 'pending' or 'cancelled'
-      // while leaving such entries intact in localStorage (do not delete them).
-      if (obj && Object.prototype.hasOwnProperty.call(rec, 'state')) {
-        var st = rec.state == null ? '' : String(rec.state).trim();
-        if (st !== 'paid') { continue; }
-      }
-
-      items[tok] = { when: when, live: false, ref: sref };
-    }
-    if (pruned) write(saved);
-    if (live) {
-      var prevLive = items[live];
-      items[live] = { when: 0, live: true, ref: prevLive ? prevLive.ref : "" };
-    }
-    var tokens = [];
-    for (var t in items) { if (Object.prototype.hasOwnProperty.call(items, t)) tokens.push(t); }
-    if (Object.prototype.hasOwnProperty.call(items, "bundle")) {
-      var bundle = items["bundle"];
-      var cards = document.querySelectorAll("[data-store-item]");
-      for (var c = 0; c < cards.length; c++) {
-        var ctok = norm(cards[c].getAttribute("data-store-item"));
-        if (!ctok || ctok === "bundle") continue;
-        if (Object.prototype.hasOwnProperty.call(items, ctok)) continue;
-        items[ctok] = { when: bundle.when, live: bundle.live, cover: "bundle", ref: bundle.ref };
-        tokens.push(ctok);
-      }
-    }
-    if (!tokens.length) return;
-
-    var NOTE = "You just paid for this — your licence goes to the email you used. Only buy again if you mean to.";
-    var dated = function (ms) {
-      var d = new Date(ms);
-      try { return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); }
-      catch (e) { return d.toDateString(); }
-    };
-    var state = {};
-    var slot = function (tok) {
-      if (!state[tok]) { state[tok] = { rowDone: false, cardDone: false, anchor: null, lines: [] }; }
-      return state[tok];
-    };
-    var clear = function (tok) {
-      forget(tok);
-      var st = state[tok];
-      if (!st) return;
-      for (var i = 0; i < st.lines.length; i++) {
-        if (st.lines[i].parentNode) { st.lines[i].parentNode.removeChild(st.lines[i]); }
-      }
-      st.lines = [];
-      if (st.anchor && norm(st.anchor.textContent) === "buy again") { st.anchor.textContent = "Buy"; }
-    };
-    var line = function (tok, gap) {
-      var it = items[tok];
-      var p = document.createElement("p");
-      p.className = "store-bought-line muted";
-      p.setAttribute("role", "status");
-      p.style.font = "13px system-ui,sans-serif";
-      p.style.color = "#9ca3af";
-      p.style.margin = gap || "0";
-      p.style.flexBasis = "100%";
-      if (items[tok].ref) {
-        var t = document.createElement("span");
-        t.textContent = "Reference: " + items[tok].ref;
-        p.appendChild(t);
-      }
-      var when = items[tok].when;
-      if (when) {
-        var d = document.createElement("span");
-        d.textContent = " — bought on " + dated(when);
-        p.appendChild(d);
-      }
-      var b = document.createElement("button");
-      b.className = "link";
-      b.type = "button";
-      b.textContent = "Clear";
-      b.addEventListener("click", function () { clear(tok); });
-      p.appendChild(b);
-      return p;
-    };
-    var markRow = function (tok) {
-      var row = document.querySelector("[data-store-item-row='" + tok + "']");
-      if (!row) return false;
-      var st = slot(tok);
-      if (st.rowDone) return true;
-      var anchor = row.querySelector("a");
-      if (anchor) { st.anchor = anchor; if (norm(anchor.textContent) === "buy") { anchor.textContent = "Buy again"; } }
-      var p = line(tok, "0 0 var(--sp-4) 0");
-      row.appendChild(p);
-      st.rowDone = true;
-      return true;
-    };
-    var markCard = function (tok) {
-      var card = document.querySelector("[data-store-item='" + tok + "']");
-      if (!card) return false;
-      var st = slot(tok);
-      if (st.cardDone) return true;
-      var body = card.closest ? card.closest('.card__body') : null;
-      var target = body || card;
-      var p = line(tok, "0 0 var(--sp-4) 0");
-      target.appendChild(p);
-      st.cardDone = true;
-      return true;
-    };
-
-    var itemsList = document.querySelectorAll("[data-store-item]");
-    for (var i = 0; i < itemsList.length; i++) {
-      var tok = norm(itemsList[i].getAttribute('data-store-item'));
-      if (!tok) continue;
-      if (items[tok]) {
-        if (items[tok].live) { markRow(tok); }
-        markCard(tok);
-      }
-    }
-
-  })();
-  </script>
+  <aside class="section" id="compare" data-reveal>
+    <div class="wrap--wide">
+      <h2 class="sec-head__title">Compare all four</h2>
+      <table class="cat-compare" role="table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>VANTA</th>
+            <th>DRIFT</th>
+            <th>PRISM</th>
+            <th>ANVIL</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>Price</th>
+            <td>$99</td>
+            <td>$99</td>
+            <td>$99</td>
+            <td>$89</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </aside>
 
   <script>
     (function () {
-      var BASE = 'https://d8a.com/api';
-      var GROUP = 'soundshop';
-      (function () {
-        var el = document.getElementById("group-store");
-        if (!el) return;
-        el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">Loading what\'s on sale…</p>';
+      var line = function (t, m) { var p = document.createElement('p'); p.style.margin = m || '0'; p.textContent = t; return p; };
+      var norm = function (s) { try { return String(s || '').trim().toLowerCase(); } catch (e) { return ''; } };
 
-        var xhr = new XMLHttpRequest();
-        xhr.open('GET', BASE + '/groups/' + GROUP + '/store.json');
-        xhr.timeout = 12000;
-        xhr.onload = function () {
-          if (xhr.status < 200 || xhr.status >= 300) { el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">The shop could not be reached. <button type="button" data-store-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again</button></p>'; return; }
-          try { el.innerHTML = xhr.responseText; } catch (e) { el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">The shop could not be reached. <button type="button" data-store-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again</button></p>'; }
-        };
-        xhr.ontimeout = function () { el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">The shop could not be reached. <button type="button" data-store-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again</button></p>'; };
-        xhr.onerror = function () { el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">The shop could not be reached. <button type="button" data-store-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again</button></p>'; };
-        xhr.send();
-      })();
+      var items = {};
+      var markRow = function (tok) { var el = document.querySelector('[data-store-item="' + tok + '"]'); if (!el) return; var st = el._store; if (!st) st = el._store = { rowDone: false, cardDone: false }; if (st.rowDone) return; var p = el.parentNode; if (!p) return; p.setAttribute('data-live', items[tok] && items[tok].live ? 'true' : 'false'); st.rowDone = true; };
+      var markCard = function (tok) { var el = document.querySelector('[data-store-item="' + tok + '"]'); if (!el) return; var st = el._store; if (!st) st = el._store = { rowDone: false, cardDone: false }; if (st.cardDone) return; var target = el.closest ? el.closest('.card') : null; if (!target) return; var p = document.createElement('p'); p.className = 'cat-card__para'; p.style.margin = '0 0 var(--sp-4) 0'; target.querySelector('.card__body') && target.querySelector('.card__body').appendChild(p); st.cardDone = true; };
 
-      // Buy-return handling: read URL for a checkout return and persist to localStorage
-      (function () {
-        if (typeof URLSearchParams !== 'function') return;
-        var q = new URLSearchParams(location.search || '');
-        var OK = ['ok','paid','succeeded','success','completed'];
-        var NO = ['no','failed','cancelled','canceled'];
-        var PENDING = ['pend','pending','processing'];
-        var KEYS = ["paid","checkout","payment","status","redirect_status","session_id","order","order_id","payment_intent","reference","ref","transaction_id","checkout_id"];
-        var seen = false;
-        var good = false, bad = false, pend = false;
-        for (var i = 0; i < KEYS.length; i++) {
-          if (!q.has(KEYS[i])) continue;
-          seen = true;
-          var v = String(q.get(KEYS[i]) || "").trim().toLowerCase();
-          if (OK.indexOf(v) > -1) { good = true; }
-          else if (NO.indexOf(v) > -1) { bad = true; }
-          else if (PENDING.indexOf(v) > -1) { pend = true; }
-          else { pend = true; }
+      var itemsList = document.querySelectorAll("[data-store-item]");
+      for (var i = 0; i < itemsList.length; i++) {
+        var tok = norm(itemsList[i].getAttribute('data-store-item'));
+        if (!tok) continue;
+        if (items[tok]) {
+          if (items[tok].live) { markRow(tok); }
+          markCard(tok);
         }
-        if (!seen && q.has("session_id") && String(q.get("session_id") || "").trim()) { seen = true; good = true; }
-        if (!seen || (!good && !bad && !pend)) return;
-        if (bad) { pend = false; good = false; }
-        else if (pend) { good = false; }
-
-        document.documentElement.setAttribute("data-buy-return", bad ? "cancelled" : (pend ? "pending" : "paid"));
-
-        var token = String(q.get("item") || "").trim().toLowerCase();
-        // Only set data-buy-item for confirmed (paid) returns. Pending returns no longer
-        // mark the page-level live item to avoid a misleading "You just paid for this" row label.
-        if (token && good) {
-          document.documentElement.setAttribute("data-buy-item", token);
-        }
-
-        var esc = function (s) {
-          return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
-        };
-        var REF_KEYS = ["session_id", "order", "order_id", "payment_intent", "reference", "ref", "transaction_id", "checkout_id"];
-        var ref = "";
-        for (var r = 0; r < REF_KEYS.length; r++) {
-          var rv = String(q.get(REF_KEYS[r]) || "").trim();
-          if (rv) { ref = rv; break; }
-        }
-        if (!/^[A-Za-z0-9_-]{1,128}$/.test(ref)) { ref = ""; }
-
-        if (good && token && /^[a-z0-9][a-z0-9 ._-]{0,63}$/.test(token)) {
-          try {
-            var BKEY = "soundshop:bought:v1";
-            var saved = {};
-            var raw = window.localStorage.getItem(BKEY);
-            if (raw) {
-              var parsed = JSON.parse(raw);
-              if (parsed && typeof parsed === "object" && !(parsed instanceof Array)) { saved = parsed; }
-            }
-            saved[token] = { t: Date.now(), ref: ref || '', state: 'paid' };
-            var stamp = function (v) {
-              return Number(v && typeof v === "object" ? v.t : v);
-            };
-            var keys = Object.keys(saved);
-            if (keys.length > 24) {
-              keys.sort(function (a, b) { return stamp(saved[b]) - stamp(saved[a]); });
-              var trimmed = {};
-              for (var t = 0; t < 24; t++) { trimmed[keys[t]] = saved[keys[t]]; }
-              saved = trimmed;
-            }
-            window.localStorage.setItem(BKEY, JSON.stringify(saved));
-          } catch (e) { }
-        }
-
-        var itemName = "";
-        if (token === "bundle") {
-          itemName = "The Full Shop bundle";
-        } else if (token) {
-          var btns = document.querySelectorAll("[data-store-item]");
-          for (var j = 0; j < btns.length; j++) {
-            if (String(btns[j].getAttribute("data-store-item") || "").trim().toLowerCase() !== token) continue;
-            var body = btns[j].closest ? btns[j].closest(".card__body") : null;
-            var title = body ? body.querySelector(".card__title") : null;
-            if (title && title.textContent.trim()) { itemName = title.textContent.trim(); }
-            break;
-          }
-        }
-
-        // Build the banner using DOM methods rather than string concatenation.
-        var makeNote = function (type, titleText, bodyParagraphs, reference) {
-          var note = document.createElement('div');
-          note.className = 'note note--' + type;
-          note.setAttribute('role', 'status');
-          note.setAttribute('aria-live', 'polite');
-
-          var t = document.createElement('p');
-          t.className = 'note__title';
-          t.textContent = titleText;
-          note.appendChild(t);
-
-          var body = document.createElement('div');
-          body.className = 'note__body';
-          for (var i = 0; i < bodyParagraphs.length; i++) {
-            var p = document.createElement('p');
-            p.textContent = bodyParagraphs[i];
-            body.appendChild(p);
-          }
-
-          // For confirmed purchases, offer a Hide link that removes the live data-buy-item
-          if (type === 'good' && itemName) {
-            var ph = document.createElement('p');
-            var a = document.createElement('a');
-            a.href = '#';
-            a.textContent = 'Hide';
-            a.addEventListener('click', function (e) { e.preventDefault(); try { document.documentElement.removeAttribute('data-buy-item'); } catch (err) {} });
-            ph.appendChild(a);
-            body.appendChild(ph);
-          }
-
-          note.appendChild(body);
-
-          var refEl = null;
-          if (reference) {
-            refEl = document.createElement('p');
-            var code = document.createElement('code');
-            code.style.font = '12px ui-monospace,SFMono-Regular,Menlo,monospace';
-            code.textContent = reference;
-            refEl.textContent = 'Reference: ';
-            refEl.appendChild(code);
-            refEl.appendChild(document.createTextNode(' — quote this if you contact us.'));
-          }
-
-          return { noteEl: note, refEl: refEl };
-        };
-
-        var stateVal = document.documentElement.getAttribute('data-buy-return');
-        var result = null;
-        if (stateVal === 'paid') {
-          var title = 'Thanks — your purchase is confirmed' + (itemName ? ' — ' + itemName : '');
-          var body = ['Your licence will arrive by email shortly.'];
-          result = makeNote('good', title, body, ref || '');
-        } else if (stateVal === 'pending') {
-          var title = 'Your payment is still being processed' + (itemName ? ' — ' + itemName : '');
-          var body = ['If this was you, wait a few moments and then reload this page. If it fails we will send an email.'];
-          result = makeNote('info', title, body, '');
-        } else {
-          var title = 'Payment not completed';
-          var body = ['Your payment did not complete. No purchase was recorded.'];
-          result = makeNote('bad', title, body, '');
-        }
-
-        var elb = document.getElementById('buy-return');
-        if (elb && result) {
-          // Replace the container's children with the constructed nodes only.
-          if (result.refEl) { elb.replaceChildren(result.noteEl, result.refEl); }
-          else { elb.replaceChildren(result.noteEl); }
-        }
-
-      })();
+      }
 
     })();
-  </script>
+    </script>
+
+    <script>
+      (function () {
+        var BASE = 'https://d8a.com';
+        var GROUP = 'soundshop';
+        (function () {
+          var el = document.getElementById("group-store");
+          if (!el) return;
+          var storeGroup = el.getAttribute('data-store-group') || GROUP;
+          var loading = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">Loading what\'s on sale…</p>';
+          var errorHtml = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">The shop could not be reached. <button type="button" data-store-retry style="font:inherit;color:#7c5cff;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline">Try again</button></p>';
+
+          var renderError = function () { if (el) el.innerHTML = errorHtml; };
+
+          var makeEsc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; }); };
+
+          var load = function () {
+            if (!el) return;
+            el.innerHTML = loading;
+            fetch(BASE + '/api/v1/store/items?group=' + encodeURIComponent(storeGroup), { credentials: 'omit' })
+              .then(function (r) { if (!r.ok) throw new Error('bad status'); return r.json(); })
+              .then(function (s) {
+                if (!el || !s || !s.items) { renderError(); return; }
+                if (!s.items.length) { el.innerHTML = '<p style="font:13px system-ui,sans-serif;color:#9ca3af">Nothing for sale right now.</p>'; return; }
+                el.innerHTML = s.items.map(function (it) {
+                  return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #e5e7eb;font:14px system-ui,sans-serif">' +
+                    '<div style="flex:1"><b>' + makeEsc(it.name) + '</b>' +
+                    (it.description ? '<div style="font-size:12px;color:#6b7280">' + makeEsc(it.description) + '</div>' : '') + '</div>' +
+                    '<span>' + makeEsc(it.price) + '</span>' +
+                    '<a href="' + makeEsc(it.payUrl) + '" data-item="' + makeEsc(it.id) + '" style="background:#7c5cff;color:#fff;border-radius:999px;padding:6px 14px;text-decoration:none">Buy</a></div>';
+                }).join('') + '<p style="font:11px system-ui,sans-serif;color:#9ca3af">Sold by <a href="' + makeEsc(s.group && s.group.url || '#') + '" style="color:#7c5cff">' + makeEsc(s.group && s.group.name || storeGroup) + '</a></p>';
+
+                // install delegated click handler for checkout-enabled items
+                el.addEventListener('click', function (e) {
+                  var a = e.target && e.target.closest ? e.target.closest('a[data-item]') : null;
+                  if (!a || !(s && s.checkout && s.checkout.enabled)) return;
+                  e.preventDefault();
+                  try { a.textContent = 'Opening'; } catch (err) { try { a.textContent = 'Opening'; } catch (e2) {} }
+                  // Preserve the UX: POST to the checkout URL then follow d.url or fall back to anchor href
+                  var here = location.href.replace(/([?&])d8a_order=[^&#]*&?/, '$1').replace(/[?&](#|$)/, '$1');
+                  fetch(s.checkout.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ group: storeGroup, item: a.getAttribute('data-item'), quantity: 1, returnUrl: here }) })
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) { if (d && d.url) { location.href = d.url; } else { a.textContent = 'Buy'; location.href = a.href; } })
+                    .catch(function () { location.href = a.href; });
+                });
+
+              })
+              .catch(function () { renderError(); });
+          };
+
+          // retry support
+          document.addEventListener('click', function (e) {
+            var t = e.target || e.srcElement;
+            if (t && t.getAttribute && t.getAttribute('data-store-retry') != null) { e.preventDefault(); load(); }
+          });
+
+          load();
+        })();
+
+        // Buy-return handling: read URL for a checkout return and persist to localStorage
+        (function () {
+          if (typeof URLSearchParams !== 'function') return;
+          var q = new URLSearchParams(location.search || '');
+          var OK = ['ok','paid','succeeded','success','completed'];
+          var NO = ['no','failed','cancelled','canceled'];
+          var PENDING = ['pend','pending','processing'];
+          var KEYS = ["paid","checkout","payment","status","redirect_status","session_id","order","order_id","payment_intent","reference","ref","transaction_id","checkout_id"];
+          var seen = false;
+          var good = false, bad = false, pend = false;
+          for (var i = 0; i < KEYS.length; i++) {
+            if (!q.has(KEYS[i])) continue;
+            seen = true;
+            var v = String(q.get(KEYS[i]) || "").trim().toLowerCase();
+            if (OK.indexOf(v) > -1) { good = true; }
+            else if (NO.indexOf(v) > -1) { bad = true; }
+            else if (PENDING.indexOf(v) > -1) { pend = true; }
+            else { pend = true; }
+          }
+          if (!seen && q.has("session_id") && String(q.get("session_id") || "").trim()) { seen = true; good = true; }
+          if (!seen || (!good && !bad && !pend)) return;
+          if (bad) { pend = false; good = false; }
+          else if (pend) { good = false; }
+
+          document.documentElement.setAttribute("data-buy-return", bad ? "cancelled" : (pend ? "pending" : "paid"));
+
+          var token = String(q.get("item") || "").trim().toLowerCase();
+          // Only set data-buy-item for confirmed (paid) returns. Pending returns no longer
+          // mark the page-level live item to avoid a misleading "You just paid for this" row label.
+          if (token && good) {
+            document.documentElement.setAttribute("data-buy-item", token);
+          }
+
+          var esc = function (s) {
+            return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+          };
+          var REF_KEYS = ["session_id", "order", "order_id", "payment_intent", "reference", "ref", "transaction_id", "checkout_id"];
+          var ref = "";
+          for (var r = 0; r < REF_KEYS.length; r++) {
+            var rv = String(q.get(REF_KEYS[r]) || "").trim();
+            if (rv) { ref = rv; break; }
+          }
+          if (!/^[A-Za-z0-9_-]{1,128}$/.test(ref)) { ref = ""; }
+
+          if (good && token && /^[a-z0-9][a-z0-9 ._-]{0,63}$/.test(token)) {
+            try {
+              var BKEY = "soundshop:bought:v1";
+              var saved = {};
+              var raw = window.localStorage.getItem(BKEY);
+              if (raw) {
+                var parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === "object" && !(parsed instanceof Array)) { saved = parsed; }
+              }
+              saved[token] = { t: Date.now(), ref: ref || '', state: 'paid' };
+              var stamp = function (v) {
+                return Number(v && typeof v === "object" ? v.t : v);
+              };
+              var keys = Object.keys(saved);
+              if (keys.length > 24) {
+                keys.sort(function (a, b) { return stamp(saved[b]) - stamp(saved[a]); });
+                var trimmed = {};
+                for (var t = 0; t < 24; t++) { trimmed[keys[t]] = saved[keys[t]]; }
+                saved = trimmed;
+              }
+              window.localStorage.setItem(BKEY, JSON.stringify(saved));
+            } catch (e) { }
+          }
+
+          var itemName = "";
+          if (token === "bundle") {
+            itemName = "The Full Shop bundle";
+          } else if (token) {
+            var btns = document.querySelectorAll("[data-store-item]");
+            for (var j = 0; j < btns.length; j++) {
+              if (String(btns[j].getAttribute("data-store-item") || "").trim().toLowerCase() !== token) continue;
+              var body = btns[j].closest ? btns[j].closest(".card__body") : null;
+              var title = body ? body.querySelector(".card__title") : null;
+              if (title && title.textContent.trim()) { itemName = title.textContent.trim(); }
+              break;
+            }
+          }
+
+          // Build the banner using DOM methods rather than string concatenation.
+          var makeNote = function (type, titleText, bodyParagraphs, reference) {
+            var note = document.createElement('div');
+            note.className = 'note note--' + type;
+            note.setAttribute('role', 'status');
+            note.setAttribute('aria-live', 'polite');
+
+            var t = document.createElement('p');
+            t.className = 'note__title';
+            t.textContent = titleText;
+            note.appendChild(t);
+
+            var body = document.createElement('div');
+            body.className = 'note__body';
+            for (var i = 0; i < bodyParagraphs.length; i++) {
+              var p = document.createElement('p');
+              p.textContent = bodyParagraphs[i];
+              body.appendChild(p);
+            }
+
+            // For confirmed purchases, offer a Hide link that removes the live data-buy-item
+            if (type === 'good' && itemName) {
+              var ph = document.createElement('p');
+              var a = document.createElement('a');
+              a.href = '#';
+              a.textContent = 'Hide';
+              a.addEventListener('click', function (e) { e.preventDefault(); try { document.documentElement.removeAttribute('data-buy-item'); } catch (err) {} });
+              ph.appendChild(a);
+              body.appendChild(ph);
+            }
+
+            note.appendChild(body);
+
+            var refEl = null;
+            if (reference) {
+              refEl = document.createElement('p');
+              var code = document.createElement('code');
+              code.style.font = '12px ui-monospace,SFMono-Regular,Menlo,monospace';
+              code.textContent = reference;
+              refEl.textContent = 'Reference: ';
+              refEl.appendChild(code);
+              refEl.appendChild(document.createTextNode(' — quote this if you contact us.'));
+            }
+
+            return { noteEl: note, refEl: refEl };
+          };
+
+          var stateVal = document.documentElement.getAttribute('data-buy-return');
+          var result = null;
+          if (stateVal === 'paid') {
+            var title = 'Thanks — your purchase is confirmed' + (itemName ? ' — ' + itemName : '');
+            var body = ['Your licence will arrive by email shortly.'];
+            result = makeNote('good', title, body, ref || '');
+          } else if (stateVal === 'pending') {
+            var title = 'Your payment is still being processed' + (itemName ? ' — ' + itemName : '');
+            var body = ['If this was you, wait a few moments and then reload this page. If it fails we will send an email.'];
+            result = makeNote('info', title, body, '');
+          } else {
+            var title = 'Payment not completed';
+            var body = ['Your payment did not complete. No purchase was recorded.'];
+            result = makeNote('bad', title, body, '');
+          }
+
+          var elb = document.getElementById('buy-return');
+          if (elb && result) {
+            // Replace the container's children with the constructed nodes only.
+            if (result.refEl) { elb.replaceChildren(result.noteEl, result.refEl); }
+            else { elb.replaceChildren(result.noteEl); }
+          }
+
+        })();
+
+      })();
+    </script>
 
 </main>
 </body>
