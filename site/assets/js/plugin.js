@@ -252,91 +252,94 @@
 
       try { host.setAttribute('data-ssp-bought-cta', 'on'); } catch (e) { /* ignore */ }
 
-      // Helper to create a download anchor inside the host when we have a
-      // verified installer URL.
-      function makeDownloadAnchor(url) {
-        try {
-          if (!url) return;
-          var a = document.createElement('a');
-          a.className = 'bought__cta';
-          try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
-          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-          try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-          try { host.appendChild(a); } catch (e) { /* ignore */ }
-        } catch (e) { /* ignore */ }
-      }
-
-      // Helper to create a Contact Support / Check order fallback when no
-      // verified installer URL is known. This provides the per-item "Check
-      // order" button that lets buyers verify an order and surface installers.
-      function makeSupportButton(id) {
-        try {
-          var wrap = document.createElement('div');
-          wrap.className = 'bought__cta-wrap';
-          var btn = document.createElement('button');
-          btn.className = 'bought__cta';
-          btn.setAttribute('type', 'button');
-          try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ }
-          try {
-            btn.addEventListener('click', function () {
-              try {
-                if (!id) {
-                  // If we don't have an id, open support docs
-                  try { window.location.href = 'docs.html#support'; } catch (e) { /* ignore */ }
-                  return;
-                }
-
-                // Avoid hammering the platform: do nothing if verify is absent
-                if (typeof window.groupStoreVerify !== 'function') {
-                  try { window.location.href = 'docs.html#support'; } catch (e) { /* ignore */ }
-                  return;
-                }
-
-                var p = null;
-                try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
-                if (!p || typeof p.then !== 'function') return;
-                btn.textContent = 'Checking\u2026';
-                p.then(function (order) {
-                  try {
-                    var vdet = P._normalisePaidDetail(order);
-                    if (!vdet) {
-                      try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ }
-                      return;
-                    }
-                    // If a downloadUrl was discovered, update UI
-                    if (vdet.downloadUrl) {
-                      try {
-                        // Replace button with a proper download anchor
-                        var a = document.createElement('a');
-                        a.className = 'bought__cta';
-                        try { a.setAttribute('href', vdet.downloadUrl); } catch (e) { /* ignore */ }
-                        try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-                        try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-                        try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-                        try { wrap.replaceChild(a, btn); } catch (e) { /* ignore */ }
-                      } catch (e) { /* ignore */ }
-                    } else {
-                      try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ }
-                    }
-                  } catch (e) { /* ignore */ }
-                }).catch(function () { try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ } });
-              } catch (e) { /* ignore click handler */ }
-            });
-          } catch (e) { /* ignore event wiring */ }
-          try { wrap.appendChild(btn); } catch (e) { /* ignore */ }
-          try { host.appendChild(wrap); } catch (e) { /* ignore */ }
-        } catch (e) { /* ignore */ }
-      }
-
-      // Decide which CTA to render immediately
+      // Helper to c
       try {
-        if (detail && extractDownloadUrl(detail)) {
-          makeDownloadAnchor(extractDownloadUrl(detail));
-        } else {
-          var id = detail && detail.id ? String(detail.id) : '';
-          makeSupportButton(id);
+        // Helper to create a download anchor inside the host when we have a
+        // verified installer URL.
+        function makeDownloadAnchor(url) {
+          try {
+            if (!url) return;
+            var a = document.createElement('a');
+            a.className = 'bought__cta';
+            try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
+            try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+            try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+            try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
+            try { host.appendChild(a); } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore */ }
         }
+
+        // Helper to create a Contact Support / Check order fallback when no
+        // verified installer URL is known. This provides the per-item "Check
+        // order" button that lets buyers verify an order and surface installers.
+        function makeSupportButton(id) {
+          try {
+            var wrap = document.createElement('div');
+            wrap.className = 'bought__cta-wrap';
+            var btn = document.createElement('button');
+            btn.className = 'bought__cta';
+            btn.setAttribute('type', 'button');
+            try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ }
+            try {
+              btn.addEventListener('click', function () {
+                try {
+                  if (!id) {
+                    // If we don't have an id, open support docs
+                    try { window.location.href = 'docs.html#support'; } catch (e) { /* ignore */ }
+                    return;
+                  }
+
+                  // Avoid hammering the platform: do nothing if verify is absent
+                  if (typeof window.groupStoreVerify !== 'function') {
+                    try { window.location.href = 'docs.html#support'; } catch (e) { /* ignore */ }
+                    return;
+                  }
+
+                  var p = null;
+                  try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
+                  if (!p || typeof p.then !== 'function') return;
+                  btn.textContent = 'Checking\u2026';
+                  p.then(function (order) {
+                    try {
+                      var vdet = P._normalisePaidDetail(order);
+                      if (!vdet) {
+                        try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ }
+                        return;
+                      }
+                      // If a downloadUrl was discovered, update UI
+                      if (vdet.downloadUrl) {
+                        try {
+                          // Replace button with a proper download anchor
+                          var a = document.createElement('a');
+                          a.className = 'bought__cta';
+                          try { a.setAttribute('href', vdet.downloadUrl); } catch (e) { /* ignore */ }
+                          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+                          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+                          try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
+                          try { wrap.replaceChild(a, btn); } catch (e) { /* ignore */ }
+                        } catch (e) { /* ignore */ }
+                      } else {
+                        try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ }
+                      }
+                    } catch (e) { /* ignore */ }
+                  }).catch(function () { try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ } });
+                } catch (e) { /* ignore click handler */ }
+              });
+            } catch (e) { /* ignore event wiring */ }
+            try { wrap.appendChild(btn); } catch (e) { /* ignore */ }
+            try { host.appendChild(wrap); } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore */ }
+        }
+
+        // Decide which CTA to render immediately
+        try {
+          if (detail && extractDownloadUrl(detail)) {
+            makeDownloadAnchor(extractDownloadUrl(detail));
+          } else {
+            var id = detail && detail.id ? String(detail.id) : '';
+            makeSupportButton(id);
+          }
+        } catch (e) { /* ignore */ }
       } catch (e) {
         // ignore
       }
@@ -497,7 +500,106 @@
     } catch (e) { /* ignore */ }
   };
 
-  // ... the rest of the public API and initialisers follow (unchanged) ...
+  // -----------------------------------------------------------------------
+  // Safe, idempotent auto-verify helper
+  // -----------------------------------------------------------------------
+
+  // Ensure a well-known per-id map exists on window so other scripts cannot
+  // cause a ReferenceError by assuming it is present.
+  try {
+    window._ssBoughtAutoVerifiedIds = window._ssBoughtAutoVerifiedIds || {};
+  } catch (e) { /* ignore */ }
+
+  /**
+   * Attempt an on-load, server-side verify for any remembered bought items
+   * that lack a direct download URL. This is intentionally defensive:
+   *  - It runs at most once per page load (_boughtAutoVerifyCalled).
+   *  - It records per-id attempts on window._ssBoughtAutoVerifiedIds to avoid
+   *    repeated verifies for the same id across multiple hosts on the page.
+   *  - It only calls window.groupStoreVerify when that global is a function
+   *    and its return looks Promise-like (has .then).
+   */
+  P._autoVerifyRememberedPurchases = function () {
+    try {
+      if (_boughtAutoVerifyCalled) return;
+      _boughtAutoVerifyCalled = true;
+    } catch (e) { /* ignore */ }
+
+    try { window._ssBoughtAutoVerifiedIds = window._ssBoughtAutoVerifiedIds || {}; } catch (e) { /* ignore */ }
+
+    // If the platform verify helper is not present, give up quietly.
+    try { if (typeof window.groupStoreVerify !== 'function') return; } catch (e) { return; }
+
+    var arr = [];
+    try { arr = readBoughtArray(null, null) || []; } catch (e) { arr = []; }
+
+    arr.forEach(function (it) {
+      try {
+        if (!it || typeof it !== 'object') return;
+        var id = it.id || it.ref || '';
+        if (!id) return;
+
+        try { if (window._ssBoughtAutoVerifiedIds && window._ssBoughtAutoVerifiedIds[id]) return; } catch (e) { /* ignore */ }
+        try { if (window._ssBoughtAutoVerifiedIds) window._ssBoughtAutoVerifiedIds[id] = true; } catch (e) { /* ignore */ }
+
+        // If we already have a verified download URL, nothing to do.
+        if (it.downloadUrl) return;
+
+        var p = null;
+        try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
+        if (!p || typeof p.then !== 'function') return;
+
+        p.then(function (order) {
+          try {
+            var vdet = P._normalisePaidDetail(order);
+            if (vdet && vdet.downloadUrl) {
+              try { it.downloadUrl = vdet.downloadUrl; } catch (e) { /* ignore */ }
+
+              // Update any bought-summary list item for this paid id
+              try {
+                var paidEl = null;
+                try { paidEl = document.querySelector('[data-ssp-paid-id="' + String(id) + '"]'); } catch (e) { paidEl = null; }
+                if (paidEl) {
+                  try { createBoughtCta(paidEl, it); } catch (e) { /* ignore */ }
+                }
+              } catch (e) { /* ignore */ }
+
+              // Also update any bought-note hosts so the note area can present a
+              // download link as well.
+              try { $$('[data-bought-note]').forEach(function (host) { try { createBoughtCta(host, it); } catch (e) { /* ignore */ } }); } catch (e) { /* ignore */ }
+            }
+          } catch (e) { /* ignore verification handling */ }
+        }).catch(function () { /* ignore verify failure */ });
+
+      } catch (e) { /* ignore per-item */ }
+    });
+  };
+
+  // If the existing public initialisers for bought-note / bought-summary exist,
+  // wrap them so they also trigger the safe auto-verify helper. We do this
+  // without assuming the functions exist at file-parse time so no ReferenceError
+  // can ever be thrown.
+  try {
+    if (typeof P.initBoughtSummary === 'function') {
+      (function (orig) {
+        P.initBoughtSummary = function (root) {
+          try { orig(root); } catch (e) { /* ignore */ }
+          try { if (typeof P._autoVerifyRememberedPurchases === 'function') P._autoVerifyRememberedPurchases(); } catch (e) { /* ignore */ }
+        };
+      })(P.initBoughtSummary);
+    }
+  } catch (e) { /* ignore */ }
+
+  try {
+    if (typeof P.initBoughtNote === 'function') {
+      (function (orig) {
+        P.initBoughtNote = function (root) {
+          try { orig(root); } catch (e) { /* ignore */ }
+          try { if (typeof P._autoVerifyRememberedPurchases === 'function') P._autoVerifyRememberedPurchases(); } catch (e) { /* ignore */ }
+        };
+      })(P.initBoughtNote);
+    }
+  } catch (e) { /* ignore */ }
 
   /* =======================================================================
      Remaining initialisers and exports (not relevant to this change).
