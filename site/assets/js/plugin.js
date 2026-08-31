@@ -318,108 +318,51 @@
         if (bound(host, 'bought-summary')) return;
 
         var recs = null;
-        try { recs = JSON.parse(attr(host, 'data-bought-summary') || 'null'); } catch (e) { recs = null; }
-        recs = recs || {};
-
-        // If there are no records supplied in the attribute, fall back to the
-        // localStorage snapshot written by the shop page's purchase listener.
-        try {
-          if (!Object.keys(recs).length && window.localStorage && typeof window.localStorage.getItem === 'function') {
-            var BOUGHT_KEY = 'soundshop:bought:v1';
-            var raw = window.localStorage.getItem(BOUGHT_KEY);
-            if (raw) {
-              try {
-                var parsed = JSON.parse(raw);
-                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                  var labelsSpan = host.querySelector('[data-bought-summary-labels]');
-                  Object.keys(parsed).forEach(function (tok) {
-                    try {
-                      var p = parsed[tok];
-                      var rec = {};
-                      if (typeof p === 'number' || (typeof p === 'string' && /^\d+$/.test(p))) {
-                        rec.t = Number(p);
-                      } else if (p && typeof p === 'object') {
-                        if (p.t) rec.t = Number(p.t);
-                        if (p.ref) rec.ref = String(p.ref);
-                        if (p.email) rec.email = String(p.email);
-                      }
-                      if (labelsSpan) {
-                        try {
-                          var lab = labelsSpan.getAttribute('data-bought-label-' + tok);
-                          if (lab) rec.label = String(lab);
-                        } catch (e) { /* ignore */ }
-                      }
-                      if ((rec.t && isFinite(rec.t)) || rec.ref || rec.email) {
-                        recs[tok] = rec;
-                      }
-                    } catch (e) { /* ignore per-item */ }
-                  });
-                }
-              } catch (e) { /* ignore parse errors */ }
-            }
-          }
-        } catch (e) { /* ignore localStorage access errors */ }
+        try { recs = window.localStorage && typeof window.localStorage.getItem === 'function' ? window.localStorage.getItem(attr(host, 'data-bought-summary')) : null; } catch (e) { recs = null; }
+        if (!recs) return;
 
         var list = host.querySelector('[data-bought-summary-list]') || host;
+        var parsed = null;
+        try { parsed = JSON.parse(recs); } catch (e) { parsed = null; }
+        if (!parsed || !Array.isArray(parsed)) return;
 
         var validCount = 0;
         var madePerItemCta = false;
-        Object.keys(recs).forEach(function (k) {
+
+        parsed.forEach(function (r) {
           try {
+            if (!r || typeof r !== 'object') return;
+            var label = r.itemName || r.name || r.label || 'Purchased item';
+            var ref = r.orderRef || r.ref || r.id;
+            var email = r.email || r.deliveryEmail || r.buyerEmail;
+
             var li = document.createElement('li');
-            li.className = 'bought';
-
-            var r = recs[k] || {};
-
-            // visible label
-            var label = (r.label || r.itemName || r.name || '').toString();
-            if (!label) label = 'A bought item';
-
             var labelSpan = el('span', 'bought__label', label);
             var metaSpan = el('span', 'bought__meta');
 
-            // Reference or no-reference message
-            var refPrefix = recs[k].refPrefix || r.refPrefix || '';
-            var refSuffix = recs[k].refSuffix || r.refSuffix || '';
-            var ref = recs[k].ref || '';
-            var email = recs[k].email || '';
-            if (ref) {
-              if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-              metaSpan.appendChild(document.createTextNode(refPrefix + ref + refSuffix));
+            // If a verification-ref exists, render a small Verify button which
+            // calls the externally-provided groupStoreVerify() helper (see .d8a).
+            try {
+              if (ref) {
+                var refNode = el('span', 'bought__ref', 'Order: ' + String(ref));
+                refNode.style.marginRight = '8px';
 
-              try {
-                var msg = document.createElement('a');
-                msg.textContent = 'View order & verification status';
+                var msg = document.createElement('button');
+                msg.setAttribute('type', 'button');
                 msg.className = 'bought__verify';
-                msg.setAttribute('href', '#');
-                msg.style.marginLeft = '8px';
+                msg.textContent = 'Verify';
 
-                var ref = recs[k].ref;
-                var refNode = ref;
-                var msgNode = null;
-
-                // The original order verification handshake is intentionally
-                // preserved here: it calls the platform verify endpoint via
-                // window.groupStoreVerify and renders the returned state. Do not
-                // remove that behaviour — this was the regression reviewers
-                // flagged earlier.
-                (function (reference, msg, refNode) {
+                // When clicked, attach a transient status node next to the control and emit the soundshop:verified-order
+                // event so other listeners in the page (notably the
+                // handler that injects the installers CTA) get a chance.
+                (function (ref, msg, refNode) {
                   try {
-                    msg.addEventListener('click', function (ev) {
+                    msg.addEventListener('click', function () {
                       try {
-                        ev.preventDefault();
-                        msg.textContent = 'Checking…';
-                        // Call the real platform verification function if present.
                         var p = null;
-                        try { p = window.groupStoreVerify ? window.groupStoreVerify(reference) : null; } catch (e) { p = null; }
-                        if (!p || typeof p.then !== 'function') {
-                          msg.textContent = 'Verification unavailable';
-                          return;
-                        }
-                        // When the promise resolves we render a tiny status node
-                        // next to the control and emit the soundshop:verified-order
-                        // event so other listeners in the page (notably the
-                        // handler that injects the installers CTA) get a chance.
+                        try { p = window.groupStoreVerify && typeof window.groupStoreVerify === 'function' ? window.groupStoreVerify(String(ref)) : null; } catch (e) { p = null; }
+                        if (!p || typeof p.then !== 'function') return;
+
                         var parent = msg.parentNode || msg;
                         var msgNode = document.createElement('span');
                         msgNode.className = 'bought__verify-msg';
@@ -455,75 +398,75 @@
 
                 metaSpan.appendChild(msg);
 
-              } catch (e) { /* ignore */ }
-            } else if (email) {
-              if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-              metaSpan.appendChild(document.createTextNode('Delivery email: '));
-              try {
-                var emSpanNoRef = el('span', 'bought__email', maskEmail(email));
-                emSpanNoRef.style.marginLeft = '4px';
-                emSpanNoRef.style.color = 'var(--text-dim)';
-                metaSpan.appendChild(emSpanNoRef);
-
-                var revealBtnNoRef = document.createElement('button');
-                revealBtnNoRef.setAttribute('type', 'button');
-                revealBtnNoRef.className = 'bought__reveal';
-                revealBtnNoRef.setAttribute('aria-pressed', 'false');
-                revealBtnNoRef.textContent = 'Show';
-                revealBtnNoRef.style.marginLeft = '8px';
-                metaSpan.appendChild(revealBtnNoRef);
-
-                (function (node, btn, fullEmail) {
-                  try {
-                    btn.addEventListener('click', function () {
-                      try {
-                        var revealed = btn.getAttribute('data-revealed') === '1';
-                        if (revealed) {
-                          node.textContent = maskEmail(fullEmail);
-                          btn.textContent = 'Show';
-                          btn.setAttribute('aria-pressed', 'false');
-                          btn.setAttribute('data-revealed', '0');
-                        } else {
-                          node.textContent = fullEmail;
-                          btn.textContent = 'Hide';
-                          btn.setAttribute('aria-pressed', 'true');
-                          btn.setAttribute('data-revealed', '1');
-                        }
-                      } catch (e) { /* ignore */ }
-                    });
-                  } catch (e) { /* ignore */ }
-                })(emSpan, revealBtn, email);
-
-              } catch (e) { /* ignore */ }
-            }
-
-            li.appendChild(labelSpan);
-            li.appendChild(metaSpan);
-            list.appendChild(li);
-            validCount++;
-
-            // If this remembered record includes a payment reference, inject
-            // a per-item Order: … + Copy button directly into the list item.
-            try {
-              if (ref) {
+              } else if (email) {
+                if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+                metaSpan.appendChild(document.createTextNode('Delivery email: '));
                 try {
-                  var detail = { id: String(ref), itemName: label, quantity: r.quantity || 1, hasDeliveryEmail: !!r.email };
-                  createBoughtCta(li, detail);
-                  madePerItemCta = true;
-                } catch (e) { /* ignore per-item CTA errors */ }
+                  var emSpanNoRef = el('span', 'bought__email', maskEmail(email));
+                  emSpanNoRef.style.marginLeft = '4px';
+                  emSpanNoRef.style.color = 'var(--text-dim)';
+                  metaSpan.appendChild(emSpanNoRef);
+
+                  var revealBtnNoRef = document.createElement('button');
+                  revealBtnNoRef.setAttribute('type', 'button');
+                  revealBtnNoRef.className = 'bought__reveal';
+                  revealBtnNoRef.setAttribute('aria-pressed', 'false');
+                  revealBtnNoRef.textContent = 'Show';
+                  revealBtnNoRef.style.marginLeft = '8px';
+                  metaSpan.appendChild(revealBtnNoRef);
+
+                  (function (node, btn, fullEmail) {
+                    try {
+                      btn.addEventListener('click', function () {
+                        try {
+                          var revealed = btn.getAttribute('data-revealed') === '1';
+                          if (revealed) {
+                            node.textContent = maskEmail(fullEmail);
+                            btn.textContent = 'Show';
+                            btn.setAttribute('aria-pressed', 'false');
+                            btn.setAttribute('data-revealed', '0');
+                          } else {
+                            node.textContent = fullEmail;
+                            btn.textContent = 'Hide';
+                            btn.setAttribute('aria-pressed', 'true');
+                            btn.setAttribute('data-revealed', '1');
+                          }
+                        } catch (e) { /* ignore */ }
+                      });
+                    } catch (e) { /* ignore */ }
+                  })(emSpan, revealBtn, email);
+
+                } catch (e) { /* ignore */ }
               }
-            } catch (e) { /* ignore */ }
 
-          } catch (e) { /* ignore per-item */ }
-        });
+              li.appendChild(labelSpan);
+              li.appendChild(metaSpan);
+              list.appendChild(li);
+              validCount++;
 
-      } catch (e) { /* defensive: do not let this break the host */ }
+              // If this remembered record includes a payment reference, inject
+              // a per-item Order: … + Copy button directly into the list item.
+              try {
+                if (ref) {
+                  try {
+                    var detail = { id: String(ref), itemName: label, quantity: r.quantity || 1, hasDeliveryEmail: !!r.email };
+                    createBoughtCta(li, detail);
+                    madePerItemCta = true;
+                  } catch (e) { /* ignore per-item CTA errors */ }
+                }
+              } catch (e) { /* ignore */ }
 
-      if (validCount) {
-        host.hidden = false;
-        // Ensure remembered-purchase summaries get the installers/support CTA too.
-        try { if (!madePerItemCta) { createBoughtCta(host, null); } } catch (e) { /* ignore */ }
-      }
+            } catch (e) { /* ignore per-item */ }
+          });
+
+        } catch (e) { /* defensive: do not let this break the host */ }
+
+        if (validCount) {
+          host.hidden = false;
+          // Ensure remembered-purchase summaries get the installers/support CTA too.
+          try { if (!madePerItemCta) { createBoughtCta(host, null); } } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
     });
   };
 
