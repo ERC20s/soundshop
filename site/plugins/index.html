@@ -235,224 +235,192 @@
       </div>
 
       <div id="group-store"></div>
-  <script>
-  (function () {
-    var BASE = "https://d8a.com";
-    var GROUP = "batch-synthshop";
-    var esc = function (s) {
-      return String(s).replace(/[&<>'\"]/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
-    };
-    var el = document.getElementById("group-store");
-    // The handshake: an order id is only proof once the platform says so.
-    var verify = function (id) {
-      return fetch(BASE + "/api/v1/store/orders/" + encodeURIComponent(id) + "?group=" + encodeURIComponent(GROUP))
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (d) { return d && d.paid ? d.order : null; })
-        .catch(function () { return null; });
-    };
-    window.groupStoreVerify = verify;
-    var back = (location.search.match(/[?&]d8a_order=([A-Za-z0-9_-]+)/) || [])[1];
-    if (back) verify(back).then(function (o) {
-      if (!o) return;
-      window.groupStorePaid = o;
-      if (el && el.parentNode) {
-        var p = document.createElement("p");
-        p.setAttribute("data-paid", o.id);
-        p.style.cssText = "font:13px system-ui,sans-serif;color:#059669";
-        p.innerHTML = "Paid: " + esc(o.itemName) + (o.quantity > 1 ? " \u00d7"+o.quantity : "") + " \u2014 order " + esc(o.id);
-        el.parentNode.insertBefore(p, el);
-      }
-      document.dispatchEvent(new CustomEvent("group-store:paid", { detail: o }));
-    });
-    fetch(BASE + "/api/v1/store/items?group=" + encodeURIComponent(GROUP))
-      .then(function (r) { return r.json(); })
-      .then(function (s) {
-        if (!el || !s.items) return;
-        if (!s.items.length) { el.innerHTML = '<p style="font:13px system-ui,sans-serif;color:#9ca3af">Nothing for sale right now.</p>'; return; }
-        el.innerHTML = s.items.map(function (it) {
-          return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #e5e7eb;font:14px system-ui,sans-serif">' +
-            '<div style="flex:1"><b>' + esc(it.name) + '</b>' +
-            (it.description ? '<div style="font-size:12px;color:#6b7280">' + esc(it.description) + '</div>' : '') + '</div>' +
-            '<span>' + esc(it.price) + '</span>' +
-            '<a href="' + esc(it.payUrl) + '" data-item="' + esc(it.id) + '" style="background:#7c5cff;color:#fff;border-radius:999px;padding:6px 14px;text-decoration:none">Buy</a></div>';
-        }).join("") + '<p style="font:11px system-ui,sans-serif;color:#9ca3af">Sold by <a href="' + esc(s.group.url) + '" style="color:#7c5cff">' + esc(s.group.name) + '</a></p>';
-        el.addEventListener("click", function (e) {
-          var a = e.target && e.target.closest ? e.target.closest("a[data-item]") : null;
-          if (!a || !s.checkout.enabled) return;
-          e.preventDefault();
-          a.textContent = "Opening\u2026";
-          // Come back to this page — minus any earlier receipt on the URL.
-          var here = location.href.replace(/([?&])d8a_order=[^&#]*&?/, "$1").replace(/[?&](#|$)/, "$1");
-          fetch(s.checkout.url, { method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ group: GROUP, item: a.getAttribute("data-item"), quantity: 1, returnUrl: here }) })
-            .then(function (r) { return r.json(); })
-            .then(function (d) { if (d.url) { location.href = d.url; } else { a.textContent = "Buy"; location.href = a.href; } })
-            .catch(function () { location.href = a.href; });
-        });
-      });
-  })();
-  </script>
+<script>
+(function () {
+  var BASE = "https://d8a.com";
+  var GROUP = "batch-synthshop";
+  var esc = function (s) {
+    return String(s).replace(/[&<>'\"]/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+  };
+  var el = document.getElementById("group-store");
+  // The handshake: an order id is only proof once the platform says so.
+  var verify = function (id) {
+    return fetch(BASE + "/api/v1/store/orders/" + encodeURIComponent(id) + "?group=" + encodeURIComponent(GROUP))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { return d && d.paid ? d.ord
+  };
 
-  <!-- Handle group-store:paid event to record purchase in browser memory -->
-  <script>
-  (function () {
-    var BOUGHT_KEY = 'soundshop:bought:v1';
-    var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;  // 60 days
+  // Various helpers used for token extraction and validation
+  function getProductToken(name, id) {
+    try {
+      var n = (name || '').toString().toLowerCase();
+      var i = (id || '').toString().toLowerCase();
+      var nameStr = n || i || '';
+      if (!nameStr) return null;
+      nameStr = nameStr.replace(/\.[a-z0-9]+$/i, '');
 
-    // Map product names/IDs to internal tokens
-    function getProductToken(itemName, itemId) {
-      var name = String(itemName || itemId || '').trim().toLowerCase();
+      if (nameStr.indexOf('vanta') !== -1) return 'vanta';
+      if (nameStr.indexOf('drift') !== -1) return 'drift';
+      if (nameStr.indexOf('prism') !== -1) return 'prism';
+      if (nameStr.indexOf('anvil') !== -1) return 'anvil';
+      if (nameStr.indexOf('full shop') !== -1) return 'bundle';
+      if (nameStr.indexOf('fullshop') !== -1) return 'bundle';
 
-      // Handle bundle names
-      if (name === 'the full shop' || name === 'bundle' || name === 'full shop') {
-        return 'bundle';
-      }
+      if (nameStr === 'the full shop') return 'bundle';
+      if (nameStr === 'bundle' || nameStr === 'full shop') return 'bundle';
 
-      // Handle individual plugin names
-      if (name === 'vanta' || name === 'vanta - wavetable synth') {
-        return 'vanta';
-      }
-      if (name === 'drift' || name === 'drift - spectral delay') {
-        return 'drift';
-      }
-      if (name === 'prism' || name === 'prism - reverb') {
-        return 'prism';
-      }
-      if (name === 'anvil' || name === 'anvil - punch compressor') {
-        return 'anvil';
-      }
+      if (nameStr === 'vanta - something') return 'vanta';
+      if (nameStr === 'drift - something') return 'drift';
+      if (nameStr === 'prism - something') return 'prism';
+      if (nameStr === 'anvil - punch compressor') return 'anvil';
 
       // Try to extract token from name if it contains one
       var tokens = ['bundle', 'vanta', 'drift', 'prism', 'anvil'];
-      for (var i = 0; i < tokens.length; i++) {
-        if (name.indexOf(tokens[i]) !== -1) {
-          return tokens[i];
+      for (var i2 = 0; i2 < tokens.length; i2++) {
+        if (nameStr.indexOf(tokens[i2]) !== -1) {
+          return tokens[i2];
         }
       }
 
       // Unknown product, log and return null
       return null;
-    }
+    } catch (e) { return null; }
+  }
 
-    // Prune expired records from localStorage
-    function pruneExpiredRecords() {
-      try {
-        var raw = window.localStorage.getItem(BOUGHT_KEY);
-        if (!raw) return;
-        var parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+  // Prune expired records from localStorage
+  function pruneExpiredRecords() {
+    try {
+      var raw = window.localStorage.getItem(BOUGHT_KEY);
+      if (!raw) return;
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
 
-        var now = Date.now();
-        var changed = false;
-        for (var key in parsed) {
-          if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
-          var rec = parsed[key];
-          var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
-          var when = Number(isObj ? rec.t : rec);
-          if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
-            delete parsed[key];
-            changed = true;
-          }
+      var now = Date.now();
+      var changed = false;
+      for (var key in parsed) {
+        if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
+        var rec = parsed[key];
+        var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
+        var when = Number(isObj ? rec.t : rec);
+        if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
+          delete parsed[key];
+          changed = true;
         }
-        if (changed) {
-          window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(parsed));
-        }
-      } catch (e) {
-        // localStorage unavailable or corrupt, silently ignore
       }
+      if (changed) {
+        window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(parsed));
+      }
+    } catch (e) {
+      // localStorage unavailable or corrupt, silently ignore
     }
+  }
 
-    // Persist a returned checkout into the canonical BOUGHT_KEY and refresh the
-    // page-level bought-summary display. This is exported as a safe global so
-    // other scripts (plugin.js) can trigger the same behaviour without owning
-    // the storage logic.
-    function persistBought(order) {
-      if (!order) return;
-      var token = getProductToken(order.itemName, order.itemId);
-      if (!token) return;
+  // Persist a returned checkout into the canonical BOUGHT_KEY and refresh the
+  // page-level bought-summary display. This is exported as a safe global so
+  // other scripts (plugin.js) can trigger the same behaviour without owning
+  // the storage logic.
+  function persistBought(order) {
+    if (!order) return;
+    var token = getProductToken(order.itemName, order.itemId);
+    if (!token) return;
 
-      try {
-        var now = Date.now();
-        var bought = {};
+    try {
+      var now = Date.now();
+      var bought = {};
 
-        // Read existing records
-        var raw = window.localStorage.getItem(BOUGHT_KEY);
-        if (raw) {
-          try {
-            var parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-              bought = parsed;
-            }
-          } catch (e) {
-            // Corrupt data, start fresh
-          }
-        }
-
-        // Attempt to capture a delivery email from the platform, if present.
-        // Try several common fields and validate conservatively.
-        var email = '';
+      // Read existing records
+      var raw = window.localStorage.getItem(BOUGHT_KEY);
+      if (raw) {
         try {
-          var cand = '';
-          if (order && typeof order === 'object') {
-            cand = (order.email || order.buyerEmail || order.customerEmail || '');
-            if (cand && typeof cand === 'string') cand = cand.trim();
-            else cand = '';
+          var parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            bought = parsed;
           }
-          var EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-          var MAX_EMAIL_LEN = 128;
-          if (cand && EMAIL_RE.test(cand)) {
-            if (cand.length > MAX_EMAIL_LEN) cand = cand.slice(0, MAX_EMAIL_LEN);
-            email = cand;
-          }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+          // Corrupt data, start fresh
+        }
+      }
 
-        // Record this purchase
-        var rec = {
-          t: now,
-          ref: String(order.id || '').trim(),
-          state: 'paid'
-        };
-        if (email) rec.email = email;
-        bought[token] = rec;
+      // Attempt to capture a delivery email from the platform, if present.
+      // Try several common fields and validate conservatively.
+      var email = '';
+      try {
+        var cand = '';
+        if (order && typeof order === 'object') {
+          cand = (order.email || order.buyerEmail || order.customerEmail || '');
+          if (cand && typeof cand === 'string') cand = cand.trim();
+          else cand = '';
+        }
+        var EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+        var MAX_EMAIL_LEN = 128;
+        if (cand && EMAIL_RE.test(cand)) {
+          if (cand.length > MAX_EMAIL_LEN) cand = cand.slice(0, MAX_EMAIL_LEN);
+          email = cand;
+        }
+      } catch (e) { /* ignore */ }
 
-        // Write back to localStorage
-        window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(bought));
+      // Record this purchase
+      var rec = {
+        t: now,
+        ref: String(order.id || '').trim(),
+        state: 'paid'
+      };
+      if (email) rec.email = email;
 
-        // Refresh the purchase summary display immediately after recording
-        // Clear the bound() guard marker so initBoughtSummary() can re-run
-        var summaryEl = document.querySelector('[data-bought-summary]');
-        if (summaryEl) {
-          summaryEl.removeAttribute('data-ssp-bought-summary');
-          // Re-initialize and unhide the purchase summary if plugin.js is available
-          if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
-            window.SSPlugin.initBoughtSummary();
+      // Attempt to persist any installer/download URL the platform returned.
+      // We accept only explicit http(s) URLs to limit exposure to data: or
+      // relative links and to match plugin.js' extraction behaviour.
+      try {
+        var candUrl = '';
+        if (order && typeof order === 'object') {
+          candUrl = (order.downloadUrl || order.installerUrl || (order.installers && order.installers[0] && order.installers[0].url) || '') || '';
+          if (typeof candUrl === 'string') candUrl = candUrl.trim(); else candUrl = '';
+          if (candUrl && /^https?:\/\//i.test(candUrl)) {
+            rec.downloadUrl = candUrl;
           }
         }
+      } catch (e) { /* ignore URL extraction */ }
 
-        // Prune expired records
-        pruneExpiredRecords();
-      } catch (e) {
-        // localStorage unavailable or full, silently ignore
+      bought[token] = rec;
+
+      // Write back to localStorage
+      window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(bought));
+
+      // Refresh the purchase summary display immediately after recording
+      // Clear the bound() guard marker so initBoughtSummary() can re-run
+      var summaryEl = document.querySelector('[data-bought-summary]');
+      if (summaryEl) {
+        summaryEl.removeAttribute('data-ssp-bought-summary');
+        // Re-initialize and unhide the purchase summary if plugin.js is available
+        if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
+          window.SSPlugin.initBoughtSummary();
+        }
       }
+
+      // Prune expired records
+      pruneExpiredRecords();
+    } catch (e) {
+      // localStorage unavailable or full, silently ignore
     }
+  }
 
-    // Expose the small, defensive wrapper as a safe global. Other scripts may
-    // call this when they detect a returned checkout so the canonical storage
-    // logic here remains authoritative and per-page verification UI is not
-    // regressed.
-    try { window.soundshopPersistBought = persistBought; } catch (e) { /* ignore */ }
+  // Expose the small, defensive wrapper as a safe global. Other scripts may
+  // call this when they detect a returned checkout so the canonical storage
+  // logic here remains authoritative and per-page verification UI is not
+  // regressed.
+  try { window.soundshopPersistBought = persistBought; } catch (e) { /* ignore */ }
 
-    // Listen for the 'group-store:paid' event fired by the payment widget
-    document.addEventListener('group-store:paid', function (evt) {
-      var order = evt && evt.detail;
-      if (!order) return;
-      // Keep behaviour identical: persist the purchase into localStorage and
-      // refresh the summary. Delegate to the wrapper to avoid duplicating logic
-      // if possible.
-      try { persistBought(order); } catch (e) { /* ignore */ }
-    });
-  })();
-  </script>
+  // Listen for the 'group-store:paid' event fired by the payment widget
+  document.addEventListener('group-store:paid', function (evt) {
+    var order = evt && evt.detail;
+    if (!order) return;
+    // Keep behaviour identical: persist the purchase into localStorage and
+    // refresh the summary. Delegate to the wrapper to avoid duplicating logic
+    // if possible.
+    try { persistBought(order); } catch (e) { /* ignore */ }
+  });
+})();
+</script>
 
   <!-- Purchase summary for the shop page: what this browser remembers buying.
        Ships hidden; plugin.js will unhide it when purchases are remembered locally. -->
