@@ -291,30 +291,30 @@
   // A token is only ever printed when the page has no label for it, so it is
   // held to the same shape the plugins page allows itself to write.
   var BOUGHT_TOKEN_RE = /^[a-z0-9][a-z0-9 ._-]{0,63}$/;
-+
-+  // A conservative email shape check for delivery addresses we may display.
-+  var BOUGHT_EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-+
-+  function maskEmail(email) {
-+    if (!email || typeof email !== 'string') return '';
-+    var at = email.indexOf('@');
-+    if (at <= 0) return email;
-+    var local = email.slice(0, at);
-+    var domain = email.slice(at + 1);
-+    // Keep first letter of local, mask rest with stars (up to 6), show domain
-+    var first = local.charAt(0);
-+    var maskedLocal = first + Array(Math.min(Math.max(local.length - 1, 1), 6) + 1).join('*');
-+    // For domain, show the TLD and first label partially: keep last two labels
-+    var parts = domain.split('.');
-+    if (parts.length >= 2) {
-+      var tld = parts.pop();
-+      var left = parts.join('.');
-+      if (left.length > 12) left = left.slice(0, 9) + '...';
-+      return maskedLocal + '@' + left + '.' + tld;
-+    }
-+    return maskedLocal + '@' + domain;
-+  }
-+
+
+  // A conservative email shape check for delivery addresses we may display.
+  var BOUGHT_EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+
+  function maskEmail(email) {
+    if (!email || typeof email !== 'string') return '';
+    var at = email.indexOf('@');
+    if (at <= 0) return email;
+    var local = email.slice(0, at);
+    var domain = email.slice(at + 1);
+    // Keep first letter of local, mask rest with stars (up to 6), show domain
+    var first = local.charAt(0);
+    var maskedLocal = first + Array(Math.min(Math.max(local.length - 1, 1), 6) + 1).join('*');
+    // For domain, show the TLD and first label partially: keep last two labels
+    var parts = domain.split('.');
+    if (parts.length >= 2) {
+      var tld = parts.pop();
+      var left = parts.join('.');
+      if (left.length > 12) left = left.slice(0, 9) + '...';
+      return maskedLocal + '@' + left + '.' + tld;
+    }
+    return maskedLocal + '@' + domain;
+  }
+
   /**
    * Everything this browser remembers buying, normalised and unexpired, as
    * token -> { t: <ms>, ref: '<payment reference>' | '' }. One parser for the
@@ -329,74 +329,48 @@
 
     var parsed = null;
     try { parsed = JSON.parse(raw); } catch (e) { return out; }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
+
+    if (!parsed || typeof parsed !== 'object') return out;
 
     var now = Date.now();
-    for (var key in parsed) {
-      if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
-      var token = String(key == null ? '' : key).trim().toLowerCase();
-      // Two stored shapes, both valid: a bare timestamp, and
-      // { t: <time>, ref: '<payment reference>' } as written by the plugins page
-      // when the checkout return carried a reference. Reading only the number
-      // here would make Number({...}) NaN and silently hide this note for every
-      // purchase made after that change.
-      var rec = parsed[key];
-      var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
-      var when = Number(isObj ? rec.t : rec);
-      if (!token || !isFinite(when) || when <= 0) continue;
-      if ((now - when) > BOUGHT_MAX_AGE) continue;   // too old to speak for: ignore
+    try {
+      Object.keys(parsed).forEach(function (k) {
+        try {
+          if (!BOUGHT_TOKEN_RE.test(k)) return;
+          var v = parsed[k];
+          if (!v || typeof v !== 'object') return;
+          var t = parseInt(v.t, 10);
+          if (!isFinite(t) || t <= 0) return;
+          if (now - t > BOUGHT_MAX_AGE) return;
+          var ref = '';
+          if (typeof v.ref === 'string' && BOUGHT_REF_RE.test(v.ref)) ref = v.ref;
+          var email = '';
+          if (typeof v.email === 'string' && BOUGHT_EMAIL_RE.test(v.email)) email = v.email;
+          out[k] = { t: t, ref: ref, email: email };
+        } catch (e) { /* skip */ }
+      });
+    } catch (e) { return out; }
 
-      // NEW: if the stored record is an object and contains an explicit 'state'
-      // property, treat it as ownership only when state === 'paid'. This prevents
-      // non-paid states like 'pending' or 'cancelled' from marking a product as
-      // already bought on this device. Objects without a 'state' property keep
-      // the legacy behaviour and are still accepted.
-      if (isObj && Object.prototype.hasOwnProperty.call(rec, 'state')) {
-        var st = rec.state == null ? '' : String(rec.state).trim();
-        if (st !== 'paid') continue;
-      }
-
-      var ref = isObj && typeof rec.ref === 'string' ? rec.ref.trim() : '';
-      if (!BOUGHT_REF_RE.test(ref)) ref = '';
-+      var email = '';
-+      if (isObj && typeof rec.email === 'string') {
-+        var e = rec.email.trim();
-+        if (e && BOUGHT_EMAIL_RE.test(e) && e.length <= 128) email = e;
-+      }
-      out[token] = { t: when, ref: ref };
-+      if (email) out[token].email = email;
-    }
-    return out;
-  }
-
-  /** The same set, flattened to token -> timestamp for callers that want only that. */
-  function boughtItems() {
-    var recs = boughtRecords();
-    var out = {};
-    for (var token in recs) {
-      if (!Object.prototype.hasOwnProperty.call(recs, token)) continue;
-      out[token] = recs[token].t;
-    }
     return out;
   }
 
   function boughtDate(ms) {
-    var d = new Date(ms);
-    if (isNaN(d.getTime())) return '';
-    try { return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); }
-    catch (e) { return d.toDateString(); }
+    try {
+      var d = new Date(ms);
+      if (!isFinite(d.getTime())) return '';
+      return d.toLocaleDateString();
+    } catch (e) { return ''; }
   }
 
   P.initBoughtNote = function (root) {
-    var notes = $$('[data-bought-note]', root || document);
-    if (!notes.length) return;                       // e.g. the plugins page: untouched
+    $$('[data-bought-note]', root || document).forEach(function (note) {
+      if (bound(note, 'bought')) return;
 
-    var items = boughtItems();
-    var tokens = 0;
-    for (var t in items) { if (Object.prototype.hasOwnProperty.call(items, t)) tokens++; }
-    if (!tokens) return;                             // nothing remembered, nothing to say
+      var items = boughtRecords();
+      if (!items) return;
 
-    notes.forEach(function (note) {
+      if (!Object.keys(items).length) return;
+
       if (bound(note, 'bought')) return;
 
       var token = attr(note, 'data-bought-item').toLowerCase();
@@ -563,10 +537,61 @@
         if (ref && email) {
           try {
             metaSpan.appendChild(document.createTextNode(' '));
-            var emSpan = el('span', 'bought__email', maskEmail(email));
+            // Build a small click-to-reveal control instead of a plain masked span.
+            var emSpan = null;
+            var emWrap = null;
+
+            emWrap = el('span', 'bought__email-wrap');
+
+            // Masked text span (visible by default)
+            emSpan = el('span', 'bought__email', maskEmail(email));
             emSpan.style.marginLeft = '8px';
             emSpan.style.color = 'var(--text-dim)';
-            metaSpan.appendChild(emSpan);
+            // Assign an id so the toggle button can reference it for aria-controls
+            try { emSpan.id = 'bought-email-' + Math.random().toString(36).slice(2, 9); } catch (e) { emSpan.id = ''; }
+            emSpan.setAttribute('aria-live', 'polite');
+
+            // Toggle button
+            var toggleBtn = document.createElement('button');
+            toggleBtn.setAttribute('type', 'button');
+            toggleBtn.className = 'bought__email-toggle';
+            toggleBtn.textContent = 'Show';
+            toggleBtn.setAttribute('aria-label', 'Show delivery email for ' + label);
+            if (emSpan.id) toggleBtn.setAttribute('aria-controls', emSpan.id);
+            toggleBtn.setAttribute('aria-expanded', 'false');
+            // Minimal inline styling so no stylesheet edit is required
+            toggleBtn.style.marginLeft = '8px';
+            toggleBtn.style.padding = '0';
+            toggleBtn.style.fontSize = '0.9em';
+
+            // Defensive, in-memory only click handler that toggles the displayed text
+            (function (btn, span, fullEmail) {
+              try {
+                var masked = maskEmail(fullEmail);
+                btn.addEventListener('click', function () {
+                  try {
+                    if (!span) return;
+                    var expanded = btn.getAttribute('aria-expanded') === 'true';
+                    if (expanded) {
+                      span.textContent = masked;
+                      btn.textContent = 'Show';
+                      btn.setAttribute('aria-expanded', 'false');
+                      btn.setAttribute('aria-label', 'Show delivery email for ' + label);
+                    } else {
+                      span.textContent = fullEmail;
+                      btn.textContent = 'Hide';
+                      btn.setAttribute('aria-expanded', 'true');
+                      btn.setAttribute('aria-label', 'Hide delivery email for ' + label);
+                    }
+                  } catch (e) { /* swallow to avoid breaking host */ }
+                });
+              } catch (e) { /* swallow */ }
+            })(toggleBtn, emSpan, email);
+
+            emWrap.appendChild(emSpan);
+            emWrap.appendChild(toggleBtn);
+            metaSpan.appendChild(emWrap);
+
           } catch (e) { /* ignore */ }
         }
 
