@@ -292,7 +292,46 @@
         try { recs = JSON.parse(attr(host, 'data-bought-summary') || 'null'); } catch (e) { recs = null; }
         recs = recs || {};
 
-        var list = host.querySelector('[data-bought-list]') || host;
+        // If there are no records supplied in the attribute, fall back to the
+        // localStorage snapshot written by the shop page's purchase listener.
+        try {
+          if (!Object.keys(recs).length && window.localStorage && typeof window.localStorage.getItem === 'function') {
+            var BOUGHT_KEY = 'soundshop:bought:v1';
+            var raw = window.localStorage.getItem(BOUGHT_KEY);
+            if (raw) {
+              try {
+                var parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                  var labelsSpan = host.querySelector('[data-bought-summary-labels]');
+                  Object.keys(parsed).forEach(function (tok) {
+                    try {
+                      var p = parsed[tok];
+                      var rec = {};
+                      if (typeof p === 'number' || (typeof p === 'string' && /^\d+$/.test(p))) {
+                        rec.t = Number(p);
+                      } else if (p && typeof p === 'object') {
+                        if (p.t) rec.t = Number(p.t);
+                        if (p.ref) rec.ref = String(p.ref);
+                        if (p.email) rec.email = String(p.email);
+                      }
+                      if (labelsSpan) {
+                        try {
+                          var lab = labelsSpan.getAttribute('data-bought-label-' + tok);
+                          if (lab) rec.label = String(lab);
+                        } catch (e) { /* ignore */ }
+                      }
+                      if ((rec.t && isFinite(rec.t)) || rec.ref || rec.email) {
+                        recs[tok] = rec;
+                      }
+                    } catch (e) { /* ignore per-item */ }
+                  });
+                }
+              } catch (e) { /* ignore parse errors */ }
+            }
+          }
+        } catch (e) { /* ignore localStorage access errors */ }
+
+        var list = host.querySelector('[data-bought-summary-list]') || host;
 
         var validCount = 0;
         Object.keys(recs).forEach(function (k) {
@@ -467,7 +506,7 @@
         if (!host) return;
 
         // Prefer appending to an explicit list container when present
-        var list = host.querySelector('[data-bought-list]') || host;
+        var list = host.querySelector('[data-bought-summary-list]') || host;
 
         var c = document.createElement('div');
         c.className = 'bought__cta';
