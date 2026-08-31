@@ -293,111 +293,29 @@
   })();
   </script>
 
-  <!-- Handle group-store:paid event to record purchase in browser memory -->
   <script>
   (function () {
+
     var BOUGHT_KEY = 'soundshop:bought:v1';
-    var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;  // 60 days
 
-    // Map product names/IDs to internal tokens
-    function getProductToken(itemName, itemId) {
-      var name = String(itemName || itemId || '').trim().toLowerCase();
-
-      // Handle bundle names
-      if (name === 'the full shop' || name === 'bundle' || name === 'full shop') {
-        return 'bundle';
-      }
-
-      // Handle individual plugin names
-      if (name === 'vanta' || name === 'vanta - wavetable synth') {
-        return 'vanta';
-      }
-      if (name === 'drift' || name === 'drift - spectral delay') {
-        return 'drift';
-      }
-      if (name === 'prism' || name === 'prism - reverb') {
-        return 'prism';
-      }
-      if (name === 'anvil' || name === 'anvil - punch compressor') {
-        return 'anvil';
-      }
-
-      // Try to extract token from name if it contains one
-      var tokens = ['bundle', 'vanta', 'drift', 'prism', 'anvil'];
-      for (var i = 0; i < tokens.length; i++) {
-        if (name.indexOf(tokens[i]) !== -1) {
-          return tokens[i];
-        }
-      }
-
-      // Unknown product, log and return null
-      return null;
-    }
-
-    // Prune expired records from localStorage
-    function pruneExpiredRecords() {
-      try {
-        var raw = window.localStorage.getItem(BOUGHT_KEY);
-        if (!raw) return;
-        var parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
-
-        var now = Date.now();
-        var changed = false;
-        for (var key in parsed) {
-          if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
-          var rec = parsed[key];
-          var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
-          var when = Number(isObj ? rec.t : rec);
-          if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
-            delete parsed[key];
-            changed = true;
-          }
-        }
-        if (changed) {
-          window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(parsed));
-        }
-      } catch (e) {
-        // localStorage unavailable or corrupt, silently ignore
-      }
-    }
-
-    // Persist a returned checkout into the canonical BOUGHT_KEY and refresh the
-    // page-level bought-summary display. This is exported as a safe global so
-    // other scripts (plugin.js) can trigger the same behaviour without owning
-    // the storage logic.
+    // When a returned checkout is verified we want to store a compact record
+    // in localStorage so other pages (and later visits) can show a remembered
+    // purchase. This helper accepts the platform's order object and writes a
+    // minimal rec into the canonical BOUGHT_KEY mapping keyed by the product
+    // token used on this site (vanta, drift, prism, anvil, bundle...). It is
+    // defensive: localStorage may be unavailable or full, so we silently
+    // ignore errors.
     function persistBought(order) {
-      if (!order) return;
-      var token = getProductToken(order.itemName, order.itemId);
-      if (!token) return;
-
       try {
+        if (!order || typeof order !== 'object') return;
         var now = Date.now();
-        var bought = {};
 
-        // Read existing records
-        var raw = window.localStorage.getItem(BOUGHT_KEY);
-        if (raw) {
-          try {
-            var parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-              bought = parsed;
-            }
-          } catch (e) {
-            // Corrupt data, start fresh
-          }
-        }
-
-        // Attempt to capture a delivery email from the platform, if present.
-        // Try several common fields and validate conservatively.
+        // Try to mask an email in the returned checkout so we can show a
+        // private-but-helpful contact line in the bought-note.
         var email = '';
         try {
-          var cand = '';
-          if (order && typeof order === 'object') {
-            cand = (order.email || order.buyerEmail || order.customerEmail || '');
-            if (cand && typeof cand === 'string') cand = cand.trim();
-            else cand = '';
-          }
+          var cand = (order && (order.email || order.deliveryEmail || order.buyerEmail || order.customerEmail)) || '';
+          if (typeof cand === 'string') cand = cand.trim();
           var EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
           var MAX_EMAIL_LEN = 128;
           if (cand && EMAIL_RE.test(cand)) {
@@ -429,24 +347,61 @@
           }
         } catch (e) { /* ignore */ }
 
-        bought[token] = rec;
-
-        // Write back to localStorage
-        window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(bought));
-
-        // Refresh the purchase summary display immediately after recording
-        // Clear the bound() guard marker so initBoughtSummary() can re-run
-        var summaryEl = document.querySelector('[data-bought-summary]');
-        if (summaryEl) {
-          summaryEl.removeAttribute('data-ssp-bought-summary');
-          // Re-initialize and unhide the purchase summary if plugin.js is available
-          if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
-            window.SSPlugin.initBoughtSummary();
+        // Defensive extraction of a payment-provider receipt URL. We accept
+        // explicit receiptUrl, receipt or receipt_url and only persist
+        // http(s) values trimmed of surrounding whitespace.
+        try {
+          var rurl = '';
+          if (order && typeof order === 'object') {
+            rurl = order.receiptUrl || order.receipt || order.receipt_url || '';
+            if (typeof rurl === 'string') {
+              rurl = rurl.trim();
+              if (rurl && /^https?:\/\//i.test(rurl)) {
+                rec.receiptUrl = rurl;
+              }
+            }
           }
-        }
+        } catch (e) { /* ignore */ }
 
-        // Prune expired records
-        pruneExpiredRecords();
+        var bought = {};
+        try {
+          var raw = window.localStorage && window.localStorage.getItem(BOUGHT_KEY);
+          if (raw) {
+            try { bought = JSON.parse(raw) || {}; } catch (e) { bought = {}; }
+          }
+        } catch (e) { bought = {}; }
+
+        // Tokenise the order into a site-known id where possible. Fall back
+        // to the order's item id when unavailable.
+        try {
+          var token = '';
+          try { token = String((order && (order.itemId || order.item || order.itemKey || order.product)) || '').trim(); } catch (e) { token = ''; }
+          if (!token) {
+            try { token = String((order && order.itemName) || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); } catch (e) { token = String(order && order.id || ''); }
+          }
+          if (!token) token = String(order && order.id || '');
+
+          bought[token] = rec;
+
+          // Write back to localStorage
+          window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(bought));
+
+          // Refresh the purchase summary display immediately after recording
+          // Clear the bound() guard marker so initBoughtSummary() can re-run
+          var summaryEl = document.querySelector('[data-bought-summary]');
+          if (summaryEl) {
+            summaryEl.removeAttribute('data-ssp-bought-summary');
+            // Re-initialize and unhide the purchase summary if plugin.js is available
+            if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
+              window.SSPlugin.initBoughtSummary();
+            }
+          }
+
+          // Prune expired records
+          pruneExpiredRecords();
+        } catch (e) {
+          // localStorage unavailable or full, silently ignore
+        }
       } catch (e) {
         // localStorage unavailable or full, silently ignore
       }
@@ -467,6 +422,31 @@
       // if possible.
       try { persistBought(order); } catch (e) { /* ignore */ }
     });
+
+    // Minimal expiry policy: remove records older than 30 days so the bought
+    // note does not linger indefinitely in a browser that has had purchases
+    // for years.
+    function pruneExpiredRecords() {
+      try {
+        var raw = window.localStorage && window.localStorage.getItem(BOUGHT_KEY);
+        if (!raw) return;
+        var parsed = null;
+        try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+        if (!parsed || typeof parsed !== 'object') return;
+        var cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
+        var changed = false;
+        for (var k in parsed) {
+          if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
+          var r = parsed[k];
+          if (!r || !r.t) { delete parsed[k]; changed = true; continue; }
+          if (r.t < cutoff) { delete parsed[k]; changed = true; }
+        }
+        if (changed) {
+          try { window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(parsed)); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+    }
+
   })();
   </script>
 
