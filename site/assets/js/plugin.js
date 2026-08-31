@@ -206,6 +206,117 @@
     } catch (e) { return ''; }
   }
 
+  // Persisted purchases: canonical localStorage key and helpers.
+  var BOUGHT_KEY = 'soundshop:bought:v1';
+  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
+
+  // Map product names/IDs to internal tokens (kept small and defensive).
+  function getProductToken(itemName, itemId) {
+    try {
+      var name = String(itemName || itemId || '').trim().toLowerCase();
+    } catch (e) { return null; }
+
+    if (!name) return null;
+
+    // Handle bundle names
+    if (name === 'the full shop' || name === 'bundle' || name === 'full shop') {
+      return 'bundle';
+    }
+
+    // Individual plugin names (allow some common variants)
+    if (name === 'vanta' || name === 'vanta - wavetable synth' || name.indexOf('vanta') !== -1) return 'vanta';
+    if (name === 'drift' || name === 'drift - spectral delay' || name.indexOf('drift') !== -1) return 'drift';
+    if (name === 'prism' || name === 'prism - reverb' || name.indexOf('prism') !== -1) return 'prism';
+    if (name === 'anvil' || name === 'anvil - punch compressor' || name.indexOf('anvil') !== -1) return 'anvil';
+
+    // Fallback: look for known tokens anywhere in the string
+    var tokens = ['bundle', 'vanta', 'drift', 'prism', 'anvil'];
+    for (var i = 0; i < tokens.length; i++) {
+      if (name.indexOf(tokens[i]) !== -1) return tokens[i];
+    }
+
+    return null;
+  }
+
+  // Prune expired records from localStorage bought:v1 map.
+  function pruneExpiredRecords() {
+    try {
+      if (!window.localStorage) return;
+      var raw = window.localStorage.getItem(BOUGHT_KEY);
+      if (!raw) return;
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+
+      var now = Date.now();
+      var changed = false;
+      for (var key in parsed) {
+        if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
+        var rec = parsed[key];
+        var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
+        var when = Number(isObj ? rec.t : rec);
+        if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
+          delete parsed[key];
+          changed = true;
+        }
+      }
+      if (changed) {
+        try { window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(parsed)); } catch (e) { /* ignore */ }
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // Persist a minimal normalized record for a returned checkout so that
+  // plugin.initBoughtSummary() can show it after a reload.
+  function persistBoughtRecord(det, rawOrder) {
+    try {
+      if (!det || typeof det !== 'object') return;
+      var token = getProductToken(det.itemName || det.name || '', (rawOrder && rawOrder.itemId) || det.itemId || det.id || '');
+      if (!token) return;
+
+      var now = Date.now();
+      var bought = {};
+
+      try {
+        var raw = window.localStorage && window.localStorage.getItem(BOUGHT_KEY);
+        if (raw) {
+          try {
+            var parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              bought = parsed;
+            }
+          } catch (e) { /* corrupt, start fresh */ }
+        }
+      } catch (e) { /* localStorage inaccessible */ }
+
+      var rec = {
+        t: now,
+        ref: String(det.id || det.ref || '').trim(),
+        state: 'paid'
+      };
+      if (det.email) rec.email = String(det.email).trim();
+
+      try { bought[token] = rec; } catch (e) { /* ignore */ }
+
+      try { window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(bought)); } catch (e) { /* ignore */ }
+
+      // Refresh UI immediately so the summary appears without a reload.
+      try {
+        pruneExpiredRecords();
+      } catch (e) { /* ignore */ }
+
+      try {
+        var summaryEl = document.querySelector('[data-bought-summary]');
+        if (summaryEl) {
+          try { summaryEl.removeAttribute('data-ssp-bought-summary'); } catch (e) { /* ignore */ }
+          if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
+            try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
+          }
+        }
+      } catch (e) { /* ignore */ }
+
+    } catch (e) { /* quietly ignore any storage failure */ }
+  }
+
   /**
    * Render a small action area to let the user either download installers
    * directly (when we have a verified direct URL) or contact Support /
@@ -252,112 +363,45 @@
 
       try { host.setAttribute('data-ssp-bought-cta', 'on'); } catch (e) { /* ignore */ }
 
-      // Helper to create a download anchor and append it
-      function makeDownloadAnchor(href) {
+      // Helper to construct a download anchor inside host
+      function makeDownloadAnchor(url) {
         try {
+          if (!url) return;
           var a = document.createElement('a');
           a.className = 'bought__cta';
-          a.setAttribute('href', href);
-          a.setAttribute('target', '_blank');
-          a.setAttribute('rel', 'noopener noreferrer');
+          a.setAttribute('href', url);
+          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
           a.textContent = 'Download installers';
-          try { host.appendChild(a); } catch (e) { /* ignore */ }
-          return a;
-        } catch (e) { return null; }
+          host.appendChild(a);
+        } catch (e) { /* ignore */ }
       }
 
-      // Helper to create a support link; if an order id is given include it
-      function makeSupportLink(id) {
-        try {
-          var s = document.createElement('a');
-          s.className = 'bought__cta';
-          s.setAttribute('href', 'docs.html#support');
-          s.setAttribute('rel', 'noopener noreferrer');
-          s.textContent = id ? ('Contact Support (order ' + String(id) + ')') : 'Contact Support';
-          try { host.appendChild(s); } catch (e) { /* ignore */ }
-          return s;
-        } catch (e) { return null; }
-      }
-
-      // If we have a detail with a downloadUrl, validate it and render link
+      // If caller provided a verified URL, show direct link
       try {
-        if (detail && extractDownloadUrl(detail)) {
-          try { makeDownloadAnchor(extractDownloadUrl(detail)); } catch (e) { /* ignore */ }
-          return;
+        var durl = extractDownloadUrl(detail);
+        if (durl) {
+          try { makeDownloadAnchor(durl); return; } catch (e) { /* ignore */ }
         }
       } catch (e) { /* ignore */ }
 
-      // No direct URL: if we have an id and the platform verifier exists,
-      // build a compact "Check order" button so the user can trigger a verify
-      // for that single order. This is defensive and idempotent.
+      // Otherwise show a small support / verify action area.
       try {
-        // Build compact button
-        var checkBtn = document.createElement('button');
-        checkBtn.setAttribute('type', 'button');
-        checkBtn.className = 'bought__check';
-        checkBtn.textContent = 'Check order';
-        checkBtn.style.marginLeft = '8px';
-        checkBtn.setAttribute('aria-pressed', 'false');
+        var wrap = document.createElement('div');
+        wrap.className = 'bought__cta-wrap';
 
-        // Guard so we don't bind twice
-        if (checkBtn.getAttribute('data-ssp-verify') !== 'on') {
-          checkBtn.setAttribute('data-ssp-verify', 'on');
+        var contact = document.createElement('a');
+        contact.className = 'bought__cta';
+        contact.setAttribute('href', 'docs.html#support');
+        contact.textContent = 'Contact Support';
+        wrap.appendChild(contact);
 
-          (function (btn, liNode, hostNode, det) {
-            try {
-              btn.addEventListener('click', function () {
-                try {
-                  // Disable repeated clicks while working
-                  try { btn.disabled = true; } catch (e) { /* ignore */ }
+        try { host.appendChild(wrap); } catch (e) { /* ignore */ }
 
-                  // If the platform verification API is unavailable,
-                  // show unavailable state and fall back to generic CTA
-                  if (typeof window.groupStoreVerify !== 'function') {
-                    try { btn.textContent = 'Check order (unavailable)'; } catch (e) { /* ignore */ }
-                    try { createBoughtCta(hostNode, null); } catch (e) { /* ignore */ }
-                    return;
-                  }
-
-                  // Try to call the platform verifier. It must return a
-                  // promise; otherwise treat as unavailable.
-                  var p = null;
-                  try { p = window.groupStoreVerify(String(det.id)); } catch (e) { p = null; }
-                  if (!p || typeof p.then !== 'function') {
-                    try { btn.textContent = 'Check order (unavailable)'; } catch (e) { /* ignore */ }
-                    try { createBoughtCta(hostNode, null); } catch (e) { /* ignore */ }
-                    return;
-                  }
-
-                  // Await verification result and extract a download URL
-                  p.then(function (order) {
-                    try {
-                      var found = null;
-                      try { found = extractDownloadUrl(order); } catch (e) { found = null; }
-                      if (found) {
-                        try {
-                          det.downloadUrl = found;
-                          createBoughtCta(liNode, det);
-                        } catch (e) { /* ignore */ }
-                      } else {
-                        try { createBoughtCta(hostNode, null); } catch (e) { /* ignore */ }
-                      }
-                    } catch (e) { try { createBoughtCta(hostNode, null); } catch (er) { /* ignore */ } }
-                  }).catch(function () { try { createBoughtCta(hostNode, null); } catch (e) { /* ignore */ } });
-
-                } catch (e) { /* ignore click handler */ }
-              });
-            } catch (e) { /* ignore binding */ }
-          })(checkBtn, li, host, detail);
-
-          // Append the button into the meta area so it appears inline
-          try { host.appendChild(checkBtn); } catch (e) { /* ignore */ }
-
-        }
-
-      } catch (e) { /* ignore per-item verify UI errors */ }
+      } catch (e) { /* ignore */ }
 
     } catch (e) { /* ignore */ }
-  };
+  }
 
   /**
    * Normalise a platform-supplied order object into the record shape used
@@ -387,6 +431,9 @@
     try {
       var det = P._normalisePaidDetail(order);
       if (!det) return;
+
+      // Persist this returned checkout into localStorage so it survives reloads
+      try { persistBoughtRecord(det, order); } catch (e) { /* ignore */ }
 
       // Reveal and populate any [data-bought-note] hosts
       try {
