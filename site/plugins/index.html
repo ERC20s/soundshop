@@ -240,7 +240,7 @@
     var BASE = "https://d8a.com";
     var GROUP = "batch-synthshop";
     var esc = function (s) {
-      return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+      return String(s).replace(/[&<>\"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
     };
     var el = document.getElementById("group-store");
     // The handshake: an order id is only proof once the platform says so.
@@ -435,7 +435,7 @@
     <ul data-bought-summary-list></ul>
     <p class="muted">A note in a browser is never proof of payment; the receipt from the payment provider
       is. If a purchase you made is missing here, that only means this browser has forgotten it — the
-      receipt still stands, and <a href="docs.html#support">Support</a> can find the order from it.</p>
+      receipt still stands, and <a href="docs.html#support">Support</a> can find the order from it. To get the installer or licence now, follow the delivery email we sent or visit the installation page (docs.html#installation); if something is missing, quote your payment reference on our Support page (docs.html#support).</p>
     <span hidden data-bought-summary-labels
           data-bought-label-vanta="VANTA"
           data-bought-label-drift="DRIFT"
@@ -460,4 +460,4 @@
   </section>
 
   <nav class="subnav" aria-label="On this page" data-section-nav data
-... (remaining unchanged)
+  ...
