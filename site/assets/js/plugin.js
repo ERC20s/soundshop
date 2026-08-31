@@ -502,49 +502,6 @@
                       } catch (e) { /* ignore */ }
                     });
                   } catch (e) { /* ignore */ }
-                })(emSpanNoRef, revealBtnNoRef, email);
-
-              } catch (e) { metaSpan.appendChild(document.createTextNode('Delivery email: ' + maskEmail(email))); }
-            } else if (norefMsg) {
-              if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-              metaSpan.appendChild(document.createTextNode(norefMsg));
-            }
-
-            if (ref && email) {
-              try {
-                metaSpan.appendChild(document.createTextNode(' '));
-                var emSpan = el('span', 'bought__email', maskEmail(email));
-                emSpan.style.marginLeft = '8px';
-                emSpan.style.color = 'var(--text-dim)';
-                metaSpan.appendChild(emSpan);
-
-                var revealBtn = document.createElement('button');
-                revealBtn.setAttribute('type', 'button');
-                revealBtn.className = 'bought__reveal';
-                revealBtn.setAttribute('aria-pressed', 'false');
-                revealBtn.textContent = 'Show';
-                revealBtn.style.marginLeft = '8px';
-                metaSpan.appendChild(revealBtn);
-
-                (function (node, btn, fullEmail) {
-                  try {
-                    btn.addEventListener('click', function () {
-                      try {
-                        var revealed = btn.getAttribute('data-revealed') === '1';
-                        if (revealed) {
-                          node.textContent = maskEmail(fullEmail);
-                          btn.textContent = 'Show';
-                          btn.setAttribute('aria-pressed', 'false');
-                          btn.setAttribute('data-revealed', '0');
-                        } else {
-                          node.textContent = fullEmail;
-                          btn.textContent = 'Hide';
-                          btn.setAttribute('aria-pressed', 'true');
-                          btn.setAttribute('data-revealed', '1');
-                        }
-                      } catch (e) { /* ignore */ }
-                    });
-                  } catch (e) { /* ignore */ }
                 })(emSpan, revealBtn, email);
 
               } catch (e) { /* ignore */ }
@@ -599,14 +556,19 @@
         a1.href = 'docs.html#delivery';
         a1.textContent = 'Open installers & delivery instructions';
         a1.className = 'bought__cta-primary';
-        a1.setAttribute('role', 'button');
+        // Make this a normal link that opens in a new tab for predictability
+        try {
+          a1.setAttribute('target', '_blank');
+          a1.setAttribute('rel', 'noopener noreferrer');
+          a1.setAttribute('aria-label', a1.textContent + ' (opens in a new tab)');
+        } catch (e) { /* ignore environments that forbid setting attributes */ }
         a1.style.marginRight = '12px';
 
         var a2 = document.createElement('a');
         a2.href = 'docs.html#support';
         a2.textContent = 'Contact support';
         a2.className = 'bought__cta-secondary';
-        a2.setAttribute('role', 'button');
+        // Leave a2 as a plain link (do not use role="button")
 
         c.appendChild(a1);
         c.appendChild(a2);
@@ -615,26 +577,16 @@
         try { list.appendChild(c); } catch (e) { /* ignore DOM errors */ }
         try { host.setAttribute('data-bought-verified', '1'); } catch (e) { /* ignore */ }
 
+        // Attempt a safe asynchronous focus on the primary link so keyboard and
+        // assistive users land directly on the new control. Swallow any errors.
+        try {
+          setTimeout(function () {
+            try { if (a1 && typeof a1.focus === 'function') a1.focus(); } catch (e) { /* ignore */ }
+          }, 0);
+        } catch (e) { /* ignore */ }
+
       } catch (e) { /* swallow listener errors */ }
     });
   } catch (e) { /* ignore if addEventListener not available */ }
-
-  // Auto-run on load
-  P.init = function () {
-    P.initDemoSlot();
-    P.initPresetTeaser();
-    P.initSectionNav();
-    P.initTabs();
-    P.initCounters();
-    P.initBoughtNote();
-    P.initBoughtSummary();
-  };
-
-  // Run when DOM is ready
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    setTimeout(P.init, 0);
-  } else {
-    document.addEventListener('DOMContentLoaded', P.init);
-  }
 
 })(window, document);
