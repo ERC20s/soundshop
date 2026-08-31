@@ -252,116 +252,70 @@
 
       try { host.setAttribute('data-ssp-bought-cta', 'on'); } catch (e) { /* ignore */ }
 
-      // Helper to create or find a .bought__cta-wrap inside host so both
-      // anchor and button variants are always kept in the same container.
-      function getOrMakeWrap() {
-        try {
-          var existingWrap = null;
-          try { existingWrap = host.querySelector('.bought__cta-wrap'); } catch (e) { existingWrap = null; }
-          if (existingWrap) return existingWrap;
-          var nw = document.createElement('div');
-          nw.className = 'bought__cta-wrap';
-          try { host.appendChild(nw); } catch (e) { /* ignore */ }
-          return nw;
-        } catch (e) { return null; }
-      }
-
-      // Helper to create a download anchor inside the host when we have a
-      // verified installer URL.
-      function makeDownloadAnchor(url) {
-        try {
-          if (!url) return;
-          var a = document.createElement('a');
-          a.className = 'bought__cta';
-          try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
-          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-          try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-          // Ensure a wrapper is present and append the anchor into it so the
-          // layout matches the button fallback and replace logic can find it.
-          var wrap = getOrMakeWrap();
-          try {
-            if (wrap) wrap.appendChild(a);
-            else host.appendChild(a);
-          } catch (e) { /* ignore */ }
-        } catch (e) { /* ignore */ }
-      }
-
-      // Helper to create a Contact Support / Check order fallback when no
-      // verified installer URL is known. This provides the per-item "Check
-      // order" button that lets buyers verify an order and surface installers.
-      function makeSupportButton(id) {
-        try {
-          var wrap = getOrMakeWrap();
-          if (!wrap) return;
-          // Avoid creating duplicate buttons when this helper is called more than once
-          var existingBtn = null;
-          try { existingBtn = wrap.querySelector('.bought__cta'); } catch (e) { existingBtn = null; }
-          if (existingBtn) return;
-
-          var btn = document.createElement('button');
-          btn.className = 'bought__cta';
-          btn.setAttribute('type', 'button');
-          try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ }
-          try {
-            btn.addEventListener('click', function () {
-              try {
-                if (!id) {
-                  // If we don't have an id, open support docs
-                  try { window.location.href = 'docs.html#support'; } catch (e) { /* ignore */ }
-                  return;
-                }
-
-                // Avoid hammering the platform: do nothing if verify is absent
-                if (typeof window.groupStoreVerify !== 'function') {
-                  try { window.location.href = 'docs.html#support'; } catch (e) { /* ignore */ }
-                  return;
-                }
-
-                var p = null;
-                try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
-                if (!p || typeof p.then !== 'function') return;
-                btn.textContent = 'Checking\u2026';
-                p.then(function (order) {
-                  try {
-                    var vdet = P._normalisePaidDetail(order);
-                    if (!vdet) {
-                      try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ }
-                      return;
-                    }
-                    // If a downloadUrl was discovered, update UI
-                    if (vdet.downloadUrl) {
-                      try {
-                        // Replace button with a proper download anchor
-                        var a = document.createElement('a');
-                        a.className = 'bought__cta';
-                        try { a.setAttribute('href', vdet.downloadUrl); } catch (e) { /* ignore */ }
-                        try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-                        try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-                        try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-                        try { wrap.replaceChild(a, btn); } catch (e) { /* ignore */ }
-                      } catch (e) { /* ignore */ }
-                    } else {
-                      try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ }
-                    }
-                  } catch (e) { /* ignore */ }
-                }).catch(function () { try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ } });
-              } catch (e) { /* ignore click handler */ }
-            });
-          } catch (e) { /* ignore event wiring */ }
-          try { wrap.appendChild(btn); } catch (e) { /* ignore */ }
-        } catch (e) { /* ignore */ }
-      }
-
-      // Decide which CTA to render immediately
+      // Helper to c
       try {
-        if (detail && extractDownloadUrl(detail)) {
-          makeDownloadAnchor(extractDownloadUrl(detail));
-        } else {
-          var id = detail && detail.id ? String(detail.id) : '';
-          makeSupportButton(id);
+        var wrap = document.createElement('span');
+        wrap.className = 'bought__cta-wrap';
+
+        function makeDownloadAnchor(url) {
+          try {
+            var a = document.createElement('a');
+            a.className = 'bought__cta';
+            try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
+            try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+            try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+            try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
+            try { wrap.appendChild(a); } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore */ }
         }
-      } catch (e) { /* ignore */ }
+
+        function makeSupportButton(id) {
+          try {
+            var btn = document.createElement('button');
+            btn.setAttribute('type', 'button');
+            btn.className = 'bought__cta';
+            btn.textContent = 'Check order';
+            try { btn.setAttribute('data-ssp-check-order-id', String(id || '')); } catch (e) { /* ignore */ }
+
+            try {
+              btn.addEventListener('click', function () {
+                try {
+                  btn.textContent = 'Checking…';
+                  if (!id || !window.groupStoreVerify) { btn.textContent = 'Contact Support'; return; }
+                  var p = null;
+                  try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
+                  if (!p || typeof p.then !== 'function') { btn.textContent = 'Contact Support'; return; }
+                  p.then(function (order) {
+                    try {
+                      var vdet = P._normalisePaidDetail(order);
+                      if (vdet && vdet.downloadUrl) {
+                        try { var a = document.createElement('a'); a.className = 'bought__cta'; a.setAttribute('href', vdet.downloadUrl); a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); a.textContent = 'Download installers'; wrap.replaceChild(a, btn); } catch (e) { /* ignore */ }
+                      } else {
+                        try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ }
+                      }
+                    } catch (e) { /* ignore */ }
+                  }).catch(function () { try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ } });
+                } catch (e) { /* ignore click handler */ }
+              });
+            } catch (e) { /* ignore event wiring */ }
+            try { wrap.appendChild(btn); } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore */ }
+        }
+
+        // Decide which CTA to render immediately
+        try {
+          if (detail && extractDownloadUrl(detail)) {
+            makeDownloadAnchor(extractDownloadUrl(detail));
+          } else {
+            var id = detail && detail.id ? String(detail.id) : '';
+            makeSupportButton(id);
+          }
+        } catch (e) { /* ignore */ }
+
+        try { host.appendChild(wrap); } catch (e) { /* ignore append errors */ }
+      } catch (e) {
+        // ignore
+      }
     } catch (e) {
       // ignore
     }
@@ -408,6 +362,68 @@
         try { host.appendChild(meta); } catch (e) { /* ignore append errors */ }
       } catch (e) { /* ignore building errors */ }
 
+    } catch (e) { /* ignore */ }
+  }
+
+  /**
+   * Render a small, accessible "Clear this note" button inside a
+   * data-bought-note host so visitors can remove the local remembered-purchase
+   * record without opening devtools. Behaviour is defensive and idempotent:
+   *  - Guards with data-ssp-bought-clear to avoid duplication
+   *  - Attempts to remove canonical storage keys (soundshop:bought:v1 and
+   *    legacy soundshop.bought) in a try/catch
+   *  - Clears guard attributes on in-page bought hosts so P.initBoughtSummary
+   *    and P.initBoughtNote can re-run, falling back to location.reload()
+   */
+  function createBoughtClear(host) {
+    try {
+      if (!host || !host.appendChild) return;
+      try { if (host.getAttribute('data-ssp-bought-clear') === 'on') return; } catch (e) { /* ignore */ }
+      try { host.setAttribute('data-ssp-bought-clear', 'on'); } catch (e) { /* ignore */ }
+
+      var btn = document.createElement('button');
+      try { btn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+      btn.className = 'bought__clear';
+      btn.textContent = 'Clear this note';
+      try { btn.setAttribute('title', 'Clear this note'); btn.setAttribute('aria-label', 'Clear this note'); } catch (e) { /* ignore */ }
+
+      try {
+        btn.addEventListener('click', function () {
+          try {
+            // Remove canonical and legacy keys if possible
+            try { if (window.localStorage && typeof window.localStorage.removeItem === 'function') { window.localStorage.removeItem('soundshop:bought:v1'); } } catch (e) { /* ignore */ }
+            try { if (window.localStorage && typeof window.localStorage.removeItem === 'function') { window.localStorage.removeItem('soundshop.bought'); } } catch (e) { /* ignore */ }
+
+            // Remove in-page guard attributes so initialisers can re-run
+            try {
+              $$('[data-bought-note]').forEach(function (h) {
+                try { h.removeAttribute('data-ssp-paid-ref'); } catch (e) { /* ignore */ }
+                try { h.removeAttribute('data-ssp-bought-cta'); } catch (e) { /* ignore */ }
+                try { h.removeAttribute('data-ssp-bought-clear'); } catch (e) { /* ignore */ }
+              });
+              $$('[data-bought-summary]').forEach(function (h) {
+                try {
+                  var items = h.querySelectorAll('[data-ssp-paid-id]');
+                  Array.prototype.slice.call(items).forEach(function (it) { try { it.removeAttribute('data-ssp-paid-id'); } catch (e) { /* ignore */ } });
+                  try { h.removeAttribute('data-ssp-bought-cta'); } catch (e) { /* ignore */ }
+                } catch (e) { /* ignore per-host */ }
+              });
+            } catch (e) { /* ignore */ }
+
+            // Re-run initialisers where available to refresh UI, otherwise reload
+            try {
+              if (typeof P.initBoughtSummary === 'function') { try { P.initBoughtSummary(); } catch (e) { /* ignore */ } }
+              if (typeof P.initBoughtNote === 'function') { try { P.initBoughtNote(); } catch (e) { /* ignore */ } }
+              return;
+            } catch (e) { /* ignore */ }
+
+            try { location.reload(); } catch (e) { /* ignore */ }
+
+          } catch (e) { /* ignore click */ }
+        });
+      } catch (e) { /* ignore */ }
+
+      try { host.appendChild(btn); } catch (e) { /* ignore append */ }
     } catch (e) { /* ignore */ }
   }
 
@@ -469,6 +485,9 @@
 
             // Also append any CTA area into the note host
             try { createBoughtCta(host, det); } catch (e) { /* ignore */ }
+
+            // Add Clear control so users can remove the remembered note locally
+            try { createBoughtClear(host); } catch (e) { /* ignore */ }
 
           } catch (e) { /* ignore per-host */ }
         });
@@ -707,6 +726,9 @@
           // Insert CTA area for this host as well
           try { createBoughtCta(host, matched); } catch (e) { /* ignore */ }
 
+          // Add Clear control so users can remove the remembered note locally
+          try { createBoughtClear(host); } catch (e) { /* ignore */ }
+
         } catch (e) { /* ignore per-host */ }
       });
     } catch (e) { /* ignore */ }
@@ -737,12 +759,5 @@
       })(P.initBoughtNote);
     }
   } catch (e) { /* ignore */ }
-
-  /* =======================================================================
-     Remaining initialisers and exports (not relevant to this change).
-     These are intentionally left as they were in the upstream file so they
-     continue to operate unchanged. We rely on the top-level build to keep
-     the rest of this file intact.
-     ======================================================================= */
 
 })(window, document);
