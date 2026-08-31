@@ -397,7 +397,7 @@
             } catch (e) { /* ignore */ }
             try {
               var subEl = host.querySelector('[data-bought-note-sub]');
-              if (subEl) subEl.textContent = String(det.deliveryEmail || det.email || det.buyerEmail || det.customerEmail || '');
+              if (subEl) subEl.textContent = maskEmail(det.deliveryEmail || det.email || det.buyerEmail || det.customerEmail || '');
             } catch (e) { /* ignore */ }
           } catch (e) { /* ignore per-host */ }
         });
