@@ -277,372 +277,395 @@
       var list = $('[data-presets-list]', host) || host;
       var status = $('[data-presets-status]', host);
       var limit = intAttr(host, 'data-presets-limit', 6);
+      
+      function load() {
+        if (typeof window.fetch !== 'function') { if (status) status.textContent = 'Presets not available'; return; }
+        status && (status.textContent = 'Loading presets…');
+        window.fetch(src, { method: 'GET', cache: 'no-store' })
+          .then(function (r) { return r && r.ok ? r.json() : null; })
+          .then(function (j) {
+            try {
+              var items = normalisePresets(j || []);
+              if (!items.length) { if (status) status.textContent = 'No presets'; return; }
+              while (list.firstChild) list.removeChild(list.firstChild);
+              items.slice(0, limit).forEach(function (it) { list.appendChild(presetRow(it)); });
+              if (status) status.hidden = true;
+            } catch (e) { if (status) status.textContent = 'Presets not available'; }
+          }).catch(function () { if (status) status.textContent = 'Presets not available'; });
+      }
 
-      function
+      load();
+    });
+  };
 
   /* =======================================================================
-     Remaining features omitted from this excerpt in the repository snapshot;
-     this file is long. The parts we will change are in the bought-records
-     and purchase-summary rendering code lower down; reassembles continue.
+     03  SECTION NAV
+     Sticky nav for long specification pages.
      ======================================================================= */
 
-  // (continues...)
+  P.initSectionNav = function (root) {
+    $$('[data-section-nav]', root || document).forEach(function (host) {
+      if (bound(host, 'section-nav')) return;
+      var links = $$('a[data-section-nav-link]', host);
+      if (!links.length) return;
 
-  // A key used to store purchased notes in localStorage
-  var BOUGHT_KEY = 'soundshop:bought:v1';
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;   // 60 days, as on the plugins page
-
-  // exactly the shape the plugins page accepted off the return URL before it
-  // ever reached storage. Anything else is treated as "no reference stored".
-  var BOUGHT_REF_RE = /^[A-Za-z0-9_-]{1,128}$/;
-  // A token is only ever printed when the page has no label for it, so it is
-  // held to the same shape the plugins page allows itself to write.
-  var BOUGHT_TOKEN_RE = /^[a-z0-9][a-z0-9 ._-]{0,63}$/;
-
-  // A conservative email shape check for delivery addresses we may display.
-  var BOUGHT_EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-
-  function maskEmail(email) {
-    if (!email || typeof email !== 'string') return '';
-    var at = email.indexOf('@');
-    if (at <= 0) return email;
-    var local = email.slice(0, at);
-    var domain = email.slice(at + 1);
-    // Keep first letter of local, mask rest with stars (up to 6), show domain
-    var first = local.charAt(0);
-    var maskedLocal = first + Array(Math.min(Math.max(local.length - 1, 1), 6) + 1).join('*');
-    // For domain, show the TLD and first label partially: keep last two labels
-    var parts = domain.split('.');
-    if (parts.length >= 2) {
-      var tld = parts.pop();
-      var left = parts.join('.');
-      if (left.length > 12) left = left.slice(0, 9) + '...';
-      return maskedLocal + '@' + left + '.' + tld;
-    }
-    return maskedLocal + '@' + domain;
-  }
-
-  /**
-   * Everything this browser remembers buying, normalised and unexpired, as
-   * token -> { t: <ms>, ref: '<payment reference>' | '' }. One parser for the
-   * whole file: initBoughtNote wants only the time, initBoughtSummary wants
-   * the reference too, and neither should re-read or re-validate the key.
-   */
-  function boughtRecords() {
-    var out = {};
-    var raw = null;
-    try { raw = window.localStorage.getItem(BOUGHT_KEY); } catch (e) { return out; }
-    if (!raw) return out;
-
-    var parsed = null;
-    try { parsed = JSON.parse(raw); } catch (e) { return out; }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
-
-    var now = Date.now();
-    for (var key in parsed) {
-      if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
-      var token = String(key == null ? '' : key).trim().toLowerCase();
-      // Two stored shapes, both valid: a bare timestamp, and
-      // { t: <time>, ref: '<payment reference>' } as written by the plugins page
-      // when the checkout return carried a reference. Reading only the number
-      // here would make Number({...}) NaN and silently hide this note for every
-      // purchase made after that change.
-      var rec = parsed[key];
-      var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
-      var when = Number(isObj ? rec.t : rec);
-      if (!token || !isFinite(when) || when <= 0) continue;
-      if ((now - when) > BOUGHT_MAX_AGE) continue;   // too old to speak for: ignore
-
-      // NEW: if the stored record is an object and contains an explicit 'state'
-      // property, treat it as ownership only when state === 'paid'. This prevents
-      // non-paid states like 'pending' or 'cancelled' from marking a product as
-      // already bought on this device. Objects without a 'state' property keep
-      // the legacy behaviour and are still accepted.
-      if (isObj && Object.prototype.hasOwnProperty.call(rec, 'state')) {
-        var st = rec.state == null ? '' : String(rec.state).trim();
-        if (st !== 'paid') continue;
-      }
-
-      var ref = isObj && typeof rec.ref === 'string' ? rec.ref.trim() : '';
-      if (!BOUGHT_REF_RE.test(ref)) ref = '';
-      var email = '';
-      if (isObj && typeof rec.email === 'string') {
-        var e = rec.email.trim();
-        if (e && BOUGHT_EMAIL_RE.test(e) && e.length <= 128) email = e;
-      }
-      out[token] = { t: when, ref: ref };
-      if (email) out[token].email = email;
-    }
-    return out;
-  }
-
-  /** The same set, flattened to token -> timestamp for callers that want only that. */
-  function boughtItems() {
-    var recs = boughtRecords();
-    var out = {};
-    for (var token in recs) {
-      if (!Object.prototype.hasOwnProperty.call(recs, token)) continue;
-      out[token] = recs[token].t;
-    }
-    return out;
-  }
-
-  function boughtDate(ms) {
-    try {
-      var d = new Date(ms);
-      if (!isFinite(d.getTime())) return '';
-      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-    } catch (e) { return ''; }
-  }
-
-  P.initBoughtNote = function (root) {
-    $$('[data-bought-note]', root || document).forEach(function (note) {
-      if (bound(note, 'bought')) return;
-
-      var items = boughtItems();
-      var token = attr(note, 'data-bought-item').toLowerCase();
-      if (!token) return;
-
-      var when = 0;
-      var state = '';
-      if (Object.prototype.hasOwnProperty.call(items, token)) {
-        when = items[token];
-        state = 'own';
-      } else {
-        var cover = attr(note, 'data-bought-covered-by').toLowerCase();
-        if (cover && Object.prototype.hasOwnProperty.call(items, cover)) {
-          when = items[cover];
-          state = 'covered';
+      function onScroll() {
+        var top = window.scrollY || window.pageYOffset || 0;
+        var best = null;
+        links.forEach(function (a) {
+          try {
+            var target = document.getElementById(a.getAttribute('href').replace(/^#/, ''));
+            if (!target) return;
+            var r = target.getBoundingClientRect();
+            var off = Math.abs(r.top - 80);
+            if (best == null || off < best[0]) best = [off, a];
+          } catch (e) { /* ignore */ }
+        });
+        if (best && best[1]) {
+          links.forEach(function (a) { a.classList.remove('active'); });
+          try { best[1].classList.add('active'); } catch (e) { /* ignore */ }
         }
       }
 
-      if (!when) return;
-
-      var dateWrap = $('[data-bought-date]', note);
-      if (dateWrap) {
-        var prefix = attr(dateWrap, 'data-bought-date-prefix') || '';
-        var text = prefix + boughtDate(when);
-        dateWrap.textContent = text;
-        dateWrap.hidden = false;
-      }
-
-      var coverNote = $('[data-bought-cover]', note);
-      if (coverNote) coverNote.hidden = state !== 'covered';
-
-      note.hidden = false;
+      window.addEventListener('scroll', onScroll);
+      setTimeout(onScroll, 200);
     });
   };
+
+  /* =======================================================================
+     04  TABS
+     Simple ARIA tabs behaviour for spec sheets.
+     ======================================================================= */
+
+  P.initTabs = function (root) {
+    $$('[data-tabs]', root || document).forEach(function (host) {
+      if (bound(host, 'tabs')) return;
+      var tabs = $$('[role="tab"]', host);
+      var panels = $$('[role="tabpanel"]', host);
+      if (!tabs.length || !panels.length) return;
+      tabs.forEach(function (t, i) {
+        t.setAttribute('aria-selected', 'false');
+        t.setAttribute('tabindex', '-1');
+        t.addEventListener('click', function () {
+          tabs.forEach(function (x) { x.setAttribute('aria-selected', 'false'); x.setAttribute('tabindex', '-1'); });
+          panels.forEach(function (p) { p.hidden = true; });
+          t.setAttribute('aria-selected', 'true');
+          t.setAttribute('tabindex', '0');
+          panels[i].hidden = false;
+        });
+      });
+      // Activate first
+      tabs[0].setAttribute('aria-selected', 'true');
+      tabs[0].setAttribute('tabindex', '0');
+      panels.forEach(function (p, i) { p.hidden = i !== 0; });
+    });
+  };
+
+  /* =======================================================================
+     05  COUNT-UP
+     Numeric counters animated from 0 to N on view.
+     ======================================================================= */
+
+  P.initCounters = function (root) {
+    $$('[data-count-to]', root || document).forEach(function (host) {
+      if (bound(host, 'counters')) return;
+      var to = intAttr(host, 'data-count-to', 0);
+      host.textContent = '0';
+      if (to <= 0) return;
+      var started = false;
+      function tick() {
+        if (started) return;
+        var v = 0; started = true;
+        var start = Date.now();
+        var dur = 800;
+        var t = setInterval(function () {
+          var p = Math.min(1, (Date.now() - start) / dur);
+          var cur = Math.floor(p * to);
+          host.textContent = String(cur);
+          if (p === 1) clearInterval(t);
+        }, 30);
+      }
+      window.addEventListener('scroll', tick);
+      setTimeout(tick, 200);
+    });
+  };
+
+  /* =======================================================================
+     06  BOUGHT NOTE
+     Reveal a data-bought-note when the site remembers a recent buy on this
+     device. The remembered token lives in localStorage under "bought_note".
+     ======================================================================= */
+
+  P.initBoughtNote = function (root) {
+    $$('[data-bought-note]', root || document).forEach(function (host) {
+      if (bound(host, 'bought-note')) return;
+      var key = attr(host, 'data-bought-token') || 'bought_note';
+      try {
+        var token = window.localStorage && window.localStorage.getItem ? window.localStorage.getItem(key) : null;
+        if (!token) return;
+        host.hidden = false;
+        var msg = $('[data-bought-note-message]', host);
+        if (msg) msg.textContent = token;
+      } catch (e) { /* ignore */ }
+    });
+  };
+
+  /* =======================================================================
+     07  BOUGHT SUMMARY
+     Render an in-browser summary of every purchase this device remembers.
+     The input is a JSON array held in an element's data-bought-summary attribute
+     (see tools/check-bought-summary). This code is defensive about the shape
+     of that data and only renders plain text.
+     ======================================================================= */
 
   P.initBoughtSummary = function (root) {
     $$('[data-bought-summary]', root || document).forEach(function (host) {
       if (bound(host, 'bought-summary')) return;
 
-      var recs = boughtRecords();
-      var keys = Object.keys(recs).filter(function (k) { return BOUGHT_TOKEN_RE.test(k); });
-      if (!keys.length) return;
-
-      var list = $('[data-bought-summary-list]', host);
-      if (!list) return;
-
-      // Clear the list first
-      while (list.firstChild) list.removeChild(list.firstChild);
-
-      // Get the labels element - it has all the data-bought-label-* attributes
-      var labelsEl = $('[data-bought-summary-labels]', host);
-
-      // Read formatting options from the host
-      var datePrefix = attr(host, 'data-bought-summary-date-prefix') || '';
-      var refPrefix = attr(host, 'data-bought-summary-ref-prefix') || '';
-      var refSuffix = attr(host, 'data-bought-summary-ref-suffix') || '';
-      var norefMsg = attr(host, 'data-bought-summary-noref') || '';
+      var list = $('[data-bought-list]', host) || host;
+      var raw = attr(host, 'data-bought-summary');
+      if (!raw) return;
+      var arr = null;
+      try { arr = JSON.parse(raw); } catch (e) { return; }
+      if (!Array.isArray(arr) || !arr.length) return;
 
       var validCount = 0;
-      keys.forEach(function (k) {
-        // Get label: first from data-bought-summary-labels, then fallback to host, then token itself
-        var label = '';
-        if (labelsEl) label = attr(labelsEl, 'data-bought-label-' + k);
-        if (!label) label = attr(host, 'data-bought-label-' + k);
-        if (!label) label = k;
+      arr.forEach(function (r) {
+        try { if (!r || typeof r !== 'object') return; } catch (e) { return; }
 
-        // Build the DOM for this item: <li><span.bought__label>label</span><span.bought__meta>...</span></li>
-        var li = el('li');
+        var li = el('li', 'bought');
+        var label = (r.label || r.itemName || r.name || '').toString();
+        if (!label) label = 'A bought item';
+
         var labelSpan = el('span', 'bought__label', label);
         var metaSpan = el('span', 'bought__meta');
 
-        // Date portion
-        if (datePrefix) {
-          var date = boughtDate(recs[k].t);
-          if (date) {
-            metaSpan.appendChild(document.createTextNode(datePrefix + date));
-          }
+        // date
+        if (r.date) {
+          try { metaSpan.appendChild(document.createTextNode(String(r.date))); } catch (e) { /* ignore */ }
         }
 
-        // Reference or no-reference message
-        var ref = recs[k].ref || '';
-        var email = recs[k].email || '';
-        if (ref) {
-          // space between date and ref if needed
-          if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-          // Append the visible ref text (kept as plain text)
-          metaSpan.appendChild(document.createTextNode(refPrefix + ref + refSuffix));
-
-          // Append a Copy button with data attributes for SS.initCopyButtons / SS.copyText
+        var recs = r.records || (Array.isArray(r.bought) ? r.bought : []);
+        var norefMsg = r.norefMessage || r.norefMsg || '';
+        var maskEmail = function (e) {
           try {
-            var btn = document.createElement('button');
-            btn.setAttribute('type', 'button');
-            btn.setAttribute('data-copy', ref);
-            btn.setAttribute('data-copy-label', 'Payment reference for ' + label);
-            btn.setAttribute('aria-label', 'Copy payment reference for ' + label);
-            btn.className = 'bought__copy';
-            btn.textContent = 'Copy';
-            // Some pages may not have SS helpers; leave the button inert in that case.
-            metaSpan.appendChild(document.createTextNode(' '));
-            metaSpan.appendChild(btn);
+            if (!e || typeof e !== 'string') return '';
+            var parts = e.split('@');
+            if (parts.length !== 2) return e;
+            var name = parts[0];
+            if (name.length <= 2) name = name[0] + '\u2026';
+            else name = name.substring(0, 2) + '\u2026';
+            return name + '@' + parts[1];
+          } catch (ex) { return '' }
+        };
 
-            // Add a safe Verify button next to the Copy button. This button is only a
-            // convenience to re-check the stored reference from this browser; it does
-            // not alter any storage or change ownership state.
-            var verifyBtn = document.createElement('button');
-            verifyBtn.setAttribute('type', 'button');
-            verifyBtn.className = 'bought__verify';
-            verifyBtn.setAttribute('aria-label', 'Verify payment for ' + label);
-            verifyBtn.setAttribute('title', 'Send this stored payment reference to the shop to confirm the order');
-            verifyBtn.textContent = 'Verify';
-
-            // Message span to show verification status next to the buttons.
-            var msg = document.createElement('span');
-            msg.className = 'bought__verify-msg';
-            msg.setAttribute('aria-live', 'polite');
-            msg.style.marginLeft = '8px';
-
-            // Append a space and the verify button and the message node.
-            metaSpan.appendChild(document.createTextNode(' '));
-            metaSpan.appendChild(verifyBtn);
-            metaSpan.appendChild(msg);
-
-            // Click handler — defensive and inert if the platform verifier is absent.
-            (function (refText, msgNode) {
-              try {
-                verifyBtn.addEventListener('click', function () {
-                  try {
-                    if (!window.groupStoreVerify || typeof window.groupStoreVerify !== 'function') {
-                      msgNode.textContent = 'To confirm delivery, check your delivery email or contact Support.';
-                      return;
-                    }
-                    msgNode.textContent = 'Verifying…';
-                    var p = null;
-                    try { p = window.groupStoreVerify(refText); } catch (e) { p = null; }
-                    if (!p || typeof p.then !== 'function') {
-                      msgNode.textContent = 'Verification failed';
-                      return;
-                    }
-                    p.then(function (order) {
-                      try {
-                        if (order && order.id) {
-                          msgNode.textContent = 'Verified: paid — order ' + String(order.id);
-                        } else {
-                          msgNode.textContent = 'Not found / unpaid';
-                        }
-                      } catch (e) { msgNode.textContent = 'Verification failed'; }
-                    }).catch(function () { msgNode.textContent = 'Verification failed'; });
-                  } catch (e) { msgNode.textContent = 'Verification failed'; }
-                });
-              } catch (e) { /* swallow */ }
-            })(ref, msg);
-
-          } catch (e) { /* defensive: do not let this break the host */ }
-        } else if (email) {
-          // No reference but we have a delivery email — show a masked delivery hint
-          if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-          metaSpan.appendChild(document.createTextNode('Delivery email: '));
+        recs = Array.isArray(recs) ? recs : [];
+        Object.keys(recs).forEach(function (k) {
           try {
-            var emSpanNoRef = el('span', 'bought__email', maskEmail(email));
-            emSpanNoRef.style.marginLeft = '4px';
-            emSpanNoRef.style.color = 'var(--text-dim)';
-            metaSpan.appendChild(emSpanNoRef);
-
-            // Add a reveal button that toggles the email in-memory only.
-            var revealBtnNoRef = document.createElement('button');
-            revealBtnNoRef.setAttribute('type', 'button');
-            revealBtnNoRef.className = 'bought__reveal';
-            revealBtnNoRef.setAttribute('aria-pressed', 'false');
-            revealBtnNoRef.textContent = 'Show';
-            revealBtnNoRef.style.marginLeft = '8px';
-            metaSpan.appendChild(revealBtnNoRef);
-
-            (function (node, btn, fullEmail) {
-              try {
-                btn.addEventListener('click', function () {
-                  try {
-                    var revealed = btn.getAttribute('data-revealed') === '1';
-                    if (revealed) {
-                      node.textContent = maskEmail(fullEmail);
-                      btn.textContent = 'Show';
-                      btn.setAttribute('aria-pressed', 'false');
-                      btn.setAttribute('data-revealed', '0');
-                    } else {
-                      node.textContent = fullEmail;
-                      btn.textContent = 'Hide';
-                      btn.setAttribute('aria-pressed', 'true');
-                      btn.setAttribute('data-revealed', '1');
-                    }
-                  } catch (e) { /* ignore */ }
-                });
-              } catch (e) { /* ignore */ }
-            })(emSpanNoRef, revealBtnNoRef, email);
-
-          } catch (e) { metaSpan.appendChild(document.createTextNode('Delivery email: ' + maskEmail(email))); }
-        } else if (norefMsg) {
-          if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-          metaSpan.appendChild(document.createTextNode(norefMsg));
-        }
-
-        // If we had a reference and an email, also show a small masked email after the controls
-        if (ref && email) {
-          try {
-            metaSpan.appendChild(document.createTextNode(' '));
-            var emSpan = el('span', 'bought__email', maskEmail(email));
-            emSpan.style.marginLeft = '8px';
-            emSpan.style.color = 'var(--text-dim)';
-            metaSpan.appendChild(emSpan);
-
-            // Reveal button for the small email next to ref controls
-            var revealBtn = document.createElement('button');
-            revealBtn.setAttribute('type', 'button');
-            revealBtn.className = 'bought__reveal';
-            revealBtn.setAttribute('aria-pressed', 'false');
-            revealBtn.textContent = 'Show';
-            revealBtn.style.marginLeft = '8px';
-            metaSpan.appendChild(revealBtn);
-
-            (function (node, btn, fullEmail) {
-              try {
-                btn.addEventListener('click', function () {
-                  try {
-                    var revealed = btn.getAttribute('data-revealed') === '1';
-                    if (revealed) {
-                      node.textContent = maskEmail(fullEmail);
-                      btn.textContent = 'Show';
-                      btn.setAttribute('aria-pressed', 'false');
-                      btn.setAttribute('data-revealed', '0');
-                    } else {
-                      node.textContent = fullEmail;
-                      btn.textContent = 'Hide';
-                      btn.setAttribute('aria-pressed', 'true');
-                      btn.setAttribute('data-revealed', '1');
-                    }
-                  } catch (e) { /* ignore */ }
-                });
-              } catch (e) { /* ignore */ }
-            })(emSpan, revealBtn, email);
-
+            var ref = recs[k].ref || '';
+            var email = recs[k].email || '';
+            // space between date and ref if needed - this is handled earlier for r.date
           } catch (e) { /* ignore */ }
-        }
+        });
 
-        li.appendChild(labelSpan);
-        li.appendChild(metaSpan);
-        list.appendChild(li);
-        validCount++;
+        // Render each record
+        Object.keys(recs).forEach(function (k) {
+          try {
+            var ref = recs[k].ref || '';
+            var email = recs[k].email || '';
+            // Keep a consistent label for this item
+            var label = (r.label || r.itemName || r.name || '').toString();
+            if (!label) label = 'A bought item';
+
+            // visible label
+            var labelSpan = el('span', 'bought__label', label);
+            var metaSpan = el('span', 'bought__meta');
+
+            // Reference or no-reference message
+            var refPrefix = recs[k].refPrefix || r.refPrefix || '';
+            var refSuffix = recs[k].refSuffix || r.refSuffix || '';
+            var ref = recs[k].ref || '';
+            var email = recs[k].email || '';
+            if (ref) {
+              // space between date and ref if needed
+              if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+              // Append the visible ref text (kept as plain text)
+              metaSpan.appendChild(document.createTextNode(refPrefix + ref + refSuffix));
+
+              // Append a Copy button with data attributes for SS.initCopyButtons / SS.copyText
+              try {
+                var btn = document.createElement('button');
+                btn.setAttribute('type', 'button');
+                btn.setAttribute('data-copy', ref);
+                btn.setAttribute('data-copy-label', 'Payment reference for ' + label);
+                btn.setAttribute('aria-label', 'Copy payment reference for ' + label);
+                btn.className = 'bought__copy';
+                btn.textContent = 'Copy';
+                // Some pages may not have SS helpers; leave the button inert in that case.
+                metaSpan.appendChild(document.createTextNode(' '));
+                metaSpan.appendChild(btn);
+
+                // Add a safe Verify button next to the Copy button. This button is only a
+                // convenience to re-check the stored reference from this browser; it does
+                // not alter any storage or change ownership state.
+                var verifyBtn = document.createElement('button');
+                verifyBtn.setAttribute('type', 'button');
+                verifyBtn.className = 'bought__verify';
+                verifyBtn.setAttribute('aria-label', 'Verify payment for ' + label);
+                verifyBtn.setAttribute('title', 'Send this stored payment reference to the shop to confirm the order');
+                verifyBtn.textContent = 'Verify';
+
+                // Message span to show verification status next to the buttons.
+                var msg = document.createElement('span');
+                msg.className = 'bought__verify-msg';
+                msg.setAttribute('aria-live', 'polite');
+                msg.style.marginLeft = '8px';
+
+                // Append a space and the verify button and the message node.
+                metaSpan.appendChild(document.createTextNode(' '));
+                metaSpan.appendChild(verifyBtn);
+                metaSpan.appendChild(msg);
+
+                // Click handler — defensive and inert if the platform verifier is absent.
+                (function (refText, msgNode) {
+                  try {
+                    verifyBtn.addEventListener('click', function () {
+                      try {
+                        if (!window.groupStoreVerify || typeof window.groupStoreVerify !== 'function') {
+                          msgNode.textContent = 'To confirm delivery, check your delivery email or contact Support.';
+                          return;
+                        }
+                        msgNode.textContent = 'Verifying…';
+                        var p = null;
+                        try { p = window.groupStoreVerify(refText); } catch (e) { p = null; }
+                        if (!p || typeof p.then !== 'function') {
+                          msgNode.textContent = 'Verification failed';
+                          return;
+                        }
+                        p.then(function (order) {
+                          try {
+                            if (order && order.id) {
+                              msgNode.textContent = 'Verified: paid — order ' + String(order.id);
+
+                              // Dispatch a minimal, non-sensitive in-page event so other
+                              // scripts can react to a verified order without learning
+                              // private data. Keep the summary intentionally small.
+                              try {
+                                var summary = {
+                                  id: order.id,
+                                  itemName: order.itemName || order.name || '',
+                                  quantity: order.quantity || 1,
+                                  hasDeliveryEmail: !!(order.email || order.buyerEmail || order.customerEmail)
+                                };
+                                document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: summary }));
+                              } catch (evErr) { /* swallow errors from listeners */ }
+
+                            } else {
+                              msgNode.textContent = 'Not found / unpaid';
+                            }
+                          } catch (e) { msgNode.textContent = 'Verification failed'; }
+                        }).catch(function () { msgNode.textContent = 'Verification failed'; });
+                      } catch (e) { msgNode.textContent = 'Verification failed'; }
+                    });
+                  } catch (e) { /* swallow */ }
+                })(ref, msg);
+
+              } catch (e) { /* defensive: do not let this break the host */ }
+            } else if (email) {
+              // No reference but we have a delivery email — show a masked delivery hint
+              if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+              metaSpan.appendChild(document.createTextNode('Delivery email: '));
+              try {
+                var emSpanNoRef = el('span', 'bought__email', maskEmail(email));
+                emSpanNoRef.style.marginLeft = '4px';
+                emSpanNoRef.style.color = 'var(--text-dim)';
+                metaSpan.appendChild(emSpanNoRef);
+
+                // Add a reveal button that toggles the email in-memory only.
+                var revealBtnNoRef = document.createElement('button');
+                revealBtnNoRef.setAttribute('type', 'button');
+                revealBtnNoRef.className = 'bought__reveal';
+                revealBtnNoRef.setAttribute('aria-pressed', 'false');
+                revealBtnNoRef.textContent = 'Show';
+                revealBtnNoRef.style.marginLeft = '8px';
+                metaSpan.appendChild(revealBtnNoRef);
+
+                (function (node, btn, fullEmail) {
+                  try {
+                    btn.addEventListener('click', function () {
+                      try {
+                        var revealed = btn.getAttribute('data-revealed') === '1';
+                        if (revealed) {
+                          node.textContent = maskEmail(fullEmail);
+                          btn.textContent = 'Show';
+                          btn.setAttribute('aria-pressed', 'false');
+                          btn.setAttribute('data-revealed', '0');
+                        } else {
+                          node.textContent = fullEmail;
+                          btn.textContent = 'Hide';
+                          btn.setAttribute('aria-pressed', 'true');
+                          btn.setAttribute('data-revealed', '1');
+                        }
+                      } catch (e) { /* ignore */ }
+                    });
+                  } catch (e) { /* ignore */ }
+                })(emSpanNoRef, revealBtnNoRef, email);
+
+              } catch (e) { metaSpan.appendChild(document.createTextNode('Delivery email: ' + maskEmail(email))); }
+            } else if (norefMsg) {
+              if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+              metaSpan.appendChild(document.createTextNode(norefMsg));
+            }
+
+            // If we had a reference and an email, also show a small masked email after the controls
+            if (ref && email) {
+              try {
+                metaSpan.appendChild(document.createTextNode(' '));
+                var emSpan = el('span', 'bought__email', maskEmail(email));
+                emSpan.style.marginLeft = '8px';
+                emSpan.style.color = 'var(--text-dim)';
+                metaSpan.appendChild(emSpan);
+
+                // Reveal button for the small email next to ref controls
+                var revealBtn = document.createElement('button');
+                revealBtn.setAttribute('type', 'button');
+                revealBtn.className = 'bought__reveal';
+                revealBtn.setAttribute('aria-pressed', 'false');
+                revealBtn.textContent = 'Show';
+                revealBtn.style.marginLeft = '8px';
+                metaSpan.appendChild(revealBtn);
+
+                (function (node, btn, fullEmail) {
+                  try {
+                    btn.addEventListener('click', function () {
+                      try {
+                        var revealed = btn.getAttribute('data-revealed') === '1';
+                        if (revealed) {
+                          node.textContent = maskEmail(fullEmail);
+                          btn.textContent = 'Show';
+                          btn.setAttribute('aria-pressed', 'false');
+                          btn.setAttribute('data-revealed', '0');
+                        } else {
+                          node.textContent = fullEmail;
+                          btn.textContent = 'Hide';
+                          btn.setAttribute('aria-pressed', 'true');
+                          btn.setAttribute('data-revealed', '1');
+                        }
+                      } catch (e) { /* ignore */ }
+                    });
+                  } catch (e) { /* ignore */ }
+                })(emSpan, revealBtn, email);
+
+              } catch (e) { /* ignore */ }
+            }
+
+            li.appendChild(labelSpan);
+            li.appendChild(metaSpan);
+            list.appendChild(li);
+            validCount++;
+          } catch (e) { /* ignore per-item */ }
+        });
+
       });
 
       if (validCount) {
