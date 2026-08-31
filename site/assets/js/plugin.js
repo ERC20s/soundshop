@@ -178,6 +178,8 @@
               item.t = (rec && (rec.t || rec.time || rec.date)) || null;
               item.state = (rec && rec.state) || null;
               item.quantity = 1;
+              // Expose the canonical token when reading v1 so callers can match by token
+              try { item.token = String(tok); } catch (e) { item.token = ''; }
               out.push(item);
             }
             if (out.length) return out;
@@ -252,99 +254,73 @@
 
       try { host.setAttribute('data-ssp-bought-cta', 'on'); } catch (e) { /* ignore */ }
 
-      // Helper to c
-      try {
-        // Helper to create a download anchor inside the host when we have a
-        // verified installer URL.
-        function makeDownloadAnchor(url) {
-          try {
-            if (!url) return;
-            var a = document.createElement('a');
-            a.className = 'bought__cta';
-            try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
-            try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-            try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-            try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-            try { host.appendChild(a); } catch (e) { /* ignore */ }
-          } catch (e) { /* ignore */ }
-        }
-
-        // Helper to create a Contact Support / Check order fallback when no
-        // verified installer URL is known. This provides the per-item "Check
-        // order" button that lets buyers verify an order and surface installers.
-        function makeSupportButton(id) {
-          try {
-            var wrap = document.createElement('div');
-            wrap.className = 'bought__cta-wrap';
-            var btn = document.createElement('button');
-            btn.className = 'bought__cta';
-            btn.setAttribute('type', 'button');
-            try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ }
-            try {
-              btn.addEventListener('click', function () {
-                try {
-                  if (!id) {
-                    // If we don't have an id, open support docs
-                    try { window.location.href = 'docs.html#support'; } catch (e) { /* ignore */ }
-                    return;
-                  }
-
-                  // Avoid hammering the platform: do nothing if verify is absent
-                  if (typeof window.groupStoreVerify !== 'function') {
-                    try { window.location.href = 'docs.html#support'; } catch (e) { /* ignore */ }
-                    return;
-                  }
-
-                  var p = null;
-                  try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
-                  if (!p || typeof p.then !== 'function') return;
-                  btn.textContent = 'Checking\u2026';
-                  p.then(function (order) {
-                    try {
-                      var vdet = P._normalisePaidDetail(order);
-                      if (!vdet) {
-                        try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ }
-                        return;
-                      }
-                      // If a downloadUrl was discovered, update UI
-                      if (vdet.downloadUrl) {
-                        try {
-                          // Replace button with a proper download anchor
-                          var a = document.createElement('a');
-                          a.className = 'bought__cta';
-                          try { a.setAttribute('href', vdet.downloadUrl); } catch (e) { /* ignore */ }
-                          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-                          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-                          try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-                          try { wrap.replaceChild(a, btn); } catch (e) { /* ignore */ }
-                        } catch (e) { /* ignore */ }
-                      } else {
-                        try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ }
-                      }
-                    } catch (e) { /* ignore */ }
-                  }).catch(function () { try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ } });
-                } catch (e) { /* ignore click handler */ }
-              });
-            } catch (e) { /* ignore event wiring */ }
-            try { wrap.appendChild(btn); } catch (e) { /* ignore */ }
-            try { host.appendChild(wrap); } catch (e) { /* ignore */ }
-          } catch (e) { /* ignore */ }
-        }
-
-        // Decide which CTA to render immediately
+      // Helper to create a download anchor and append it to the host
+      function makeDownloadAnchor(url) {
         try {
-          if (detail && extractDownloadUrl(detail)) {
-            makeDownloadAnchor(extractDownloadUrl(detail));
-          } else {
-            var id = detail && detail.id ? String(detail.id) : '';
-            makeSupportButton(id);
-          }
+          if (!url) return;
+          var a = document.createElement('a');
+          a.className = 'bought__cta';
+          a.setAttribute('href', url);
+          a.setAttribute('target', '_blank');
+          a.setAttribute('rel', 'noopener noreferrer');
+          a.textContent = 'Download installers';
+          try { host.appendChild(a); } catch (e) { /* ignore append */ }
         } catch (e) { /* ignore */ }
-      } catch (e) {
-        // ignore
       }
 
-    } catch (e) { /* ignore whole CTA creation */ }
+      // Helper to create a support / verify button
+      function makeSupportButton(id) {
+        try {
+          var wrap = document.createElement('div');
+          wrap.className = 'bought__cta-wrap';
+          var btn = document.createElement('button');
+          btn.setAttribute('type', 'button');
+          btn.className = 'bought__cta';
+          btn.textContent = 'Check order';
+          try {
+            btn.addEventListener('click', function () {
+              try {
+                btn.textContent = 'Checking…';
+                // If a platform verify helper exists use that; otherwise open Support
+                if (id && typeof window.groupStoreVerify === 'function') {
+                  var p = null;
+                  try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
+                  if (p && typeof p.then === 'function') {
+                    p.then(function (order) {
+                      try {
+                        var vdet = P._normalisePaidDetail(order);
+                        if (vdet && vdet.downloadUrl) {
+                          try { makeDownloadAnchor(vdet.downloadUrl); } catch (e) { /* ignore */ }
+                          try { btn.parentNode && btn.parentNode.removeChild(btn); } catch (e) { /* ignore */ }
+                        } else {
+                          try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ } }
+                    }).catch(function () { try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ } });
+                    return;
+                  }
+                }
+                try { window.open('docs.html#support', '_blank'); } catch (e) { /* ignore */ }
+              } catch (e) { /* ignore click handler */ }
+            });
+          } catch (e) { /* ignore event wiring */ }
+          try { wrap.appendChild(btn); } catch (e) { /* ignore */ }
+          try { host.appendChild(wrap); } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore */ }
+      }
+
+      // Decide which CTA to render immediately
+      try {
+        if (detail && extractDownloadUrl(detail)) {
+          makeDownloadAnchor(extractDownloadUrl(detail));
+        } else {
+          var id = detail && detail.id ? String(detail.id) : '';
+          makeSupportButton(id);
+        }
+      } catch (e) { /* ignore */ }
+    } catch (e) {
+      // ignore
+    }
   }
 
   /**
@@ -363,6 +339,208 @@
       try { var d = extractDownloadUrl(o); if (d) out.downloadUrl = d; } catch (e) { /* ignore */ }
       return out;
     } catch (e) { return null; }
+  };
+
+  /**
+   * Initialise any [data-bought-note] hosts by reading canonical storage and
+   * revealing a matching remembered purchase for this page, if present.
+   */
+  P.initBoughtNote = function (root) {
+    try {
+      var selector = '[data-bought-note]';
+      var hosts = root ? $$(selector, root) : $$(selector);
+      hosts.forEach(function (host) {
+        try {
+          if (!host || bound(host, 'bought-note')) return;
+
+          // Read stored purchases; allow host to supply a custom storage key via
+          // data-bought-storage (optional). We don't require it normally.
+          var storageAttr = attr(host, 'data-bought-storage') || '';
+          var items = readBoughtArray(host, storageAttr || null) || [];
+          if (!items || !items.length) return;
+
+          var want = attr(host, 'data-bought-item') || '';
+          var coveredBy = attr(host, 'data-bought-covered-by') || '';
+
+          // Find a matching entry. Prefer token matches (v1), then title/name
+          // matches, then fall back to any entry whose token equals coveredBy.
+          var match = null;
+          for (var i = 0; i < items.length; i++) {
+            var it = items[i];
+            try {
+              if (!it) continue;
+              if (want && it.token && String(it.token) === String(want)) { match = it; break; }
+              if (want && it.itemName && String(it.itemName).toLowerCase() === String(want).toLowerCase()) { match = it; break; }
+            } catch (e) { /* ignore per-item */ }
+          }
+
+          if (!match && coveredBy) {
+            for (var j = 0; j < items.length; j++) {
+              var it2 = items[j];
+              try { if (it2 && it2.token && String(it2.token) === String(coveredBy)) { match = it2; break; } } catch (e) { /* ignore */ }
+            }
+          }
+
+          if (!match) return;
+
+          try { host.removeAttribute('hidden'); } catch (e) { /* ignore */ }
+          try {
+            var titleEl = host.querySelector('[data-bought-note-title]');
+            if (titleEl) titleEl.textContent = String(match.itemName || match.name || match.title || match.label || 'Purchased item');
+          } catch (e) { /* ignore */ }
+          try {
+            var subEl = host.querySelector('[data-bought-note-sub]');
+            if (subEl) subEl.textContent = String(match.email || match.deliveryEmail || match.buyerEmail || match.customerEmail || '');
+          } catch (e) { /* ignore */ }
+          try {
+            var coverEl = host.querySelector('[data-bought-cover]');
+            if (coverEl && coveredBy && match.token && String(match.token) === String(coveredBy)) {
+              try { coverEl.removeAttribute('hidden'); } catch (e) { /* ignore */ }
+            }
+          } catch (e) { /* ignore */ }
+
+          // Date
+          try {
+            var dateEl = host.querySelector('[data-bought-date]');
+            if (dateEl && match.t) {
+              var prefix = attr(host, 'data-bought-date-prefix') || '';
+              var d = null;
+              try { d = new Date(match.t); if (!isFinite(d.getTime())) d = null; } catch (e) { d = null; }
+              var txt = '';
+              if (d) {
+                try { txt = d.toLocaleString(); } catch (e) { txt = String(match.t); }
+              } else {
+                txt = String(match.t);
+              }
+              try { dateEl.textContent = prefix + txt; } catch (e) { /* ignore */ }
+            }
+          } catch (e) { /* ignore */ }
+
+          // Render CTA area
+          try { createBoughtCta(host, match); } catch (e) { /* ignore */ }
+
+        } catch (e) { /* ignore per-host */ }
+      });
+    } catch (e) { /* ignore */ }
+  };
+
+  /**
+   * Initialise any [data-bought-summary] hosts by listing every remembered
+   * purchase in canonical storage. The function is defensive and idempotent.
+   */
+  P.initBoughtSummary = function (root) {
+    try {
+      var selector = '[data-bought-summary]';
+      var hosts = root ? $$(selector, root) : $$(selector);
+      hosts.forEach(function (host) {
+        try {
+          if (!host || bound(host, 'bought-summary')) return;
+
+          var list = host.querySelector('[data-bought-summary-list]');
+          if (!list) return;
+
+          var storageAttr = attr(host, 'data-bought-storage') || '';
+          var items = readBoughtArray(host, storageAttr || null) || [];
+          if (!items || !items.length) return;
+
+          var datePrefix = attr(host, 'data-bought-summary-date-prefix') || '';
+          var refPrefix = attr(host, 'data-bought-summary-ref-prefix') || '';
+          var refSuffix = attr(host, 'data-bought-summary-ref-suffix') || '';
+          var noRefText = attr(host, 'data-bought-summary-noref') || '';
+
+          for (var i = 0; i < items.length; i++) {
+            var it = items[i];
+            try {
+              if (!it || typeof it !== 'object') continue;
+              var id = it.id || it.ref || '';
+              if (!id) {
+                // If there's no id, still render a line but mark accordingly
+              }
+
+              // Avoid duplicates
+              try { if (id && host.querySelector('[data-ssp-paid-id="' + String(id) + '"]')) continue; } catch (e) { /* ignore selector problems */ }
+
+              var li = document.createElement('li');
+              li.className = 'bought__item';
+              try { if (id) li.setAttribute('data-ssp-paid-id', String(id)); } catch (e) { /* ignore */ }
+
+              var titleSpan = document.createElement('span');
+              titleSpan.className = 'bought__title';
+              titleSpan.textContent = String(it.itemName || it.name || it.title || it.label || 'Purchased item');
+              li.appendChild(titleSpan);
+
+              var metaSpan = document.createElement('span');
+              metaSpan.className = 'bought__meta';
+
+              // Reference (order id) and copy button
+              try {
+                if (id) {
+                  var refSpan = document.createElement('span');
+                  refSpan.className = 'bought__ref';
+                  refSpan.textContent = (refPrefix || '') + String(id) + (refSuffix || '');
+                  metaSpan.appendChild(refSpan);
+
+                  var copyBtn = document.createElement('button');
+                  copyBtn.setAttribute('type', 'button');
+                  copyBtn.className = 'bought__copy';
+                  copyBtn.textContent = 'Copy';
+                  copyBtn.style.marginLeft = '8px';
+                  try {
+                    copyBtn.setAttribute('data-ssp-copy', 'on');
+                    (function (val) { copyBtn.addEventListener('click', function () { try { navigator.clipboard.writeText(String(val || '')); } catch (e) { /* ignore */ } }); })(id);
+                  } catch (e) { /* ignore */ }
+                  metaSpan.appendChild(copyBtn);
+                } else {
+                  var noref = document.createElement('span');
+                  noref.className = 'bought__ref';
+                  noref.textContent = noRefText || 'No reference';
+                  metaSpan.appendChild(noref);
+                }
+              } catch (e) { /* ignore */ }
+
+              // Masked email
+              try {
+                var em = maskEmail(it.email || '');
+                if (em) {
+                  var emSpan = document.createElement('span');
+                  emSpan.className = 'bought__email';
+                  emSpan.textContent = ' ' + em; // leading space to separate
+                  metaSpan.appendChild(emSpan);
+                }
+              } catch (e) { /* ignore */ }
+
+              // Date
+              try {
+                if (it.t) {
+                  var dt = null;
+                  try { dt = new Date(it.t); if (!isFinite(dt.getTime())) dt = null; } catch (e) { dt = null; }
+                  var dtxt = '';
+                  if (dt) {
+                    try { dtxt = dt.toLocaleString(); } catch (e) { dtxt = String(it.t); }
+                  } else {
+                    dtxt = String(it.t);
+                  }
+                  var dateNode = document.createElement('span');
+                  dateNode.className = 'bought__date';
+                  dateNode.textContent = (datePrefix || '') + dtxt;
+                  metaSpan.appendChild(dateNode);
+                }
+              } catch (e) { /* ignore */ }
+
+              try { li.appendChild(metaSpan); } catch (e) { /* ignore */ }
+
+              try { list.appendChild(li); } catch (e) { /* ignore */ }
+
+              try { createBoughtCta(li, it); } catch (e) { /* ignore */ }
+
+            } catch (e) { /* ignore per-item */ }
+          }
+
+          try { host.removeAttribute('hidden'); } catch (e) { /* ignore */ }
+
+        } catch (e) { /* ignore per-host */ }
+      });
+    } catch (e) { /* ignore */ }
   };
 
   /**
