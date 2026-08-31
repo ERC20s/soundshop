@@ -283,109 +283,29 @@
     });
   };
 
-  /* =======================================================================
-     03  Minimal section nav, tabs and counters (lightweight, defensive)
-     These are intentionally small so the file has stable behaviour without
-     depending on other scripts. They are idempotent and tolerant of missing
-     nodes.
-     ======================================================================= */
-
-  P.initSectionNav = function (root) {
-    // No-op placeholder that marks any [data-section-nav] as bound.
-    $$('[data-section-nav]', root || document).forEach(function (n) { bound(n, 'section-nav'); });
-  };
-
-  P.initTabs = function (root) {
-    // Minimal ARIA tabs: mark as bound and avoid further work here.
-    $$('[data-tabs]', root || document).forEach(function (n) { bound(n, 'tabs'); });
-  };
-
-  P.initCounters = function (root) {
-    // Count-up is not essential; just mark as bound.
-    $$('[data-count-to]', root || document).forEach(function (n) { bound(n, 'counters'); });
-  };
-
-  /* =======================================================================
-     06  BOUGHT NOTE
-     ======================================================================= */
-
-  P.initBoughtNote = function (root) {
-    $$('[data-bought-note]', root || document).forEach(function (host) {
-      if (bound(host, 'bought-note')) return;
-      var key = attr(host, 'data-bought-token') || 'bought_note';
-      try {
-        var token = window.localStorage && window.localStorage.getItem ? window.localStorage.getItem(key) : null;
-        if (!token) return;
-        host.hidden = false;
-        var msg = $('[data-bought-note-message]', host);
-        if (msg) msg.textContent = token;
-      } catch (e) { /* ignore */ }
-    });
-  };
-
-  /* =======================================================================
-     07  BOUGHT SUMMARY
-     ======================================================================= */
-
   P.initBoughtSummary = function (root) {
     $$('[data-bought-summary]', root || document).forEach(function (host) {
-      if (bound(host, 'bought-summary')) return;
+      try {
+        if (bound(host, 'bought-summary')) return;
 
-      var list = $('[data-bought-list]', host) || host;
-      var raw = attr(host, 'data-bought-summary');
-      if (!raw) return;
-      var arr = null;
-      try { arr = JSON.parse(raw); } catch (e) { return; }
-      if (!Array.isArray(arr) || !arr.length) return;
+        var recs = null;
+        try { recs = JSON.parse(attr(host, 'data-bought-summary') || 'null'); } catch (e) { recs = null; }
+        recs = recs || {};
 
-      var validCount = 0;
-      arr.forEach(function (r) {
-        try { if (!r || typeof r !== 'object') return; } catch (e) { return; }
+        var list = host.querySelector('[data-bought-list]') || host;
 
-        var li = el('li', 'bought');
-        var label = (r.label || r.itemName || r.name || '').toString();
-        if (!label) label = 'A bought item';
-
-        var labelSpan = el('span', 'bought__label', label);
-        var metaSpan = el('span', 'bought__meta');
-
-        // date
-        if (r.date) {
-          try { metaSpan.appendChild(document.createTextNode(String(r.date))); } catch (e) { /* ignore */ }
-        }
-
-        var recs = r.records || (Array.isArray(r.bought) ? r.bought : []);
-        var norefMsg = r.norefMessage || r.norefMsg || '';
-        var maskEmail = function (e) {
-          try {
-            if (!e || typeof e !== 'string') return '';
-            var parts = e.split('@');
-            if (parts.length !== 2) return e;
-            var name = parts[0];
-            if (name.length <= 2) name = name[0] + '\u2026';
-            else name = name.substring(0, 2) + '\u2026';
-            return name + '@' + parts[1];
-          } catch (ex) { return '' }
-        };
-
-        recs = Array.isArray(recs) ? recs : [];
+        var validCount = 0;
         Object.keys(recs).forEach(function (k) {
           try {
-            var ref = recs[k].ref || '';
-            var email = recs[k].email || '';
-          } catch (e) { /* ignore */ }
-        });
+            var li = document.createElement('li');
+            li.className = 'bought';
 
-        // Render each record
-        Object.keys(recs).forEach(function (k) {
-          try {
-            var ref = recs[k].ref || '';
-            var email = recs[k].email || '';
-            // Keep a consistent label for this item
+            var r = recs[k] || {};
+
+            // visible label
             var label = (r.label || r.itemName || r.name || '').toString();
             if (!label) label = 'A bought item';
 
-            // visible label
             var labelSpan = el('span', 'bought__label', label);
             var metaSpan = el('span', 'bought__meta');
 
@@ -462,10 +382,10 @@
                         }).catch(function () { msgNode.textContent = 'Verification failed'; });
                       } catch (e) { msgNode.textContent = 'Verification failed'; }
                     });
-                  } catch (e) { /* swallow */ }
+                  } catch (e) { /* ignore */ }
                 })(ref, msg);
 
-              } catch (e) { /* defensive: do not let this break the host */ }
+              } catch (e) { /* ignore */ }
             } else if (email) {
               if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
               metaSpan.appendChild(document.createTextNode('Delivery email: '));
@@ -514,7 +434,7 @@
           } catch (e) { /* ignore per-item */ }
         });
 
-      });
+      } catch (e) { /* defensive: do not let this break the host */ }
 
       if (validCount) {
         host.hidden = false;
@@ -572,6 +492,29 @@
 
         c.appendChild(a1);
         c.appendChild(a2);
+
+        // If the event supplied a non-sensitive order id, surface it here with
+        // a small copy button so users can easily paste it into support mails.
+        if (detail && detail.id) {
+          try {
+            var orderWrap = el('span', 'bought__order', 'Order: ' + String(detail.id));
+            orderWrap.style.marginRight = '12px';
+
+            var copyBtn = document.createElement('button');
+            copyBtn.setAttribute('type', 'button');
+            copyBtn.className = 'bought__copy';
+            copyBtn.setAttribute('data-copy', String(detail.id));
+            var copyLabel = detail.itemName ? 'Copied order reference for ' + detail.itemName : 'Copied order reference';
+            copyBtn.setAttribute('data-copy-label', copyLabel);
+            copyBtn.setAttribute('aria-label', copyLabel);
+            copyBtn.textContent = 'Copy';
+
+            // Put the copy control next to the id, and insert before the primary link
+            orderWrap.appendChild(document.createTextNode(' '));
+            orderWrap.appendChild(copyBtn);
+            c.insertBefore(orderWrap, a1);
+          } catch (e) { /* ignore errors when building non-essential UI */ }
+        }
 
         // Append once and mark the host so this handler is idempotent
         try { list.appendChild(c); } catch (e) { /* ignore DOM errors */ }
