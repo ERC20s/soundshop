@@ -279,7 +279,7 @@
           .catch(function () {
             if (status) status.textContent = 'Failed to load presets.';
           });
-      } catch (e) { if (status) status.textContent = 'Failed to load presets.'; }
+      } catch (e) { if (status) status.textContent  }
     });
   };
 
@@ -549,7 +549,36 @@
     c.className = 'bought__cta';
 
     var a1 = document.createElement('a');
-    a1.href = 'docs.html#delivery';
+    // Resolve the installers link by preferring an existing page anchor that
+    // points at the docs fragment. If none is present fall back to a root-
+    // absolute path. This avoids the wrong relative resolution on /plugins/ pages.
+    try {
+      var fallbackInstall = '/docs.html#delivery';
+      var fallbackSupport = '/docs.html#support';
+      var installHref = fallbackInstall;
+      var supportHref = fallbackSupport;
+      try {
+        var anchors = document.querySelectorAll('a[href]');
+        for (var i = 0; i < anchors.length; i++) {
+          try {
+            var ah = anchors[i];
+            var raw = ah.getAttribute('href') || '';
+            if (raw.indexOf('docs.html#delivery') !== -1) { installHref = ah.href || raw; break; }
+          } catch (e) { /* ignore */ }
+        }
+        for (var j = 0; j < anchors.length; j++) {
+          try {
+            var ah2 = anchors[j];
+            var raw2 = ah2.getAttribute('href') || '';
+            if (raw2.indexOf('docs.html#support') !== -1) { supportHref = ah2.href || raw2; break; }
+          } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore query failures */ }
+      a1.href = installHref;
+    } catch (e) {
+      try { a1.href = '/docs.html#delivery'; } catch (e2) { /* ignore */ }
+    }
+
     a1.textContent = 'Open installers & delivery instructions';
     a1.className = 'bought__cta-primary';
     try {
@@ -560,7 +589,10 @@
     a1.style.marginRight = '12px';
 
     var a2 = document.createElement('a');
-    a2.href = 'docs.html#support';
+    try {
+      // supportHref was computed above alongside installHref
+      a2.href = (typeof supportHref !== 'undefined' && supportHref) ? supportHref : '/docs.html#support';
+    } catch (e) { try { a2.href = '/docs.html#support'; } catch (e2) { /* ignore */ } }
     a2.textContent = 'Contact support';
     a2.className = 'bought__cta-secondary';
 
@@ -632,11 +664,28 @@
         var list = host.querySelector('[data-bought-summary-list]') || host;
 
         // Delegate to the helper which builds, appends and initialises copy
-        // controls safely and marks the host as verified so this handler is idempotent.
+        // controls. This keeps post-verify injection consistent with the
+        // remembered-purchase rendering path.
         try { createBoughtCta(host, detail); } catch (e) { /* ignore */ }
-
-      } catch (e) { /* swallow listener errors */ }
+      } catch (e) { /* ignore */ }
     });
-  } catch (e) { /* ignore if addEventListener not available */ }
+  } catch (e) { /* ignore */ }
+
+  /* =======================================================================
+     09  Public initialiser
+     ======================================================================= */
+
+  P.init = function (root) {
+    try { P.initDemoSlot(root); } catch (e) { /* ignore */ }
+    try { P.initPresetTeaser(root); } catch (e) { /* ignore */ }
+    try { P.initBoughtNote(root); } catch (e) { /* ignore */ }
+    try { P.initBoughtSummary(root); } catch (e) { /* ignore */ }
+  };
+
+  // Auto-run on DOM ready
+  try {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { P.init(); });
+    else P.init();
+  } catch (e) { /* ignore */ }
 
 })(window, document);
