@@ -279,284 +279,193 @@
           .catch(function () {
             if (status) status.textContent = 'Failed to load presets.';
           });
-      } catch (e) { if (status) status.textContent = 'Failed to load presets.'; }
-    });
-  };
+      } catch (e) { if (status) status.textContent 
 
-  /* =======================================================================
-     03  Minimal section nav, tabs and counters (lightweight, defensive)
-     These are intentionally small so the file has stable behaviour without
-     depending on other scripts. They are idempotent and tolerant of missing
-     nodes.
-     ======================================================================= */
+  }
 
-  P.initSectionNav = function (root) {
-    // No-op placeholder that marks any [data-section-nav] as bound.
-    $$('[data-section-nav]', root || document).forEach(function (n) { bound(n, 'section-nav'); });
-  };
-
-  P.initTabs = function (root) {
-    // Minimal ARIA tabs: mark as bound and avoid further work here.
-    $$('[data-tabs]', root || document).forEach(function (n) { bound(n, 'tabs'); });
-  };
-
-  P.initCounters = function (root) {
-    // Count-up is not essential; just mark as bound.
-    $$('[data-count-to]', root || document).forEach(function (n) { bound(n, 'counters'); });
-  };
-
-  /* =======================================================================
-     06  BOUGHT NOTE
-     ======================================================================= */
-
-  P.initBoughtNote = function (root) {
-    $$('[data-bought-note]', root || document).forEach(function (host) {
-      if (bound(host, 'bought-note')) return;
-      var key = attr(host, 'data-bought-token') || 'bought_note';
-      try {
-        var token = window.localStorage && window.localStorage.getItem ? window.localStorage.getItem(key) : null;
-        if (!token) return;
-        host.hidden = false;
-        var msg = $('[data-bought-note-message]', host);
-        if (msg) msg.textContent = token;
-      } catch (e) { /* ignore */ }
-    });
-  };
-
-  /* =======================================================================
-     07  BOUGHT SUMMARY
-     ======================================================================= */
-
-  P.initBoughtSummary = function (root) {
-    $$('[data-bought-summary]', root || document).forEach(function (host) {
+  P.initBoughtSummary = function () {
+    $$('[data-bought-summary]').forEach(function (host) {
       if (bound(host, 'bought-summary')) return;
 
-      var list = $('[data-bought-list]', host) || host;
-      var raw = attr(host, 'data-bought-summary');
-      if (!raw) return;
-      var arr = null;
-      try { arr = JSON.parse(raw); } catch (e) { return; }
-      if (!Array.isArray(arr) || !arr.length) return;
+      var list = el('ol', 'bought__list');
+      list.setAttribute('aria-hidden', 'false');
+      try { list.setAttribute('data-bought-list', '1'); } catch (e) { /* ignore */ }
 
       var validCount = 0;
-      arr.forEach(function (r) {
-        try { if (!r || typeof r !== 'object') return; } catch (e) { return; }
+      var records = [];
+      try { records = JSON.parse(attr(host, 'data-bought-summary') || '[]'); } catch (e) { records = []; }
 
-        var li = el('li', 'bought');
-        var label = (r.label || r.itemName || r.name || '').toString();
-        if (!label) label = 'A bought item';
+      records.forEach(function (r) {
+        try {
+          if (!r || typeof r !== 'object') return;
+          var li = el('li', 'bought__item');
+          var labelSpan = el('span', 'bought__label', r.itemName || r.name || 'Purchased product');
+          var metaSpan = el('span', 'bought__meta');
 
-        var labelSpan = el('span', 'bought__label', label);
-        var metaSpan = el('span', 'bought__meta');
+          var ref = r.paymentRef || r.ref || r.paymentReference || r.payment || '';
+          var email = r.deliveryEmail || r.email || r.buyerEmail || r.customerEmail || '';
+          var norefMsg = r.note || r.notice || r.meta || '';
 
-        // date
-        if (r.date) {
-          try { metaSpan.appendChild(document.createTextNode(String(r.date))); } catch (e) { /* ignore */ }
-        }
+          if (ref && !email) {
+            try {
+              metaSpan.appendChild(document.createTextNode('Payment reference: ' + ref));
 
-        var recs = r.records || (Array.isArray(r.bought) ? r.bought : []);
-        var norefMsg = r.norefMessage || r.norefMsg || '';
-        var maskEmail = function (e) {
-          try {
-            if (!e || typeof e !== 'string') return '';
-            var parts = e.split('@');
-            if (parts.length !== 2) return e;
-            var name = parts[0];
-            if (name.length <= 2) name = name[0] + '\u2026';
-            else name = name.substring(0, 2) + '\u2026';
-            return name + '@' + parts[1];
-          } catch (ex) { return '' }
-        };
+              var btn = document.createElement('button');
+              btn.setAttribute('type', 'button');
+              btn.setAttribute('data-copy', ref);
+              btn.setAttribute('data-copy-label', 'Payment reference for ' + label);
+              btn.setAttribute('aria-label', 'Copy payment reference for ' + label);
+              btn.className = 'bought__copy';
+              btn.textContent = 'Copy';
+              metaSpan.appendChild(document.createTextNode(' '));
+              metaSpan.appendChild(btn);
 
-        recs = Array.isArray(recs) ? recs : [];
-        Object.keys(recs).forEach(function (k) {
-          try {
-            var ref = recs[k].ref || '';
-            var email = recs[k].email || '';
-          } catch (e) { /* ignore */ }
-        });
+              var verifyBtn = document.createElement('button');
+              verifyBtn.setAttribute('type', 'button');
+              verifyBtn.className = 'bought__verify';
+              verifyBtn.setAttribute('aria-label', 'Verify payment for ' + label);
+              verifyBtn.setAttribute('title', 'Send this stored payment reference to the shop to confirm the order');
+              verifyBtn.textContent = 'Verify';
 
-        // Render each record
-        Object.keys(recs).forEach(function (k) {
-          try {
-            var ref = recs[k].ref || '';
-            var email = recs[k].email || '';
-            // Keep a consistent label for this item
-            var label = (r.label || r.itemName || r.name || '').toString();
-            if (!label) label = 'A bought item';
+              var msg = document.createElement('span');
+              msg.className = 'bought__verify-msg';
+              msg.setAttribute('aria-live', 'polite');
+              msg.style.marginLeft = '8px';
 
-            // visible label
-            var labelSpan = el('span', 'bought__label', label);
-            var metaSpan = el('span', 'bought__meta');
+              metaSpan.appendChild(document.createTextNode(' '));
+              metaSpan.appendChild(verifyBtn);
+              metaSpan.appendChild(msg);
 
-            // Reference or no-reference message
-            var refPrefix = recs[k].refPrefix || r.refPrefix || '';
-            var refSuffix = recs[k].refSuffix || r.refSuffix || '';
-            var ref = recs[k].ref || '';
-            var email = recs[k].email || '';
-            if (ref) {
-              if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-              metaSpan.appendChild(document.createTextNode(refPrefix + ref + refSuffix));
+              (function (refText, msgNode) {
+                try {
+                  verifyBtn.addEventListener('click', function () {
+                    try {
+                      if (!window.groupStoreVerify || typeof window.groupStoreVerify !== 'function') {
+                        msgNode.textContent = 'To confirm delivery, check your delivery email or contact Support.';
+                        return;
+                      }
+                      msgNode.textContent = 'Verifying…';
+                      var p = null;
+                      try { p = window.groupStoreVerify(refText); } catch (e) { p = null; }
+                      if (!p || typeof p.then !== 'function') {
+                        msgNode.textContent = 'Verification failed';
+                        return;
+                      }
+                      p.then(function (order) {
+                        try {
+                          if (order && order.id) {
+                            msgNode.textContent = 'Verified: paid — order ' + String(order.id);
 
-              try {
-                var btn = document.createElement('button');
-                btn.setAttribute('type', 'button');
-                btn.setAttribute('data-copy', ref);
-                btn.setAttribute('data-copy-label', 'Payment reference for ' + label);
-                btn.setAttribute('aria-label', 'Copy payment reference for ' + label);
-                btn.className = 'bought__copy';
-                btn.textContent = 'Copy';
-                metaSpan.appendChild(document.createTextNode(' '));
-                metaSpan.appendChild(btn);
+                            try {
+                              var summary = {
+                                id: order.id,
+                                itemName: order.itemName || order.name || '',
+                                quantity: order.quantity || 1,
+                                hasDeliveryEmail: !!(order.email || order.buyerEmail || order.customerEmail)
+                              };
+                              document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: summary }));
+                            } catch (evErr) { /* swallow errors from listeners */ }
 
-                var verifyBtn = document.createElement('button');
-                verifyBtn.setAttribute('type', 'button');
-                verifyBtn.className = 'bought__verify';
-                verifyBtn.setAttribute('aria-label', 'Verify payment for ' + label);
-                verifyBtn.setAttribute('title', 'Send this stored payment reference to the shop to confirm the order');
-                verifyBtn.textContent = 'Verify';
+                          } else {
+                            msgNode.textContent = 'Not found / unpaid';
+                          }
+                        } catch (e) { msgNode.textContent = 'Verification failed'; }
+                      }).catch(function () { msgNode.textContent = 'Verification failed'; });
+                    } catch (e) { msgNode.textContent = 'Verification failed'; }
+                  });
+                } catch (e) { /* swallow */ }
+              })(ref, msg);
 
-                var msg = document.createElement('span');
-                msg.className = 'bought__verify-msg';
-                msg.setAttribute('aria-live', 'polite');
-                msg.style.marginLeft = '8px';
+            } catch (e) { /* defensive: do not let this break the host */ }
+          } else if (email) {
+            if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+            metaSpan.appendChild(document.createTextNode('Delivery email: '));
+            try {
+              var emSpanNoRef = el('span', 'bought__email', maskEmail(email));
+              emSpanNoRef.style.marginLeft = '4px';
+              emSpanNoRef.style.color = 'var(--text-dim)';
+              metaSpan.appendChild(emSpanNoRef);
 
-                metaSpan.appendChild(document.createTextNode(' '));
-                metaSpan.appendChild(verifyBtn);
-                metaSpan.appendChild(msg);
+              var revealBtnNoRef = document.createElement('button');
+              revealBtnNoRef.setAttribute('type', 'button');
+              revealBtnNoRef.className = 'bought__reveal';
+              revealBtnNoRef.setAttribute('aria-pressed', 'false');
+              revealBtnNoRef.textContent = 'Show';
+              revealBtnNoRef.style.marginLeft = '8px';
+              metaSpan.appendChild(revealBtnNoRef);
 
-                (function (refText, msgNode) {
-                  try {
-                    verifyBtn.addEventListener('click', function () {
-                      try {
-                        if (!window.groupStoreVerify || typeof window.groupStoreVerify !== 'function') {
-                          msgNode.textContent = 'To confirm delivery, check your delivery email or contact Support.';
-                          return;
-                        }
-                        msgNode.textContent = 'Verifying…';
-                        var p = null;
-                        try { p = window.groupStoreVerify(refText); } catch (e) { p = null; }
-                        if (!p || typeof p.then !== 'function') {
-                          msgNode.textContent = 'Verification failed';
-                          return;
-                        }
-                        p.then(function (order) {
-                          try {
-                            if (order && order.id) {
-                              msgNode.textContent = 'Verified: paid — order ' + String(order.id);
+              (function (node, btn, fullEmail) {
+                try {
+                  btn.addEventListener('click', function () {
+                    try {
+                      var revealed = btn.getAttribute('data-revealed') === '1';
+                      if (revealed) {
+                        node.textContent = maskEmail(fullEmail);
+                        btn.textContent = 'Show';
+                        btn.setAttribute('aria-pressed', 'false');
+                        btn.setAttribute('data-revealed', '0');
+                      } else {
+                        node.textContent = fullEmail;
+                        btn.textContent = 'Hide';
+                        btn.setAttribute('aria-pressed', 'true');
+                        btn.setAttribute('data-revealed', '1');
+                      }
+                    } catch (e) { /* ignore */ }
+                  });
+                } catch (e) { /* ignore */ }
+              })(emSpanNoRef, revealBtnNoRef, email);
 
-                              try {
-                                var summary = {
-                                  id: order.id,
-                                  itemName: order.itemName || order.name || '',
-                                  quantity: order.quantity || 1,
-                                  hasDeliveryEmail: !!(order.email || order.buyerEmail || order.customerEmail)
-                                };
-                                document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: summary }));
-                              } catch (evErr) { /* swallow errors from listeners */ }
+            } catch (e) { metaSpan.appendChild(document.createTextNode('Delivery email: ' + maskEmail(email))); }
+          } else if (norefMsg) {
+            if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+            metaSpan.appendChild(document.createTextNode(norefMsg));
+          }
 
-                            } else {
-                              msgNode.textContent = 'Not found / unpaid';
-                            }
-                          } catch (e) { msgNode.textContent = 'Verification failed'; }
-                        }).catch(function () { msgNode.textContent = 'Verification failed'; });
-                      } catch (e) { msgNode.textContent = 'Verification failed'; }
-                    });
-                  } catch (e) { /* swallow */ }
-                })(ref, msg);
+          if (ref && email) {
+            try {
+              metaSpan.appendChild(document.createTextNode(' '));
+              var emSpan = el('span', 'bought__email', maskEmail(email));
+              emSpan.style.marginLeft = '8px';
+              emSpan.style.color = 'var(--text-dim)';
+              metaSpan.appendChild(emSpan);
 
-              } catch (e) { /* defensive: do not let this break the host */ }
-            } else if (email) {
-              if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-              metaSpan.appendChild(document.createTextNode('Delivery email: '));
-              try {
-                var emSpanNoRef = el('span', 'bought__email', maskEmail(email));
-                emSpanNoRef.style.marginLeft = '4px';
-                emSpanNoRef.style.color = 'var(--text-dim)';
-                metaSpan.appendChild(emSpanNoRef);
+              var revealBtn = document.createElement('button');
+              revealBtn.setAttribute('type', 'button');
+              revealBtn.className = 'bought__reveal';
+              revealBtn.setAttribute('aria-pressed', 'false');
+              revealBtn.textContent = 'Show';
+              revealBtn.style.marginLeft = '8px';
+              metaSpan.appendChild(revealBtn);
 
-                var revealBtnNoRef = document.createElement('button');
-                revealBtnNoRef.setAttribute('type', 'button');
-                revealBtnNoRef.className = 'bought__reveal';
-                revealBtnNoRef.setAttribute('aria-pressed', 'false');
-                revealBtnNoRef.textContent = 'Show';
-                revealBtnNoRef.style.marginLeft = '8px';
-                metaSpan.appendChild(revealBtnNoRef);
+              (function (node, btn, fullEmail) {
+                try {
+                  btn.addEventListener('click', function () {
+                    try {
+                      var revealed = btn.getAttribute('data-revealed') === '1';
+                      if (revealed) {
+                        node.textContent = maskEmail(fullEmail);
+                        btn.textContent = 'Show';
+                        btn.setAttribute('aria-pressed', 'false');
+                        btn.setAttribute('data-revealed', '0');
+                      } else {
+                        node.textContent = fullEmail;
+                        btn.textContent = 'Hide';
+                        btn.setAttribute('aria-pressed', 'true');
+                        btn.setAttribute('data-revealed', '1');
+                      }
+                    } catch (e) { /* ignore */ }
+                  });
+                } catch (e) { /* ignore */ }
+              })(emSpan, revealBtn, email);
 
-                (function (node, btn, fullEmail) {
-                  try {
-                    btn.addEventListener('click', function () {
-                      try {
-                        var revealed = btn.getAttribute('data-revealed') === '1';
-                        if (revealed) {
-                          node.textContent = maskEmail(fullEmail);
-                          btn.textContent = 'Show';
-                          btn.setAttribute('aria-pressed', 'false');
-                          btn.setAttribute('data-revealed', '0');
-                        } else {
-                          node.textContent = fullEmail;
-                          btn.textContent = 'Hide';
-                          btn.setAttribute('aria-pressed', 'true');
-                          btn.setAttribute('data-revealed', '1');
-                        }
-                      } catch (e) { /* ignore */ }
-                    });
-                  } catch (e) { /* ignore */ }
-                })(emSpanNoRef, revealBtnNoRef, email);
+            } catch (e) { /* ignore */ }
+          }
 
-              } catch (e) { metaSpan.appendChild(document.createTextNode('Delivery email: ' + maskEmail(email))); }
-            } else if (norefMsg) {
-              if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-              metaSpan.appendChild(document.createTextNode(norefMsg));
-            }
-
-            if (ref && email) {
-              try {
-                metaSpan.appendChild(document.createTextNode(' '));
-                var emSpan = el('span', 'bought__email', maskEmail(email));
-                emSpan.style.marginLeft = '8px';
-                emSpan.style.color = 'var(--text-dim)';
-                metaSpan.appendChild(emSpan);
-
-                var revealBtn = document.createElement('button');
-                revealBtn.setAttribute('type', 'button');
-                revealBtn.className = 'bought__reveal';
-                revealBtn.setAttribute('aria-pressed', 'false');
-                revealBtn.textContent = 'Show';
-                revealBtn.style.marginLeft = '8px';
-                metaSpan.appendChild(revealBtn);
-
-                (function (node, btn, fullEmail) {
-                  try {
-                    btn.addEventListener('click', function () {
-                      try {
-                        var revealed = btn.getAttribute('data-revealed') === '1';
-                        if (revealed) {
-                          node.textContent = maskEmail(fullEmail);
-                          btn.textContent = 'Show';
-                          btn.setAttribute('aria-pressed', 'false');
-                          btn.setAttribute('data-revealed', '0');
-                        } else {
-                          node.textContent = fullEmail;
-                          btn.textContent = 'Hide';
-                          btn.setAttribute('aria-pressed', 'true');
-                          btn.setAttribute('data-revealed', '1');
-                        }
-                      } catch (e) { /* ignore */ }
-                    });
-                  } catch (e) { /* ignore */ }
-                })(emSpan, revealBtn, email);
-
-              } catch (e) { /* ignore */ }
-            }
-
-            li.appendChild(labelSpan);
-            li.appendChild(metaSpan);
-            list.appendChild(li);
-            validCount++;
-          } catch (e) { /* ignore per-item */ }
-        });
-
+          li.appendChild(labelSpan);
+          li.appendChild(metaSpan);
+          list.appendChild(li);
+          validCount++;
+        } catch (e) { /* ignore per-item */ }
       });
 
       if (validCount) {
@@ -599,14 +508,18 @@
         a1.href = 'docs.html#delivery';
         a1.textContent = 'Open installers & delivery instructions';
         a1.className = 'bought__cta-primary';
-        a1.setAttribute('role', 'button');
         a1.style.marginRight = '12px';
+        // Make the primary link a real link that opens in a new tab and is
+        // clearly announced to assistive technology.
+        try { a1.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+        try { a1.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+        try { a1.setAttribute('aria-label', a1.textContent + ' (opens in a new tab)'); } catch (e) { /* ignore */ }
 
         var a2 = document.createElement('a');
         a2.href = 'docs.html#support';
         a2.textContent = 'Contact support';
         a2.className = 'bought__cta-secondary';
-        a2.setAttribute('role', 'button');
+        // Keep a2 as a normal link (no role="button") for correct semantics.
 
         c.appendChild(a1);
         c.appendChild(a2);
@@ -614,6 +527,15 @@
         // Append once and mark the host so this handler is idempotent
         try { list.appendChild(c); } catch (e) { /* ignore DOM errors */ }
         try { host.setAttribute('data-bought-verified', '1'); } catch (e) { /* ignore */ }
+
+        // Attempt to focus the primary link so keyboard and screen reader users
+        // are moved to the actionable control. Do this asynchronously and in a
+        // safe try/catch so environments that prevent programmatic focus won't throw.
+        try {
+          setTimeout(function () {
+            try { if (a1 && typeof a1.focus === 'function') a1.focus(); } catch (e) { /* ignore */ }
+          }, 50);
+        } catch (e) { /* ignore */ }
 
       } catch (e) { /* swallow listener errors */ }
     });
