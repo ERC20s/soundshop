@@ -280,22 +280,6 @@
 
       function
 
-  // ... many functions omitted above for brevity; rest of file continues unchanged ...
-
-  P.initPresetTeaser = function (root) {
-    $$('[data-presets-src]', root || document).forEach(function (host) {
-      if (bound(host, 'presets')) return;
-
-      var src = attr(host, 'data-presets-src');
-      if (!src) return;
-
-      var list = $('[data-presets-list]', host) || host;
-      var status = $('[data-presets-status]', host);
-      var limit = intAttr(host, 'data-presets-limit', 6);
-
-      function
-  };
-
   /* =======================================================================
      06  ALREADY-BOUGHT NOTE
      A buyer who pays on the plugins page has that return written into this
@@ -486,27 +470,57 @@
         if (!label) label = attr(host, 'data-bought-label-' + k);
         if (!label) label = k;
 
-        var text = label;
+        // Build the DOM for this item: <li><span.bought__label>label</span><span.bought__meta>...</span></li>
+        var li = el('li');
+        var labelSpan = el('span', 'bought__label', label);
+        var metaSpan = el('span', 'bought__meta');
 
-        // Add date if we have a date prefix
+        // Date portion
         if (datePrefix) {
           var date = boughtDate(recs[k].t);
-          if (date) text += ' ' + datePrefix + date;
+          if (date) {
+            metaSpan.appendChild(document.createTextNode(datePrefix + date));
+          }
         }
 
-        // Add reference or no-reference message
+        // Reference or no-reference message
         var ref = recs[k].ref || '';
         if (ref) {
-          text += ' ' + refPrefix + ref + refSuffix;
+          // space between date and ref if needed
+          if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+          // Append the visible ref text (kept as plain text)
+          metaSpan.appendChild(document.createTextNode(refPrefix + ref + refSuffix));
+
+          // Append a Copy button with data attributes for SS.initCopyButtons / SS.copyText
+          try {
+            var btn = document.createElement('button');
+            btn.setAttribute('type', 'button');
+            btn.setAttribute('data-copy', ref);
+            btn.setAttribute('data-copy-label', 'Payment reference for ' + label);
+            btn.setAttribute('aria-label', 'Copy payment reference for ' + label);
+            btn.className = 'bought__copy';
+            btn.textContent = 'Copy';
+            // Some pages may not have SS helpers; leave the button inert in that case.
+            metaSpan.appendChild(document.createTextNode(' '));
+            metaSpan.appendChild(btn);
+          } catch (e) { /* defensive: do not let this break the host */ }
         } else if (norefMsg) {
-          text += ' ' + norefMsg;
+          if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+          metaSpan.appendChild(document.createTextNode(norefMsg));
         }
 
-        var li = el('li');
-        li.textContent = text;
+        li.appendChild(labelSpan);
+        li.appendChild(metaSpan);
         list.appendChild(li);
         validCount++;
       });
+
+      // After populating, initialise copy buttons if the helpers exist. Guarded.
+      try {
+        if (SS && typeof SS.initCopyButtons === 'function') {
+          SS.initCopyButtons(list);
+        }
+      } catch (e) { /* swallow — do not let this break the page */ }
 
       // Unhide the host only if we added at least one item
       if (validCount > 0) {
