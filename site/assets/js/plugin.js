@@ -279,13 +279,9 @@
           .catch(function () {
             if (status) status.textContent = 'Failed to load presets.';
           });
-      } catch (e) { if (status) status.textContent = 'Failed to load presets.'; }
+      } catch (e) { if (status) status.textContent }
     });
   };
-
-  /* =======================================================================
-     07  REMEMBERED PURCHASE SUMMARY
-     ======================================================================= */
 
   function maskEmail(email) {
     try {
@@ -315,15 +311,37 @@
     $$('[data-bought-summary]', root || document).forEach(function (host) {
       if (bound(host, 'bought-summary')) return;
 
-      var raw = null;
-      try { raw = attr(host, 'data-bought-summary') || window.localStorage && typeof window.localStorage.getItem === 'function' ? window.localStorage.getItem(attr(host, 'data-bought-summary')) : null; } catch (e) { raw = null; }
+      var attrVal = '';
+      try { attrVal = attr(host, 'data-bought-summary'); } catch (e) { attrVal = ''; }
 
+      var raw = null;
       var recs = null;
-      try { recs = JSON.parse(attr(host, 'data-bought-summary') || 'null'); } catch (e) { recs = null; }
 
       try {
+        // If the attribute contains inline JSON, prefer that.
+        if (attrVal) {
+          try { recs = JSON.parse(attrVal); } catch (e) { recs = null; }
+
+          // If parsing failed, treat the attribute value as a storage key.
+          if (!recs) {
+            try {
+              if (window.localStorage && typeof window.localStorage.getItem === 'function') {
+                raw = window.localStorage.getItem(attrVal);
+              }
+            } catch (e) { raw = null; }
+          }
+        } else {
+          // Attribute absent or empty — fall back to the canonical key.
+          try {
+            if (window.localStorage && typeof window.localStorage.getItem === 'function') {
+              raw = window.localStorage.getItem('soundshop:bought:v1');
+            }
+          } catch (e) { raw = null; }
+        }
+
+        // If we have raw storage content and haven't parsed records yet, try parsing it.
         if (!recs && raw) {
-          try { recs = JSON.parse(raw); } catch (e) { /* ignore parse errors */ }
+          try { recs = JSON.parse(raw); } catch (e) { recs = null; }
         }
       } catch (e) { /* ignore localStorage access errors */ }
 
@@ -388,68 +406,6 @@
                   });
                 } catch (e) { /* ignore */ }
               })(refNode, revealBtn, ref);
-
-            } catch (e) { /* ignore */ }
-
-            try {
-              var ref = ref; // preserve for the verification handler below
-
-              var msg = document.createElement('button');
-              msg.setAttribute('type', 'button');
-              msg.className = 'bought__verify';
-              msg.textContent = 'Verify order';
-
-              (function (reference, msg, refNode) {
-                try {
-                  msg.addEventListener('click', function (ev) {
-                    try {
-                      ev.preventDefault();
-                      msg.textContent = 'Checking…';
-                      // Call the real platform verification function if present.
-                      var p = null;
-                      try { p = window.groupStoreVerify ? window.groupStoreVerify(reference) : null; } catch (e) { p = null; }
-                      if (!p || typeof p.then !== 'function') {
-                        msg.textContent = 'Verification unavailable';
-                        return;
-                      }
-                      // When the promise resolves we render a tiny status node
-                      // next to the control and emit the soundshop:verified-order
-                      // event so other listeners in the page (notably the
-                      // handler that injects the installers CTA) get a chance.
-                      var parent = msg.parentNode || msg;
-                      var msgNode = document.createElement('span');
-                      msgNode.className = 'bought__verify-msg';
-                      msgNode.style.marginLeft = '8px';
-                      parent.appendChild(msgNode);
-
-                      msgNode.textContent = 'Checking…';
-
-                      p.then(function (order) {
-                        try {
-                          if (order && order.id) {
-                            msgNode.textContent = 'Verified: paid — order ' + String(order.id);
-
-                            try {
-                              var summary = {
-                                id: order.id,
-                                itemName: order.itemName || order.name || '',
-                                quantity: order.quantity || 1,
-                                hasDeliveryEmail: !!(order.email || order.buyerEmail || order.customerEmail)
-                              };
-                              document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: summary }));
-                            } catch (evErr) { /* swallow errors from listeners */ }
-
-                          } else {
-                            msgNode.textContent = 'Not found / unpaid';
-                          }
-                        } catch (e) { msgNode.textContent = 'Verification failed'; }
-                      }).catch(function () { msgNode.textContent = 'Verification failed'; });
-                    } catch (e) { msgNode.textContent = 'Verification failed'; }
-                  });
-                } catch (e) { /* ignore */ }
-              })(ref, msg, refNode);
-
-              metaSpan.appendChild(msg);
 
             } catch (e) { /* ignore */ }
           } else if (email) {
@@ -637,8 +593,26 @@
 
         // Delegate to the helper which builds, appends and initialises copy
         try { createBoughtCta(host, detail); } catch (e) { /* swallow listener errors */ }
-      } catch (e) { /* ignore if addEventListener not available */ }
+      }  catch (e) { /* ignore */ }
     });
   } catch (e) { /* ignore */ }
 
-})(window, document);
+  /* =======================================================================
+     09  NOP init() — consumers call the specific inits they want
+     ======================================================================= */
+
+  P.init = function (root) {
+    root = root || document;
+    P.initDemoSlot(root);
+    P.initPresetTeaser(root);
+    P.initSectionNav(root);
+    P.initTabs(root);
+    P.initCounters(root);
+    P.initBoughtNote(root);
+    P.initBoughtSummary(root);
+  };
+
+  // Export for tests.
+  try { window.__SSPlugin = P; } catch (e) { /* ignore */ }
+
+})(this, this.document);
