@@ -118,6 +118,79 @@
     return null;
   }
 
+  /**
+   * Read remembered purchases from localStorage and present them as an Array
+   * of item-like objects that the rest of plugin.js expects. Behaviour:
+   *  - If the host has an explicit data-* key (attr name provided) use that.
+   *  - Otherwise prefer canonical 'soundshop:bought:v1' which stores a v1
+   *    object mapping from token -> record; normalise that shape into an
+   *    Array. Finally fall back to legacy 'soundshop.bought' which is an Array.
+   *  - Any parsing errors are caught and return an empty Array.
+   */
+  function readBoughtArray(host, dataAttrName) {
+    try {
+      var explicitKey = '';
+      try { explicitKey = host && dataAttrName ? attr(host, dataAttrName) || '' : ''; } catch (e) { explicitKey = ''; }
+
+      var candidates = [];
+      if (explicitKey) candidates.push(explicitKey);
+      candidates.push('soundshop:bought:v1');
+      candidates.push('soundshop.bought');
+
+      for (var i = 0; i < candidates.length; i++) {
+        var key = candidates[i];
+        try {
+          var raw = window.localStorage && window.localStorage.getItem(key);
+          if (!raw) continue;
+          var parsed = null;
+          try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+
+          // If it's already an array, return it directly (legacy shape)
+          if (Array.isArray(parsed)) {
+            if (parsed.length) return parsed;
+            continue;
+          }
+
+          // If it's an object mapping (v1), normalise to an array
+          if (parsed && typeof parsed === 'object') {
+            var out = [];
+            var labelsEl = host && host.querySelector ? host.querySelector('[data-bought-summary-labels]') : null;
+            for (var tok in parsed) {
+              if (!Object.prototype.hasOwnProperty.call(parsed, tok)) continue;
+              var rec = parsed[tok];
+              if (!rec) continue;
+
+              var name = '';
+              try { if (labelsEl) name = attr(labelsEl, 'data-bought-label-' + tok) || ''; } catch (e) { name = ''; }
+              if (!name) {
+                try { name = String(tok).replace(/[-_]/g, ' '); name = name.charAt(0).toUpperCase() + name.slice(1); } catch (e) { name = String(tok); }
+              }
+
+              var item = {};
+              item.name = name;
+              item.itemName = name;
+              item.title = name;
+              item.label = name;
+              item.email = (rec && (rec.email || rec.deliveryEmail || rec.buyerEmail || rec.customerEmail)) || '';
+              var idv = (rec && (rec.ref || rec.reference || rec.order || rec.id || rec.tx)) || '';
+              if (idv) item.ref = idv;
+              if (idv) item.id = idv;
+              item.t = (rec && (rec.t || rec.time || rec.date)) || null;
+              item.state = (rec && rec.state) || null;
+              item.quantity = 1;
+              out.push(item);
+            }
+            if (out.length) return out;
+          }
+
+        } catch (e) {
+          // ignore and try next candidate
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return [];
+  }
+
   /* Helper to mask an email address for public display. */
   function maskEmail(email) {
     try {
@@ -276,56 +349,41 @@
 
     var authorName = pick(preset, ['author', 'by', 'designer']);
     var side = el('div', 'preset__side');
-    if (authorName) side.appendChild(el('span', 'badge', authorName));
+    if (authorName) side.appendChild(el('span', 'preset__author', authorName));
     row.appendChild(side);
-
     return row;
+  }
+
+  function makePresetTeaser(listEl, json) {
+    try {
+      var arr = normalisePresets(json);
+      if (!arr.length) return;
+      while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+      arr.slice(0, 6).forEach(function (p) { listEl.appendChild(presetRow(p)); });
+    } catch (e) { /* ignore */ }
   }
 
   P.initPresetTeaser = function (root) {
     $$('[data-presets-src]', root || document).forEach(function (host) {
-      if (bound(host, 'presets')) return;
-
-      var src = attr(host, 'data-presets-src');
-      if (!src) return;
-
-      var list = $('[data-presets-list]', host) || host;
-
-      var status = $('[data-presets-status]', host);
-
-      if (isFileProtocol()) {
-        if (status) status.textContent = 'Preset library cannot be loaded from the filesystem.';
-        host.setAttribute('data-presets-state', 'file');
-        return;
-      }
-
-      host.setAttribute('data-presets-state', 'probing');
-      if (status) status.textContent = 'Looking for presets…';
-
-      window.fetch(src, { method: 'GET', cache: 'no-store' })
-        .then(function (res) {
-          if (!res || !res.ok) throw new Error('presets not published');
-          return res.json();
-        })
-        .then(function (json) {
-          try {
-            var arr = normalisePresets(json);
-            if (!arr.length) throw new Error('no presets');
-            while (list.firstChild) list.removeChild(list.firstChild);
-            arr.slice(0, intAttr(host, 'data-presets-count', 6)).forEach(function (p) { list.appendChild(presetRow(p)); });
-            host.setAttribute('data-presets-state', 'loaded');
-            if (status) status.textContent = '';
-          } catch (e) {
-            host.setAttribute('data-presets-state', 'absent');
-            if (status) status.textContent = 'Preset library missing or malformed.';
-          }
-        })
-        .catch(function () {
-          host.setAttribute('data-presets-state', 'absent');
-          if (status) status.textContent = 'Preset library missing or malformed.';
-        });
+      try {
+        if (bound(host, 'presets')) return;
+        var src = attr(host, 'data-presets-src');
+        if (!src) return;
+        var list = host.querySelector('[data-presets-list]');
+        if (!list) return;
+        list.setAttribute('aria-busy', 'true');
+        window.fetch(src, { method: 'GET', cache: 'no-store' })
+          .then(function (res) { return res.json(); })
+          .then(function (json) { try { makePresetTeaser(list, json); } catch (e) { /* ignore */ } })
+          .catch(function () { /* ignore */ })
+          .finally(function () { try { list.removeAttribute('aria-busy'); } catch (e) { /* ignore */ } });
+      } catch (e) { /* ignore host */ }
     });
   };
+
+  /* =======================================================================
+     03  SECTION NAV, TABS, COUNTERS — omitted in this listing, unchanged
+     ======================================================================= */
 
   /* =======================================================================
      04  BOUGHT NOTE
@@ -335,11 +393,8 @@
     $$('[data-bought-note]', root || document).forEach(function (note) {
       try {
         if (bound(note, 'bought-note')) return;
-        var key = attr(note, 'data-bought-note') || 'soundshop.bought';
-        var raw = '[]';
-        try { raw = window.localStorage && window.localStorage.getItem(key) || '[]'; } catch (e) { raw = '[]'; }
-        var arr = [];
-        try { arr = JSON.parse(raw); } catch (e) { arr = []; }
+        // Prefer explicit host data-* key, then canonical v1 and finally legacy
+        var arr = readBoughtArray(note, 'data-bought-note');
         if (Array.isArray(arr) && arr.length) {
           try { note.hidden = false; } catch (e) { /* ignore */ }
         }
@@ -355,11 +410,7 @@
     $$('[data-bought-summary]', root || document).forEach(function (host) {
       try {
         if (bound(host, 'bought-summary')) return;
-        var key = attr(host, 'data-bought-summary') || 'soundshop.bought';
-        var raw = '[]';
-        try { raw = window.localStorage && window.localStorage.getItem(key) || '[]'; } catch (e) { raw = '[]'; }
-        var arr = [];
-        try { arr = JSON.parse(raw); } catch (e) { arr = []; }
+        var arr = readBoughtArray(host, 'data-bought-summary');
         if (!Array.isArray(arr) || !arr.length) return;
 
         var list = host.querySelector('[data-bought-summary-list]') || host;
@@ -575,8 +626,7 @@
                   }
                 } catch (e) { /* ignore */ }
               }
-            } catch (e) { /* ignore */ }
-
+            } catch (e) { /* ignore per-item */ }
           } catch (e) { /* ignore per-item */ }
         });
 
@@ -606,14 +656,16 @@
                         var d = extractDownloadUrl(order);
                         if (d) {
                           try {
-                            // Enrich the saved detail and attach a per-item CTA
-                            firstRefDetail.downloadUrl = d;
-                            createBoughtCta(firstRefLi || host, firstRefDetail);
-                            return;
-                          } catch (e) { /* ignore */ }
+                            if (firstRefLi && firstRefDetail) {
+                              firstRefDetail.downloadUrl = d;
+                              createBoughtCta(firstRefLi || host, firstRefDetail);
+                            } else {
+                              createBoughtCta(host, null);
+                            }
+                          } catch (e) { try { createBoughtCta(host, null); } catch (er) { /* ignore */ } }
+                        } else {
+                          try { createBoughtCta(host, null); } catch (e) { /* ignore */ }
                         }
-                        // No direct installers; fall back to generic CTA on host
-                        try { createBoughtCta(host, null); } catch (e) { /* ignore */ }
                       } catch (e) { try { createBoughtCta(host, null); } catch (er) { /* ignore */ } }
                     }).catch(function () { try { createBoughtCta(host, null); } catch (e) { /* ignore */ } });
                   }
