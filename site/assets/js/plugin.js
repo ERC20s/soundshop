@@ -262,156 +262,49 @@
       } catch (e) { /* ignore */ }
 
       // No direct URL: if we have an id and the platform verifier exists,
-      // render a small verify button that replaces itself with the proper
-      // CTA after verification. Otherwise fall back to a support link.
+      // offer a verify flow, otherwise show a support link.
       try {
-        var id = detail && detail.id ? String(detail.id) : '';
+        var id = detail && (detail.id || detail.ref || detail.tx || detail.order) ? String(detail.id || detail.ref || detail.tx || detail.order) : '';
         if (id && typeof window.groupStoreVerify === 'function') {
-          var btn = document.createElement('button');
-          btn.setAttribute('type', 'button');
-          btn.className = 'bought__check';
-          btn.textContent = 'Check order';
-          try { host.appendChild(btn); } catch (e) { /* ignore */ }
-
-          // Guard double-bind
-          if (btn.getAttribute('data-ssp-verify') !== 'on') {
-            try { btn.setAttribute('data-ssp-verify', 'on'); } catch (e) { /* ignore */ }
-            (function (button, hostNode, orderId) {
-              try {
-                button.addEventListener('click', function () {
-                  try {
-                    try { button.disabled = true; } catch (e) { /* ignore */ }
-
-                    var p = null;
-                    try { p = window.groupStoreVerify(String(orderId)); } catch (e) { p = null; }
-                    if (!p || typeof p.then !== 'function') {
-                      try { button.textContent = 'Check order (unavailable)'; } catch (e) { /* ignore */ }
-                      try { makeSupportLink(orderId); } catch (e) { /* ignore */ }
-                      return;
-                    }
-
-                    p.then(function (order) {
-                      try {
-                        var found = null;
-                        try { found = extractDownloadUrl(order); } catch (e) { found = null; }
-                        if (found) {
-                          try {
-                            // replace the button with download anchor
-                            var a = makeDownloadAnchor(found);
-                            try { if (button.parentNode) button.parentNode.removeChild(button); } catch (e) { /* ignore */ }
-                          } catch (e) { /* ignore */ }
-                        } else {
-                          try { makeSupportLink(orderId); } catch (e) { /* ignore */ }
-                        }
-                      } catch (e) { try { makeSupportLink(orderId); } catch (er) { /* ignore */ } }
-                    }).catch(function () { try { makeSupportLink(orderId); } catch (e) { /* ignore */ } });
-
-                  } catch (e) { /* ignore click handler */ }
-                });
-              } catch (e) { /* ignore binding */ }
-            })(btn, host, id);
-          }
-
+          // If the platform verifier exists show a button that triggers it
+          var vbtn = document.createElement('button');
+          vbtn.className = 'bought__cta bought__cta--verify';
+          vbtn.setAttribute('type', 'button');
+          vbtn.textContent = 'Check order';
+          try {
+            vbtn.addEventListener('click', function () {
+              try { vbtn.disabled = true; } catch (e) { /* ignore */ }
+              var p = null;
+              try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
+              if (!p || typeof p.then !== 'function') {
+                try { host.removeChild(vbtn); } catch (e) { /* ignore */ }
+                try { makeSupportLink(id); } catch (e) { /* ignore */ }
+                return;
+              }
+              p.then(function (order) {
+                try {
+                  var found = null;
+                  try { found = extractDownloadUrl(order); } catch (e) { found = null; }
+                  if (found) {
+                    try { host.removeChild(vbtn); } catch (e) { /* ignore */ }
+                    try { makeDownloadAnchor(found); } catch (e) { /* ignore */ }
+                    return;
+                  }
+                } catch (e) { /* ignore */ }
+                try { host.removeChild(vbtn); } catch (e) { /* ignore */ }
+                try { makeSupportLink(id); } catch (e) { /* ignore */ }
+              }).catch(function () { try { host.removeChild(vbtn); } catch (e) { /* ignore */ } try { makeSupportLink(id); } catch (e) { /* ignore */ } });
+            });
+          } catch (e) { /* ignore binding */ }
+          try { host.appendChild(vbtn); } catch (e) { /* ignore */ }
           return;
         }
-      } catch (e) { /* ignore verifier path */ }
+      } catch (e) { /* ignore */ }
 
-      // Fallback: generic support link
-      try { makeSupportLink(detail && detail.id ? detail.id : ''); } catch (e) { /* ignore */ }
-
-    } catch (e) { /* swallow errors to avoid breaking callers */ }
-  }
-
-  /* =======================================================================
-     01  DEMO SLOT
-     ======================================================================= */
-
-  function mountDemoFrame(slot, src) {
-    var host = $('[data-demo-frame]', slot) || slot;
-    var frame = document.createElement('iframe');
-
-    frame.title = attr(slot, 'data-demo-title') || 'Playable browser demo';
-    frame.className = 'demo-frame';
-    frame.setAttribute('loading', 'lazy');
-    frame.setAttribute('allow', 'autoplay');
-    frame.setAttribute('referrerpolicy', 'no-referrer');
-    frame.style.width = '100%';
-    frame.style.border = '0';
-    frame.style.display = 'block';
-    frame.style.height = intAttr(slot, 'data-demo-height', 720) + 'px';
-    frame.src = src;
-
-    while (host.firstChild) host.removeChild(host.firstChild);
-    host.appendChild(frame);
-    slot.setAttribute('data-demo-state', 'embedded');
-
-    var note = $('[data-demo-note]', slot.parentNode || document);
-    if (note) note.hidden = false;
-  }
-
-  P.initDemoSlot = function (root) {
-    $$('[data-demo-src]', root || document).forEach(function (slot) {
-      if (bound(slot, 'demo')) return;
-
-      var src = attr(slot, 'data-demo-src');
-      if (!src) return;
-
-      var status = $('[data-demo-status]', slot);
-
-      if (isFileProtocol()) {
-        slot.setAttribute('data-demo-state', 'file');
-        if (status) {
-          status.textContent =
-            'This page is open from the filesystem, so the browser refuses to load the ' +
-            'demo inline. Open the demo in its own tab with the link above, or serve the ' +
-            'folder over http and the instrument appears here.';
-        }
-        return;
-      }
-
-      if (typeof window.fetch !== 'function') {
-        slot.setAttribute('data-demo-state', 'unsupported');
-        return;
-      }
-
-      slot.setAttribute('data-demo-state', 'probing');
-      if (status) status.textContent = 'Looking for the demo build…';
-
-      window.fetch(src, { method: 'GET', cache: 'no-store' })
-        .then(function (res) {
-          if (!res || !res.ok) throw new Error('demo not published');
-          return true;
-        })
-        .then(function () {
-          mountDemoFrame(slot, src);
-        })
-        .catch(function () {
-          try { slot.setAttribute('data-demo-state', 'missing'); } catch (e) { /* ignore */ }
-          if (status) try { status.textContent = 'Demo not published'; } catch (e) { /* ignore */ }
-        });
-    });
-  };
-
-  /* =======================================================================
-     02  PRESET TEASER
-     ======================================================================= */
-
-  P.initPresetTeaser = function (root) {
-    // intentionally left as original code (not required for this change)
-    try {
-      // find all [data-presets-src] roots and render a small preview
-      // this is unchanged from upstream and left as is
-      $$('[data-presets-src]', root || document).forEach(function (host) {
-        if (bound(host, 'presets')) return;
-        var src = attr(host, 'data-presets-src');
-        if (!src) return;
-        var list = host.querySelector('.presets__list');
-        if (!list) return;
-        // Minimal: don't fetch in this patch to avoid side effects
-        setMessage(list, 'muted', 'Presets available');
-      });
+      // Fallback: show a support link
+      try { makeSupportLink(detail && (detail.id || detail.ref) ? String(detail.id || detail.ref) : ''); } catch (e) { /* ignore */ }
     } catch (e) { /* ignore */ }
-  };
+  }
 
   /* =======================================================================
      03  SECTION NAV + TABS + COUNTERS (omitted: unchanged)
@@ -445,8 +338,23 @@
         arr.forEach(function (r, idx) {
           try {
             var label = String(r.itemName || r.name || r.title || r.label || 'Purchased item');
+
+            var ref = r.ref || r.id || '';
+            // If an item with this payment reference was already added by
+            // an in-page returned-checkout handler, avoid duplicating it.
+            if (ref) {
+              try {
+                var existing = host.querySelector('[data-ssp-paid-id="' + String(ref) + '"]');
+                if (existing) { validCount++; return; }
+              } catch (e) { /* ignore */ }
+            }
+
             var li = document.createElement('li');
             li.className = 'bought__item';
+
+            // Mark remembered/local entries with the paid-id attribute so
+            // later in-page additions can detect duplicates
+            try { if (ref) li.setAttribute('data-ssp-paid-id', String(ref)); } catch (e) { /* ignore */ }
 
             var titleSpan = document.createElement('span');
             titleSpan.className = 'bought__title';
@@ -457,7 +365,6 @@
             metaSpan.className = 'bought__meta';
             li.appendChild(metaSpan);
 
-            var ref = r.ref || r.id || '';
             if (ref) {
               var refSpan = document.createElement('span');
               refSpan.className = 'bought__ref';
@@ -628,6 +535,119 @@
     });
   };
 
+  /**
+   * Normalise a platform-supplied order object into the record shape used
+   * by the rest of plugin.js. This is intentionally defensive and shallow.
+   */
+  P._normalisePaidDetail = function (o) {
+    try {
+      if (!o || typeof o !== 'object') return null;
+      var out = {};
+      out.id = o.id || o.ref || o.reference || o.order || o.tx || '';
+      if (out.id) out.ref = out.id;
+      out.itemName = o.itemName || o.name || o.label || '';
+      out.email = o.email || o.deliveryEmail || o.buyerEmail || o.customerEmail || '';
+      out.t = o.t || o.time || o.date || null;
+      try { var d = extractDownloadUrl(o); if (d) out.downloadUrl = d; } catch (e) { /* ignore */ }
+      return out;
+    } catch (e) { return null; }
+  };
+
+  /**
+   * Handle a returned checkout object from the platform (window.groupStorePaid
+   * or document 'group-store:paid' event). Reveal bought-note and bought-summary
+   * UI immediately using the supplied object. This function is display-only
+   * and does not persist anything to localStorage.
+   */
+  P.handleGroupStorePaid = function (order) {
+    try {
+      var det = P._normalisePaidDetail(order);
+      if (!det) return;
+
+      // Reveal and populate any [data-bought-note] hosts
+      try {
+        $$('[data-bought-note]').forEach(function (host) {
+          try {
+            // Populate first-item style as initBoughtNote does
+            try { host.removeAttribute('hidden'); } catch (e) { /* ignore */ }
+            try {
+              var titleEl = host.querySelector('[data-bought-note-title]');
+              if (titleEl) titleEl.textContent = String(det.itemName || det.name || det.title || det.label || 'Purchased item');
+            } catch (e) { /* ignore */ }
+            try {
+              var subEl = host.querySelector('[data-bought-note-sub]');
+              if (subEl) subEl.textContent = String(det.deliveryEmail || det.email || det.buyerEmail || det.customerEmail || '');
+            } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore per-host */ }
+        });
+      } catch (e) { /* ignore */ }
+
+      // Insert into any [data-bought-summary] lists, guarded by data-ssp-paid-id
+      try {
+        $$('[data-bought-summary]').forEach(function (host) {
+          try {
+            var list = host.querySelector('[data-bought-summary-list]');
+            if (!list) return;
+
+            var id = det.id || det.ref || '';
+            if (!id) return;
+
+            // Avoid duplicates: if an item with this paid id already exists, do nothing
+            try {
+              if (host.querySelector('[data-ssp-paid-id="' + String(id) + '"]')) return;
+            } catch (e) { /* ignore selector errors */ }
+
+            // Build a list item matching the bought-summary structure
+            var li = document.createElement('li');
+            li.className = 'bought__item';
+            try { li.setAttribute('data-ssp-paid-id', String(id)); } catch (e) { /* ignore */ }
+
+            var titleSpan = document.createElement('span');
+            titleSpan.className = 'bought__title';
+            titleSpan.textContent = String(det.itemName || det.name || det.title || det.label || 'Purchased item');
+            li.appendChild(titleSpan);
+
+            var metaSpan = document.createElement('span');
+            metaSpan.className = 'bought__meta';
+            li.appendChild(metaSpan);
+
+            try {
+              var refSpan = document.createElement('span');
+              refSpan.className = 'bought__ref';
+              refSpan.textContent = 'Order: ' + String(id);
+              metaSpan.appendChild(refSpan);
+
+              var copyBtn = document.createElement('button');
+              copyBtn.setAttribute('type', 'button');
+              copyBtn.className = 'bought__copy';
+              copyBtn.textContent = 'Copy';
+              copyBtn.style.marginLeft = '8px';
+              try {
+                copyBtn.setAttribute('data-ssp-copy', 'on');
+                copyBtn.addEventListener('click', function () { try { navigator.clipboard.writeText(String(id)); } catch (e) { /* ignore */ } });
+              } catch (e) { /* ignore */ }
+              metaSpan.appendChild(copyBtn);
+            } catch (e) { /* ignore meta build */ }
+
+            // Attach a per-item CTA (Download installers or Contact Support)
+            try { createBoughtCta(li, det); } catch (e) { /* ignore */ }
+
+            try { list.appendChild(li); } catch (e) { /* ignore */ }
+
+            // Update host visible count and unhide
+            try {
+              var cur = intAttr(host, 'data-bought-count', 0);
+              try { host.removeAttribute('hidden'); } catch (e) { /* ignore */ }
+              try { host.setAttribute('data-bought-count', String(cur + 1)); } catch (e) { /* ignore */ }
+            } catch (e) { /* ignore */ }
+
+          } catch (e) { /* ignore per-host */ }
+        });
+      } catch (e) { /* ignore */ }
+
+    } catch (e) { /* ignore */ }
+  };
+
   /* =======================================================================
      90  BOUGHT NOTE
      ======================================================================= */
@@ -667,6 +687,17 @@
     var boot = function () { safeRun(P.initSupportVerify); safeRun(P.initBoughtNote); safeRun(P.initBoughtSummary); };
 
     try {
+      // Listen for platform returned-checkout events and reveal the in-page
+      // bought UI immediately when they arrive. Also check window.groupStorePaid
+      // at boot in case the platform already set it before plugin.js executed.
+      try {
+        document.addEventListener('group-store:paid', function (e) {
+          try { P.handleGroupStorePaid(e && e.detail ? e.detail : (window.groupStorePaid || null)); } catch (er) { /* ignore */ }
+        });
+      } catch (e) { /* ignore */ }
+
+      try { if (window.groupStorePaid) { safeRun(function () { P.handleGroupStorePaid(window.groupStorePaid); }); } } catch (e) { /* ignore */ }
+
       if (typeof window.SS !== 'undefined' && typeof window.SS.ready === 'function') {
         try { window.SS.ready(boot); } catch (e) { try { boot(); } catch (e) { /* ignore */ } }
       } else if (document.readyState === 'loading') {
