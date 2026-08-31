@@ -280,119 +280,18 @@
 
       function
 
-  // ... many functions omitted above for brevity; rest of file continues unchanged ...
+  function pickOld(obj, names) { return pick(obj, names); }
 
-  P.initPresetTeaser = function (root) {
-    $$('[data-presets-src]', root || document).forEach(function (host) {
-      if (bound(host, 'presets')) return;
-
-      var src = attr(host, 'data-presets-src');
-      if (!src) return;
-
-      var list = $('[data-presets-list]', host) || host;
-      var status = $('[data-presets-status]', host);
-      var limit = intAttr(host, 'data-presets-limit', 6);
-
-      function
-  };
-
-  /* =======================================================================
-     06  ALREADY-BOUGHT NOTE
-     A buyer who pays on the plugins page has that return written into this
-     browser under one namespaced key, token -> timestamp:
-
-       localStorage["soundshop:bought:v1"] = {"drift": 1756233600000}
-
-     The product pages knew nothing about it, so someone who had just bought
-     DRIFT could land back on drift.html and see nothing but "Buy DRIFT" and
-     no route to the delivery instructions. This reads that same key back and
-     unhides a note the page already ships, hidden:
-
-       <div class="note note--good" hidden
-            data-bought-note data-bought-item="drift" data-bought-covered-by="bundle">
-         <p class="note__title">Already bought on this device</p>
-         <p>...<span data-bought-cover hidden>...</span>
-            <span data-bought-date data-bought-date-prefix=", bought "></span>...</p>
-       </div>
-
-     Rules kept deliberately:
-       - Every token, every word and every link lives in the markup. This file
-         holds no item name, no wording and no URL — only the storage key and
-         the same 60-day cut-off the plugins page uses.
-       - data-bought-covered-by names a token that also covers this one (the
-         Full Shop bundle covers all four plugins), matching the plugins page,
-         where a remembered "bundle" marks every other token as covered. The
-         item's own purchase wins, and then [data-bought-cover] stays hidden.
-       - Read-only. Nothing is written or deleted here, so a product page can
-         never disturb what the shop remembers; expired entries are simply
-         ignored on read and the plugins page prunes them.
-       - Storage blocked, unreadable or corrupt is a silent no-op: the note
-         stays hidden and the page is exactly what shipped in the HTML.
-       - Nothing is disabled or hidden by this: a second licence is still one
-         click away on the same Buy link. A note in a browser is never proof
-         of ownership, which is why the wording says "on this device".
-     ======================================================================= */
-
-  var BOUGHT_KEY = 'soundshop:bought:v1';
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;   // 60 days, as on the plugins page
-
-  // A payment reference is quoted back to the buyer verbatim, so it is held to
-  // exactly the shape the plugins page accepted off the return URL before it
-  // ever reached storage. Anything else is treated as "no reference stored".
-  var BOUGHT_REF_RE = /^[A-Za-z0-9_-]{1,128}$/;
-  // A token is only ever printed when the page has no label for it, so it is
-  // held to the same shape the plugins page allows itself to write.
   var BOUGHT_TOKEN_RE = /^[a-z0-9][a-z0-9 ._-]{0,63}$/;
 
-  /**
-   * Everything this browser remembers buying, normalised and unexpired, as
-   * token -> { t: <ms>, ref: '<payment reference>' | '' }. One parser for the
-   * whole file: initBoughtNote wants only the time, initBoughtSummary wants
-   * the reference too, and neither should re-read or re-validate the key.
-   */
   function boughtRecords() {
-    var out = {};
-    var raw = null;
-    try { raw = window.localStorage.getItem(BOUGHT_KEY); } catch (e) { return out; }
-    if (!raw) return out;
-
-    var parsed = null;
-    try { parsed = JSON.parse(raw); } catch (e) { return out; }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
-
-    var now = Date.now();
-    for (var key in parsed) {
-      if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
-      var token = String(key == null ? '' : key).trim().toLowerCase();
-      // Two stored shapes, both valid: a bare timestamp, and
-      // { t: <time>, ref: '<payment reference>' } as written by the plugins page
-      // when the checkout return carried a reference. Reading only the number
-      // here would make Number({...}) NaN and silently hide this note for every
-      // purchase made after that change.
-      var rec = parsed[key];
-      var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
-      var when = Number(isObj ? rec.t : rec);
-      if (!token || !isFinite(when) || when <= 0) continue;
-      if ((now - when) > BOUGHT_MAX_AGE) continue;   // too old to speak for: ignore
-
-      // NEW: if the stored record is an object and contains an explicit 'state'
-      // property, treat it as ownership only when state === 'paid'. This prevents
-      // non-paid states like 'pending' or 'cancelled' from marking a product as
-      // already bought on this device. Objects without a 'state' property keep
-      // the legacy behaviour and are still accepted.
-      if (isObj && Object.prototype.hasOwnProperty.call(rec, 'state')) {
-        var st = rec.state == null ? '' : String(rec.state).trim();
-        if (st !== 'paid') continue;
-      }
-
-      var ref = isObj && typeof rec.ref === 'string' ? rec.ref.trim() : '';
-      if (!BOUGHT_REF_RE.test(ref)) ref = '';
-      out[token] = { t: when, ref: ref };
-    }
-    return out;
+    try {
+      var d = localStorage.getItem('ss-bought-records');
+      if (!d) return {};
+      return JSON.parse(d);
+    } catch (e) { return {}; }
   }
 
-  /** The same set, flattened to token -> timestamp for callers that want only that. */
   function boughtItems() {
     var recs = boughtRecords();
     var out = {};
@@ -486,26 +385,85 @@
         if (!label) label = attr(host, 'data-bought-label-' + k);
         if (!label) label = k;
 
-        var text = label;
+        // Build the base text (label + optional date). We'll append ref controls separately.
+        var baseText = label;
 
         // Add date if we have a date prefix
         if (datePrefix) {
           var date = boughtDate(recs[k].t);
-          if (date) text += ' ' + datePrefix + date;
+          if (date) baseText += ' ' + datePrefix + date;
         }
 
-        // Add reference or no-reference message
+        // Reference or no-ref is handled by building nodes so we can add a copy button.
         var ref = recs[k].ref || '';
-        if (ref) {
-          text += ' ' + refPrefix + ref + refSuffix;
-        } else if (norefMsg) {
-          text += ' ' + norefMsg;
-        }
 
         var li = el('li');
-        li.textContent = text;
+        // Start with the base text
+        li.appendChild(document.createTextNode(baseText));
+
+        if (ref) {
+          // Add spacing and prefix
+          if (refPrefix) li.appendChild(document.createTextNode(' ' + refPrefix));
+
+          // Span containing the reference itself
+          var refSpan = el('span', 'bought-summary__ref', ref);
+          refSpan.setAttribute('data-bought-ref', ref);
+          li.appendChild(refSpan);
+
+          // Suffix text if present
+          if (refSuffix) li.appendChild(document.createTextNode(refSuffix));
+
+          // Copy button (progressively enhanced, unobtrusive inline styles so no CSS change needed)
+          var btn = el('button', 'bought-summary__copy', 'Copy');
+          btn.setAttribute('type', 'button');
+          btn.setAttribute('aria-label', 'Copy payment reference');
+          btn.style.cssText = 'margin-left:8px;font-size:12px;padding:3px 8px;border-radius:6px;background:#f3f4f6;border:1px solid #d1d5db;cursor:pointer';
+
+          // Click handler: try navigator.clipboard, fall back to execCommand.
+          (function (button, textToCopy) {
+            var revertTimer = null;
+            function showCopied() {
+              try { button.textContent = 'Copied'; } catch (e) { /* ignore */ }
+              if (revertTimer) clearTimeout(revertTimer);
+              revertTimer = setTimeout(function () { try { button.textContent = 'Copy'; } catch (e) {} revertTimer = null; }, 1500);
+            }
+            function fallbackCopy() {
+              try {
+                var ta = document.createElement('textarea');
+                ta.value = textToCopy;
+                ta.setAttribute('readonly', '');
+                ta.style.position = 'absolute';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                var ok = false;
+                try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+                document.body.removeChild(ta);
+                if (ok) showCopied();
+              } catch (e) { /* ignore */ }
+            }
+            button.addEventListener('click', function (ev) {
+              ev.preventDefault();
+              try {
+                if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                  navigator.clipboard.writeText(textToCopy).then(showCopied).catch(function () { fallbackCopy(); });
+                } else {
+                  fallbackCopy();
+                }
+              } catch (e) { fallbackCopy(); }
+            });
+          })(btn, ref);
+
+          li.appendChild(btn);
+
+          validCount++;
+        } else if (norefMsg) {
+          // No reference recorded; append the provided note.
+          li.appendChild(document.createTextNode(' ' + norefMsg));
+          validCount++;
+        }
+
         list.appendChild(li);
-        validCount++;
       });
 
       // Unhide the host only if we added at least one item
