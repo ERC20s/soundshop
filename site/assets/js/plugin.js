@@ -290,37 +290,42 @@
       if (!src) return;
 
       var list = $('[data-presets-list]', host) || host;
-      var status = $('[data-presets-status]', host);
-      var limit = intAttr(host, 'data-presets-limit', 6);
 
-      if (typeof window.fetch !== 'function') {
-        if (status) status.textContent = 'Presets unavailable in this environment.';
+      var status = $('[data-presets-status]', host);
+
+      if (isFileProtocol()) {
+        if (status) status.textContent = 'Preset library cannot be loaded from the filesystem.';
+        host.setAttribute('data-presets-state', 'file');
         return;
       }
 
-      try {
-        if (status) status.textContent = 'Loading presets…';
-        window.fetch(src, { method: 'GET', cache: 'no-store' })
-          .then(function (r) { return r && r.ok ? r.json() : Promise.reject(new Error('presets not available')); })
-          .then(function (data) {
-            try {
-              var items = normalisePresets(data).slice(0, limit);
-              if (!items.length) { if (status) status.textContent = 'No presets found'; return; }
-              items.forEach(function (p) { list.appendChild(presetRow(p)); });
-              try { if (status) status.textContent = ''; } catch (e) { /* ignore */ }
-            } catch (e) { if (status) status.textContent = 'Failed to render presets'; }
-          }).catch(function () { if (status) status.textContent = 'Presets unavailable'; });
-      } catch (e) { if (status) status.textContent = 'Presets unavailable'; }
+      host.setAttribute('data-presets-state', 'probing');
+      if (status) status.textContent = 'Looking for presets…';
+
+      window.fetch(src, { method: 'GET', cache: 'no-store' })
+        .then(function (res) {
+          if (!res || !res.ok) throw new Error('presets not published');
+          return res.json();
+        })
+        .then(function (json) {
+          try {
+            var arr = normalisePresets(json);
+            if (!arr.length) throw new Error('no presets');
+            while (list.firstChild) list.removeChild(list.firstChild);
+            arr.slice(0, intAttr(host, 'data-presets-count', 6)).forEach(function (p) { list.appendChild(presetRow(p)); });
+            host.setAttribute('data-presets-state', 'loaded');
+            if (status) status.textContent = '';
+          } catch (e) {
+            host.setAttribute('data-presets-state', 'absent');
+            if (status) status.textContent = 'Preset library missing or malformed.';
+          }
+        })
+        .catch(function () {
+          host.setAttribute('data-presets-state', 'absent');
+          if (status) status.textContent = 'Preset library missing or malformed.';
+        });
     });
   };
-
-  /* =======================================================================
-     03  SECTION NAV / TABS / COUNTERS  (omitted here to keep file focused)
-     ======================================================================= */
-
-  /* (For brevity the rest of the non-bought code is left as in the original
-     implementation; the key change in this patch is limited to the bought
-     summary logic below. ) */
 
   /* =======================================================================
      04  BOUGHT NOTE
@@ -474,13 +479,94 @@
                   var detail = { id: String(ref), itemName: label, quantity: r.quantity || 1, hasDeliveryEmail: !!r.email };
                   // Extract a remembered download URL when present and valid
                   try { var durl = extractDownloadUrl(r); if (durl) detail.downloadUrl = durl; } catch (e) { /* ignore */ }
-                  createBoughtCta(li, detail);
-                  madePerItemCta = true;
+
+                  // If we already have a direct download URL, render the
+                  // per-item CTA immediately as before.
+                  if (detail.downloadUrl) {
+                    try { createBoughtCta(li, detail); madePerItemCta = true; } catch (e) { /* ignore */ }
+
+                  } else {
+                    // No direct URL remembered locally: offer a manual per-item
+                    // "Check order" button so the user can trigger a verify
+                    // for that single order. This is defensive and idempotent.
+                    try {
+                      // Build compact button
+                      var checkBtn = document.createElement('button');
+                      checkBtn.setAttribute('type', 'button');
+                      checkBtn.className = 'bought__check';
+                      checkBtn.textContent = 'Check order';
+                      checkBtn.style.marginLeft = '8px';
+                      checkBtn.setAttribute('aria-pressed', 'false');
+
+                      // Guard so we don't bind twice
+                      if (checkBtn.getAttribute('data-ssp-verify') !== 'on') {
+                        checkBtn.setAttribute('data-ssp-verify', 'on');
+
+                        (function (btn, liNode, hostNode, det) {
+                          try {
+                            btn.addEventListener('click', function () {
+                              try {
+                                // Disable repeated clicks while working
+                                try { btn.disabled = true; } catch (e) { /* ignore */ }
+
+                                // If the platform verification API is unavailable,
+                                // show unavailable state and fall back to generic CTA
+                                if (typeof window.groupStoreVerify !== 'function') {
+                                  try { btn.textContent = 'Check order (unavailable)'; } catch (e) { /* ignore */ }
+                                  try { createBoughtCta(hostNode, null); } catch (e) { /* ignore */ }
+                                  return;
+                                }
+
+                                // Try to call the platform verifier. It must return a
+                                // promise; otherwise treat as unavailable.
+                                var p = null;
+                                try { p = window.groupStoreVerify(String(det.id)); } catch (e) { p = null; }
+                                if (!p || typeof p.then !== 'function') {
+                                  try { btn.textContent = 'Check order (unavailable)'; } catch (e) { /* ignore */ }
+                                  try { createBoughtCta(hostNode, null); } catch (e) { /* ignore */ }
+                                  return;
+                                }
+
+                                // Await verification result and extract a download URL
+                                p.then(function (order) {
+                                  try {
+                                    var found = null;
+                                    try { found = extractDownloadUrl(order); } catch (e) { found = null; }
+                                    if (found) {
+                                      try {
+                                        det.downloadUrl = found;
+                                        createBoughtCta(liNode, det);
+                                      } catch (e) { /* ignore */ }
+                                    } else {
+                                      try { createBoughtCta(hostNode, null); } catch (e) { /* ignore */ }
+                                    }
+                                  } catch (e) { try { createBoughtCta(hostNode, null); } catch (er) { /* ignore */ } }
+                                }).catch(function () { try { createBoughtCta(hostNode, null); } catch (e) { /* ignore */ } });
+
+                              } catch (e) { /* ignore click handler */ }
+                            });
+                          } catch (e) { /* ignore binding */ }
+                        })(checkBtn, li, host, detail);
+
+                        // Append the button into the meta area so it appears inline
+                        try { metaSpan.appendChild(checkBtn); } catch (e) { /* ignore */ }
+
+                        // Mark that we provided a per-item verify UI so the
+                        // one-shot auto-verify does not run automatically.
+                        madePerItemCta = true;
+                      }
+
+                    } catch (e) { /* ignore per-item verify UI errors */ }
+
+                  }
                 } catch (e) { /* ignore per-item CTA errors */ }
 
                 // If there was no download URL on this remembered record and we
                 // haven't recorded one to verify yet, remember it so we can do
-                // a single server-side verification after rendering.
+                // a single server-side verification after rendering. Note that
+                // if we inserted a manual per-item Check button above we set
+                // madePerItemCta to avoid the auto-call; but we still capture
+                // the first ref so that older pages or consumers can benefit.
                 try {
                   if (!detail.downloadUrl && !firstRefToVerify) {
                     firstRefToVerify = String(ref);
@@ -626,176 +712,25 @@
       } catch (e) { /* ignore errors when building non-essential UI */ }
     }
 
-    try { list.appendChild(c); } catch (e) { /* ignore DOM errors */ }
-    try { host.setAttribute('data-bought-verified', '1'); } catch (e) { /* ignore */ }
-
-    // Attempt to initialise copy buttons only if the page's SS UI exists.
     try {
-      if (SS && typeof SS.initCopyButtons === 'function') SS.initCopyButtons(list);
-    } catch (e) { /* ignore */ }
+      list.appendChild(c);
+      try { host.setAttribute('data-bought-verified', '1'); } catch (e) { /* ignore */ }
 
-    // Focus the primary link asynchronously so keyboard users land on it.
-    try {
-      setTimeout(function () {
-        try { if (downloadLink && typeof downloadLink.focus === 'function') { downloadLink.focus(); } else if (a1 && typeof a1.focus === 'function') a1.focus(); } catch (e) { /* ignore */ }
-      }, 0);
-    } catch (e) { /* ignore */ }
-  }
-
-  /* =======================================================================
-     08  Event handler: append installers/support CTA after Verify
-     Listens for the in-page 'soundshop:verified-order' event. It tolerates
-     missing ev.detail and delegates markup construction to createBoughtCta
-     so both post-verify and remembered-purchase paths share the same UI.
-     ======================================================================= */
-
-  try {
-    document.addEventListener('soundshop:verified-order', function (ev) {
+      // Focus the primary installers link when present (async so browser has
+      // a chance to lay it out). Wrap in try/catch so this never throws.
       try {
-        ev = ev || {};
-        var detail = ev.detail || null;
-        // Find the first purchase summary host that has not been annotated yet
-        var hosts = document.querySelectorAll('[data-bought-summary]');
-        if (!hosts || !hosts.length) return;
-        var host = null;
-        for (var i = 0; i < hosts.length; i++) {
-          var h = hosts[i];
-          if (h.getAttribute && h.getAttribute('data-bought-verified') !== '1') {
-            host = h; break;
-          }
+        if (downloadLink && typeof downloadLink.focus === 'function') {
+          setTimeout(function () { try { downloadLink.focus(); } catch (e) { /* ignore */ } }, 10);
         }
-        if (!host) return;
+      } catch (e) { /* ignore focus */ }
 
-        var list = host.querySelector('[data-bought-summary-list]') || host;
+      // If ui.js is present it will find [data-copy] buttons when initialised.
+      // Ensure the copy button is present early enough that SS.initCopyButtons
+      // can attach to it; if initCopyButtons is missing we simply degrade.
+      try { if (typeof window.SS !== 'undefined' && typeof window.SS.initCopyButtons === 'function') { try { window.SS.initCopyButtons(list); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
 
-        // Delegate to the helper which builds, appends and initialises copy
-        try { createBoughtCta(host, detail); } catch (e) { /* swallow listener errors */ }
-      } catch (e) { /* ignore listener errors */ }
-    });
-  } catch (e) { /* ignore registration errors */ }
-
-  /* =======================================================================
-     09  Support-area manual verification widget
-     Adds a small input + Verify control under the #support heading so users
-     can paste a payment reference and have the UI probe the platform.
-     Idempotent and defensive: safe to run multiple times and when SS is
-     absent. Uses the same verification flow as per-item controls above.
-     ======================================================================= */
-
-  P.initSupportVerify = function (root) {
-    try {
-      var heading = document.getElementById('support') || $('h2#support', root || document);
-      if (!heading) return;
-      if (bound(heading, 'support-verify')) return;
-
-      // Build the minimal accessible form controls
-      var wrap = document.createElement('div');
-      wrap.className = 'support__verify';
-      wrap.style.marginTop = '8px';
-
-      var label = document.createElement('label');
-      try { label.textContent = 'Order reference'; } catch (e) { /* ignore */ }
-      var inputId = 'ss-support-verify-input';
-      try { label.setAttribute('for', inputId); } catch (e) { /* ignore */ }
-      label.className = 'support__verify-label';
-      wrap.appendChild(label);
-
-      var input = document.createElement('input');
-      input.type = 'text';
-      input.id = inputId;
-      input.className = 'support__verify-input';
-      try { input.setAttribute('placeholder', 'e.g. sto_pBpu2LkCjdaqupCd'); } catch (e) { /* ignore */ }
-      input.style.marginLeft = '8px';
-      input.style.width = '60%';
-      wrap.appendChild(input);
-
-      var btn = document.createElement('button');
-      try { btn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
-      btn.className = 'support__verify-button';
-      btn.textContent = 'Verify';
-      btn.style.marginLeft = '8px';
-      wrap.appendChild(btn);
-
-      var status = document.createElement('span');
-      status.className = 'support__verify-status';
-      status.style.marginLeft = '8px';
-      wrap.appendChild(status);
-
-      // Insert after heading
-      try {
-        var parent = heading.parentNode || document.body;
-        if (heading.nextSibling) parent.insertBefore(wrap, heading.nextSibling);
-        else parent.appendChild(wrap);
-      } catch (e) { /* ignore DOM insertion errors */ }
-
-      // Handler
-      (function (input, btn, status, heading) {
-        try {
-          btn.addEventListener('click', function () {
-            try {
-              var ref = (input && input.value) ? String(input.value).trim() : '';
-              if (!ref) {
-                try { status.textContent = 'Enter an order reference to verify'; } catch (e) { /* ignore */ }
-                return;
-              }
-
-              try { status.textContent = 'Checking…'; } catch (e) { /* ignore */ }
-
-              var p = null;
-              try { p = window.groupStoreVerify ? window.groupStoreVerify(ref) : null; } catch (e) { p = null; }
-              if (!p || typeof p.then !== 'function') {
-                try { status.textContent = 'Verification unavailable'; } catch (e) { /* ignore */ }
-                return;
-              }
-
-              p.then(function (order) {
-                try {
-                  if (order && order.id) {
-                    try { status.textContent = 'Verified: paid — order ' + String(order.id); } catch (e) { /* ignore */ }
-
-                    try {
-                      var summary = {
-                        id: order.id,
-                        itemName: order.itemName || order.name || '',
-                        quantity: order.quantity || 1,
-                        hasDeliveryEmail: !!(order.email || order.buyerEmail || order.customerEmail)
-                      };
-                      // Extract and include a validated download URL when present
-                      try { var d = extractDownloadUrl(order); if (d) summary.downloadUrl = d; } catch (e) { /* ignore */ }
-                      document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: summary }));
-                    } catch (evErr) { /* swallow listener errors */ }
-
-                    // If there is no bought-summary host on the page, append the CTA here
-                    try {
-                      var hosts = document.querySelectorAll('[data-bought-summary]');
-                      if (!hosts || !hosts.length) {
-                        try { createBoughtCta(heading.parentNode || document.body, summary); } catch (e) { /* ignore */ }
-                      }
-                    } catch (e) { /* ignore */ }
-
-                    // If SS provides initCopyButtons, run it for the new UI
-                    try { if (SS && typeof SS.initCopyButtons === 'function') SS.initCopyButtons(heading.parentNode || document.body); } catch (e) { /* ignore */ }
-
-                  } else {
-                    try { status.textContent = 'Not found / unpaid'; } catch (e) { /* ignore */ }
-                  }
-                } catch (e) { try { status.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
-              }).catch(function () { try { status.textContent = 'Verification failed'; } catch (e) { /* ignore */ } });
-
-            } catch (e) { try { status.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
-          });
-        } catch (e) { /* ignore */ }
-      })(input, btn, status, heading);
-
-    } catch (e) { /* ignore top-level */ }
-  };
-
-  /* =======================================================================
-     Robust DOM-ready runner for features that can run without the SS UI.
-     Use a typeof/window guard so this never throws when SS is absent.
-     If SS provides a ready(fn) hook, prefer it, otherwise use DOMContentLoaded
-     or an immediate setTimeout fallback for already-ready documents.
-     ======================================================================= */
+    } catch (e) { /* ignore DOM append errors */ }
+  }
 
   try {
     if (typeof window.SS !== 'undefined' && typeof window.SS.ready === 'function') {
