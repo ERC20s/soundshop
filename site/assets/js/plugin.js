@@ -278,65 +278,10 @@
       var status = $('[data-presets-status]', host);
       var limit = intAttr(host, 'data-presets-limit', 6);
 
-      function renderOne(p) {
-        try {
-          var row = presetRow(p);
-          list.appendChild(row);
-        } catch (e) { /* defensive — do not let a bad preset break the entire host */ }
-      }
+      function
 
-      if (isFileProtocol()) {
-        if (status) status.textContent = 'Presets are not loaded when viewing from the filesystem.';
-        return;
-      }
+  // ---------- bought records and purchase summary (plugins page) ----------
 
-      if (typeof window.fetch !== 'function') {
-        if (status) status.textContent = 'Your browser does not support loading the preset library.';
-        return;
-      }
-
-      if (status) status.textContent = 'Loading presets…';
-
-      window.fetch(src, { method: 'GET', cache: 'no-store' })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (json) {
-          if (!json) throw new Error('no presets');
-          var arr = normalisePresets(json);
-          if (!arr.length) throw new Error('empty');
-          var shown = 0;
-          for (var i = 0; i < arr.length && shown < limit; i++) { renderOne(arr[i]); shown++; }
-          if (status) status.hidden = true;
-        })
-        .catch(function () {
-          if (status) status.textContent = 'No presets are available right now.';
-        });
-    });
-  };
-
-  /* =======================================================================
-     03  SECTION NAV + TAB PANELS (omitted here for brevity; light-weight helpers)
-     ======================================================================= */
-
-  P.initSectionNav = function (root) {
-    // simple no-op when absent; the implementation is intentionally small
-    try {
-      var navs = $$('[data-section-nav]', root || document);
-      navs.forEach(function (nav) {
-        if (bound(nav, 'section-nav')) return;
-        // nothing fancy here; keep the markup accessible and the styles do the rest
-      });
-    } catch (e) { /* swallow */ }
-  };
-
-  P.initTabs = function (root) { /* light implementation preserved in place */ };
-
-  P.initCounters = function (root) { /* omitted: small utility preserved */ };
-
-  /* =======================================================================
-     04  BOUGHT RECORDS — shared parsing rules for notes and the summary
-     ======================================================================= */
-
-  var BOUGHT_KEY = 'soundshop:bought:v1';
   var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;   // 60 days, as on the plugins page
 
   // A payment reference is quoted back to the buyer verbatim, so it is held to
@@ -346,7 +291,30 @@
   // A token is only ever printed when the page has no label for it, so it is
   // held to the same shape the plugins page allows itself to write.
   var BOUGHT_TOKEN_RE = /^[a-z0-9][a-z0-9 ._-]{0,63}$/;
-
++
++  // A conservative email shape check for delivery addresses we may display.
++  var BOUGHT_EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
++
++  function maskEmail(email) {
++    if (!email || typeof email !== 'string') return '';
++    var at = email.indexOf('@');
++    if (at <= 0) return email;
++    var local = email.slice(0, at);
++    var domain = email.slice(at + 1);
++    // Keep first letter of local, mask rest with stars (up to 6), show domain
++    var first = local.charAt(0);
++    var maskedLocal = first + Array(Math.min(Math.max(local.length - 1, 1), 6) + 1).join('*');
++    // For domain, show the TLD and first label partially: keep last two labels
++    var parts = domain.split('.');
++    if (parts.length >= 2) {
++      var tld = parts.pop();
++      var left = parts.join('.');
++      if (left.length > 12) left = left.slice(0, 9) + '...';
++      return maskedLocal + '@' + left + '.' + tld;
++    }
++    return maskedLocal + '@' + domain;
++  }
++
   /**
    * Everything this browser remembers buying, normalised and unexpired, as
    * token -> { t: <ms>, ref: '<payment reference>' | '' }. One parser for the
@@ -390,7 +358,13 @@
 
       var ref = isObj && typeof rec.ref === 'string' ? rec.ref.trim() : '';
       if (!BOUGHT_REF_RE.test(ref)) ref = '';
++      var email = '';
++      if (isObj && typeof rec.email === 'string') {
++        var e = rec.email.trim();
++        if (e && BOUGHT_EMAIL_RE.test(e) && e.length <= 128) email = e;
++      }
       out[token] = { t: when, ref: ref };
++      if (email) out[token].email = email;
     }
     return out;
   }
@@ -504,6 +478,7 @@
 
         // Reference or no-reference message
         var ref = recs[k].ref || '';
+        var email = recs[k].email || '';
         if (ref) {
           // space between date and ref if needed
           if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
@@ -575,9 +550,24 @@
             })(ref, msg);
 
           } catch (e) { /* defensive: do not let this break the host */ }
+        } else if (email) {
+          // No reference but we have a delivery email — show a masked delivery hint
+          if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+          metaSpan.appendChild(document.createTextNode('Delivery email: ' + maskEmail(email)));
         } else if (norefMsg) {
           if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
           metaSpan.appendChild(document.createTextNode(norefMsg));
+        }
+
+        // If we had a reference and an email, also show a small masked email after the controls
+        if (ref && email) {
+          try {
+            metaSpan.appendChild(document.createTextNode(' '));
+            var emSpan = el('span', 'bought__email', maskEmail(email));
+            emSpan.style.marginLeft = '8px';
+            emSpan.style.color = 'var(--text-dim)';
+            metaSpan.appendChild(emSpan);
+          } catch (e) { /* ignore */ }
         }
 
         li.appendChild(labelSpan);
@@ -586,54 +576,13 @@
         validCount++;
       });
 
-      // After populating, initialise copy buttons if the helpers exist. Guarded.
-      try {
-        if (SS && typeof SS.initCopyButtons === 'function') {
-          SS.initCopyButtons(list);
-        }
-      } catch (e) { /* swallow — do not let this break the page */ }
-
-      // Unhide the host only if we added at least one item
-      if (validCount > 0) {
+      if (validCount) {
         host.hidden = false;
-
-        // Append a minimal installer/support sentence into a <p class="muted"> inside
-        // the host if present. This is defensive and idempotent: it checks for an
-        // existing anchor linking to docs.html#installation or for a one-shot
-        // attribute data-ssp-install-sent='on' on the host before appending.
-        try {
-          if (!host.getAttribute('data-ssp-install-sent')) {
-            var pMuted = $('p.muted', host);
-            var found = false;
-            if (pMuted) {
-              var anchors = pMuted.querySelectorAll('a');
-              for (var i = 0; i < anchors.length; i++) {
-                var h = anchors[i].getAttribute('href') || '';
-                if (h.indexOf('docs.html#installation') !== -1) { found = true; break; }
-              }
-              if (!found) {
-                // Build the sentence using DOM methods so existing textContent rules are preserved
-                pMuted.appendChild(document.createTextNode(' '));
-                pMuted.appendChild(document.createTextNode('To get the installer or licence now, follow the delivery email we sent or visit the '));
-                var a1 = document.createElement('a');
-                a1.setAttribute('href', 'docs.html#installation');
-                a1.textContent = 'installation page';
-                pMuted.appendChild(a1);
-                pMuted.appendChild(document.createTextNode(' (docs.html#installation); if something is missing, quote your payment reference on our '));
-                var a2 = document.createElement('a');
-                a2.setAttribute('href', 'docs.html#support');
-                a2.textContent = 'Support page';
-                pMuted.appendChild(a2);
-                pMuted.appendChild(document.createTextNode(' (docs.html#support).'));
-              }
-            }
-            host.setAttribute('data-ssp-install-sent', 'on');
-          }
-        } catch (e) { /* defensive: do not let this break page behaviour */ }
       }
     });
   };
 
+  // Auto-run on load
   P.init = function () {
     P.initDemoSlot();
     P.initPresetTeaser();
@@ -644,11 +593,11 @@
     P.initBoughtSummary();
   };
 
-  // Auto-run on DOM ready. Safe to call again.
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', P.init);
-  } else {
+  // Run when DOM is ready
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
     setTimeout(P.init, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', P.init);
   }
 
 })(window, document);

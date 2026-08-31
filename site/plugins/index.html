@@ -240,7 +240,7 @@
     var BASE = "https://d8a.com";
     var GROUP = "batch-synthshop";
     var esc = function (s) {
-      return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+      return String(s).replace(/[&<>'\"]/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
     };
     var el = document.getElementById("group-store");
     // The handshake: an order id is only proof once the platform says so.
@@ -259,7 +259,7 @@
         var p = document.createElement("p");
         p.setAttribute("data-paid", o.id);
         p.style.cssText = "font:13px system-ui,sans-serif;color:#059669";
-        p.innerHTML = "Paid: " + esc(o.itemName) + (o.quantity > 1 ? " ×" + o.quantity : "") + " — order " + esc(o.id);
+        p.innerHTML = "Paid: " + esc(o.itemName) + (o.quantity > 1 ? " \u00d7"+o.quantity : "") + " \u2014 order " + esc(o.id);
         el.parentNode.insertBefore(p, el);
       }
       document.dispatchEvent(new CustomEvent("group-store:paid", { detail: o }));
@@ -280,7 +280,7 @@
           var a = e.target && e.target.closest ? e.target.closest("a[data-item]") : null;
           if (!a || !s.checkout.enabled) return;
           e.preventDefault();
-          a.textContent = "Opening…";
+          a.textContent = "Opening\u2026";
           // Come back to this page — minus any earlier receipt on the URL.
           var here = location.href.replace(/([?&])d8a_order=[^&#]*&?/, "$1").replace(/[?&](#|$)/, "$1");
           fetch(s.checkout.url, { method: "POST", headers: { "Content-Type": "application/json" },
@@ -390,12 +390,32 @@
           }
         }
 
+        // Attempt to capture a delivery email from the platform, if present.
+        // Try several common fields and validate conservatively.
+        var email = '';
+        try {
+          var cand = '';
+          if (order && typeof order === 'object') {
+            cand = (order.email || order.buyerEmail || order.customerEmail || '');
+            if (cand && typeof cand === 'string') cand = cand.trim();
+            else cand = '';
+          }
+          var EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+          var MAX_EMAIL_LEN = 128;
+          if (cand && EMAIL_RE.test(cand)) {
+            if (cand.length > MAX_EMAIL_LEN) cand = cand.slice(0, MAX_EMAIL_LEN);
+            email = cand;
+          }
+        } catch (e) { /* ignore */ }
+
         // Record this purchase
-        bought[token] = {
+        var rec = {
           t: now,
           ref: String(order.id || '').trim(),
           state: 'paid'
         };
+        if (email) rec.email = email;
+        bought[token] = rec;
 
         // Write back to localStorage
         window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(bought));
