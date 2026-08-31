@@ -251,176 +251,91 @@
               }
               // If existing CTA exists but is not an anchor, append a proper link
               try { makeDownloadAnchor(url); } catch (e) { /* ignore */ }
-            } catch (e) { /* ignore update errors */ }
+            } catch (e) { /* ignore */ }
           }
           return;
         }
-      } catch (e) { /* ignore attribute edge-cases */ }
+      } catch (e) { /* ignore */ }
 
       try { host.setAttribute('data-ssp-bought-cta', 'on'); } catch (e) { /* ignore */ }
 
-      // Helper to append a download anchor into the host
+      var wrapper = document.createElement('span');
+      wrapper.className = 'bought__cta-wrapper';
+
       function makeDownloadAnchor(url) {
         try {
           var a = document.createElement('a');
           a.className = 'bought__cta';
           try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
-          try { a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-          a.textContent = 'Download installers';
-          try { host.appendChild(a); } catch (e) { /* ignore */ }
+          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+          try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
+          try { wrapper.appendChild(a); } catch (e) { /* ignore */ }
         } catch (e) { /* ignore */ }
       }
 
+      // If we already have a verified download URL, render it now.
       try {
-        // If a verified downloadUrl is present, show a direct anchor
         if (detail && extractDownloadUrl(detail)) {
           try { makeDownloadAnchor(extractDownloadUrl(detail)); } catch (e) { /* ignore */ }
-          return;
-        }
-      } catch (e) { /* ignore */ }
+        } else {
+          // Otherwise render the fallback controls: Check order / Contact Support
+          var btn = document.createElement('button');
+          try { btn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+          btn.className = 'bought__cta';
+          btn.textContent = 'Check order';
+          try { btn.setAttribute('title', 'Check order'); } catch (e) { /* ignore */ }
 
-      // Fallback: show a support / check order CTA. Prefer a support link when
-      // available via SS.supportUrl, otherwise create a button that triggers
-      // an on-demand verify when groupStoreVerify exists.
-      try {
-        if (SS && SS.supportUrl) {
-          var s = document.createElement('a');
-          s.className = 'bought__cta';
-          try { s.setAttribute('href', SS.supportUrl); s.setAttribute('target', '_blank'); s.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-          s.textContent = 'Contact Support';
-          try { host.appendChild(s); } catch (e) { /* ignore */ }
-          return;
-        }
-      } catch (e) { /* ignore */ }
-
-      try {
-        var btn = document.createElement('button');
-        try { btn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
-        btn.className = 'bought__cta';
-        btn.textContent = 'Check order';
-        try {
-          btn.addEventListener('click', function () {
-            try {
-              var id = (detail && (detail.id || detail.ref)) || '';
-              if (!id) return;
-              if (typeof window.groupStoreVerify !== 'function') {
-                // If no verify available, fall back to opening Support
-                try { if (SS && SS.supportUrl) window.open(SS.supportUrl, '_blank', 'noopener'); } catch (e) { /* ignore */ }
-                return;
-              }
-              var p = null;
-              try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
-              if (!p || typeof p.then !== 'function') return;
-              p.then(function (order) {
-                try {
-                  var v = P._normalisePaidDetail(order);
-                  if (!v) return;
-                  if (v.downloadUrl) {
-                    try { createBoughtCta(host, v); } catch (e) { /* ignore */ }
-                  }
-                } catch (e) { /* ignore then */ }
-              }).catch(function () { /* ignore */ });
-            } catch (e) { /* ignore click */ }
-          });
-        } catch (e) { /* ignore */ }
-        try { host.appendChild(btn); } catch (e) { /* ignore append */ }
-      } catch (e) { /* ignore */ }
-
-    } catch (e) { /* ignore */ }
-  }
-
-  /**
-   * Render payment reference and a copy control into a bought-note host.
-   */
-  function createBoughtNoteRef(host, id) {
-    try {
-      if (!host || !host.appendChild) return;
-      var meta = document.createElement('div');
-      meta.className = 'bought__meta';
-      try {
-        var ref = document.createElement('span');
-        ref.className = 'bought__ref';
-        ref.textContent = 'Payment reference: ' + String(id || '');
-        meta.appendChild(ref);
-
-        var copyBtn = document.createElement('button');
-        copyBtn.setAttribute('type', 'button');
-        copyBtn.className = 'bought__copy';
-        copyBtn.textContent = 'Copy';
-        copyBtn.style.marginLeft = '8px';
-        try {
-          copyBtn.setAttribute('data-ssp-copy', 'on');
-          copyBtn.addEventListener('click', function () { try { navigator.clipboard && navigator.clipboard.writeText(String(id || '')); } catch (e) { /* ignore */ } });
-        } catch (e) { /* ignore */ }
-        meta.appendChild(copyBtn);
-
-        // Append near the end of the host so it follows the date span used in
-        // the product page bought-note markup and stays visible.
-        try { host.appendChild(meta); } catch (e) { /* ignore append errors */ }
-      } catch (e) { /* ignore building errors */ }
-
-    } catch (e) { /* ignore */ }
-  }
-
-  /**
-   * Render a small, accessible "Clear this note" button inside a
-   * data-bought-note host so visitors can remove the local remembered-purchase
-   * record without opening devtools. Behaviour is defensive and idempotent:
-   *  - Guards with data-ssp-bought-clear to avoid duplication
-   *  - Attempts to remove canonical storage keys (soundshop:bought:v1 and
-   *    legacy soundshop.bought) in a try/catch
-   *  - Clears guard attributes on in-page bought hosts so P.initBoughtSummary
-   *    and P.initBoughtNote can re-run, falling back to location.reload()
-   */
-  function createBoughtClear(host) {
-    try {
-      if (!host || !host.appendChild) return;
-      try { if (host.getAttribute('data-ssp-bought-clear') === 'on') return; } catch (e) { /* ignore */ }
-      try { host.setAttribute('data-ssp-bought-clear', 'on'); } catch (e) { /* ignore */ }
-
-      var btn = document.createElement('button');
-      try { btn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
-      btn.className = 'bought__clear';
-      btn.textContent = 'Clear this note';
-      try { btn.setAttribute('title', 'Clear this note'); btn.setAttribute('aria-label', 'Clear this note'); } catch (e) { /* ignore */ }
-
-      try {
-        btn.addEventListener('click', function () {
           try {
-            // Remove canonical and legacy keys if possible
-            try { if (window.localStorage && typeof window.localStorage.removeItem === 'function') { window.localStorage.removeItem('soundshop:bought:v1'); } } catch (e) { /* ignore */ }
-            try { if (window.localStorage && typeof window.localStorage.removeItem === 'function') { window.localStorage.removeItem('soundshop.bought'); } } catch (e) { /* ignore */ }
+            btn.addEventListener('click', function () {
+              try {
+                var id = (detail && (detail.id || detail.ref)) || '';
+                if (!id) return;
+                // If platform supports verify, call it and update in-place
+                if (typeof window.groupStoreVerify !== 'function') return;
+                var p = null;
+                try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
+                if (!p || typeof p.then !== 'function') return;
+                p.then(function (order) {
+                  try {
+                    var v = P._normalisePaidDetail(order);
+                    if (!v) return;
+                    if (v.downloadUrl) {
+                      try { detail.downloadUrl = v.downloadUrl; } catch (e) { /* ignore */ }
 
-            // Remove in-page guard attributes so initialisers can re-run
-            try {
-              $$('[data-bought-note]').forEach(function (h) {
-                try { h.removeAttribute('data-ssp-paid-ref'); } catch (e) { /* ignore */ }
-                try { h.removeAttribute('data-ssp-bought-cta'); } catch (e) { /* ignore */ }
-                try { h.removeAttribute('data-ssp-bought-clear'); } catch (e) { /* ignore */ }
-              });
-              $$('[data-bought-summary]').forEach(function (h) {
-                try {
-                  var items = h.querySelectorAll('[data-ssp-paid-id]');
-                  Array.prototype.slice.call(items).forEach(function (it) { try { it.removeAttribute('data-ssp-paid-id'); } catch (e) { /* ignore */ } });
-                  try { h.removeAttribute('data-ssp-bought-cta'); } catch (e) { /* ignore */ }
-                } catch (e) { /* ignore per-host */ }
-              });
-            } catch (e) { /* ignore */ }
+                      // Update any bought-summary list item for this paid id
+                      try {
+                        var paidEl = null;
+                        try { paidEl = document.querySelector('[data-ssp-paid-id="' + String(id) + '"]'); } catch (e) { paidEl = null; }
+                        if (paidEl) {
+                          try { createBoughtCta(paidEl, detail); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
 
-            // Re-run initialisers where available to refresh UI, otherwise reload
-            try {
-              if (typeof P.initBoughtSummary === 'function') { try { P.initBoughtSummary(); } catch (e) { /* ignore */ } }
-              if (typeof P.initBoughtNote === 'function') { try { P.initBoughtNote(); } catch (e) { /* ignore */ } }
-              return;
-            } catch (e) { /* ignore */ }
+                      // Update any visible bought-note hosts too
+                      try {
+                        $$('[data-bought-note]').forEach(function (host) {
+                          try {
+                            var ref = (detail && (detail.ref || detail.id)) || '';
+                            try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
+                            try { createBoughtCta(host, detail); } catch (e) { /* ignore */ }
+                          } catch (e) { /* ignore per-host */ }
+                        });
+                      } catch (e) { /* ignore */ }
 
-            try { location.reload(); } catch (e) { /* ignore */ }
+                    }
+                  } catch (e) { /* ignore then */ }
+                }).catch(function () { /* ignore */ });
 
-          } catch (e) { /* ignore click */ }
-        });
+              } catch (e) { /* ignore click */ }
+            });
+          } catch (e) { /* ignore */ }
+
+          try { wrapper.appendChild(btn); } catch (e) { /* ignore append */ }
+        }
       } catch (e) { /* ignore */ }
 
-      try { host.appendChild(btn); } catch (e) { /* ignore append */ }
+      try { host.appendChild(wrapper); } catch (e) { /* ignore append */ }
     } catch (e) { /* ignore */ }
   }
 
@@ -744,6 +659,55 @@
               if (!v) return;
               if (v.downloadUrl) {
                 try { it.downloadUrl = v.downloadUrl; } catch (e) { /* ignore */ }
+
+                // Persist canonical storage so remembered purchases keep the
+                // verified installer URL and other pages can reflect it too.
+                try {
+                  if (typeof window.soundshopPersistBought === 'function') {
+                    try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                  }
+                } catch (e) { /* ignore */ }
+
+                // Update any bought-summary list item for this paid id (in-place)
+                try {
+                  var paidEl = null;
+                  try { paidEl = document.querySelector('[data-ssp-paid-id="' + String(id) + '"]'); } catch (e) { paidEl = null; }
+                  if (paidEl) {
+                    try { createBoughtCta(paidEl, it); } catch (e) { /* ignore */ }
+                  }
+                } catch (e) { /* ignore */ }
+
+                // Update any visible bought-note hosts too
+                try {
+                  $$('[data-bought-note]').forEach(function (host) {
+                    try {
+                      var ref = (it && (it.ref || it.id)) || '';
+                      try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
+                      try { createBoughtCta(host, it); } catch (e) { /* ignore */ }
+                    } catch (e) { /* ignore per-host */ }
+                  });
+                } catch (e) { /* ignore */ }
+
+                // Clear per-host guard attributes so initialisers can re-run
+                try {
+                  $$('[data-bought-summary]').forEach(function (h) {
+                    try {
+                      var items = h.querySelectorAll('[data-ssp-paid-id]');
+                      Array.prototype.slice.call(items).forEach(function (itm) { try { itm.removeAttribute('data-ssp-paid-id'); } catch (e) { /* ignore */ } });
+                      try { h.removeAttribute('data-ssp-bought-cta'); } catch (e) { /* ignore */ }
+                      try { h.removeAttribute('data-ssp-bought-summary'); } catch (e) { /* ignore */ }
+                    } catch (e) { /* ignore per-host */ }
+                  });
+                  $$('[data-bought-note]').forEach(function (h) {
+                    try { h.removeAttribute('data-ssp-bought-cta'); } catch (e) { /* ignore */ }
+                    try { h.removeAttribute('data-ssp-paid-ref'); } catch (e) { /* ignore */ }
+                  });
+                } catch (e) { /* ignore */ }
+
+                // Re-run initialisers where available to refresh UI immediately
+                try { if (typeof P.initBoughtSummary === 'function') { try { P.initBoughtSummary(); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
+                try { if (typeof P.initBoughtNote === 'function') { try { P.initBoughtNote(); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
+
               }
             } catch (e) { /* ignore then */ }
           }).catch(function () { /* ignore */ });
