@@ -497,6 +497,189 @@
     } catch (e) { /* ignore */ }
   };
 
+  // Auto-verify helper used by the initialisers below. It performs a one-shot
+  // verification pass for remembered purchases read from localStorage. The
+  // routine is defensive: it respects the global _boughtAutoVerifyCalled gate
+  // so it runs at most once per page load, only calls window.groupStoreVerify
+  // when present, and records per-id attempts so each remembered id is
+  // verified only once.
+  P._autoVerifyRememberedPurchases = function (items) {
+    try {
+      if (_boughtAutoVerifyCalled) return;
+      _boughtAutoVerifyCalled = true;
+
+      // Minimal global cache to avoid double-verifying the same id across
+      // multiple hosts or re-runs within the same page session.
+      try { window._ssBoughtAutoVerifiedIds = window._ssBoughtAutoVerifiedIds || {}; } catch (e) { window._ssBoughtAutoVerifiedIds = {}; }
+
+      if (typeof window.groupStoreVerify !== 'function') return;
+
+      // Ensure items is an array
+      if (!items || !Array.isArray(items)) return;
+
+      items.forEach(function (it) {
+        try {
+          var id = it && (it.id || it.ref) ? String(it.id || it.ref) : '';
+          if (!id) return;
+          if (it.downloadUrl) return; // already have a URL
+          if (window._ssBoughtAutoVerifiedIds[id]) return; // already attempted
+          window._ssBoughtAutoVerifiedIds[id] = true;
+
+          var p = null;
+          try { p = window.groupStoreVerify(id); } catch (e) { p = null; }
+          if (!p || typeof p.then !== 'function') return;
+
+          p.then(function (order) {
+            try {
+              var vdet = P._normalisePaidDetail(order);
+              if (!vdet) return;
+              // If we discovered a download URL, update any matching UI
+              if (vdet.downloadUrl) {
+                try {
+                  // Update any bought-summary items for this paid id
+                  var selector = '[data-ssp-paid-id="' + String(id) + '"]';
+                  var nodes = [];
+                  try { nodes = Array.prototype.slice.call(document.querySelectorAll(selector)); } catch (e) { nodes = []; }
+                  nodes.forEach(function (n) { try { createBoughtCta(n, vdet); } catch (e) { /* ignore */ } });
+
+                  // Update any bought-note hosts as well
+                  try { $$('[data-bought-note]').forEach(function (host) { try { createBoughtCta(host, vdet); } catch (e) { /* ignore */ } }); } catch (e) { /* ignore */ }
+                } catch (e) { /* ignore UI update errors */ }
+              }
+            } catch (e) { /* ignore per-verify handling */ }
+          }).catch(function () { /* ignore individual verification failure */ });
+
+        } catch (e) { /* ignore per-item */ }
+      });
+
+    } catch (e) { /* ignore */ }
+  };
+
+  /**
+   * Initialise any [data-bought-summary] hosts on the page by reading the
+   * remembered purchases from localStorage and rendering each into the list.
+   * This is idempotent and safe to call multiple times; it uses the bound()
+   * guard so repeated runs do not re-bind events.
+   */
+  P.initBoughtSummary = function (root) {
+    try {
+      var hosts = [];
+      if (root && root.querySelector) hosts = root.querySelectorAll && Array.prototype.slice.call(root.querySelectorAll('[data-bought-summary]')) || [];
+      else hosts = $$('[data-bought-summary]');
+
+      if (!hosts || !hosts.length) return;
+
+      // Read the canonical bought array once and share for the auto-verify
+      // step. We pass the host so readBoughtArray can use any host-specific
+      // data-* key if present.
+      hosts.forEach(function (host) {
+        try {
+          if (bound(host, 'bought-summary')) return;
+          var items = readBoughtArray(host);
+          if (!items || !items.length) continueHost(host);
+
+          try { host.removeAttribute('hidden'); } catch (e) { /* ignore */ }
+          var list = host.querySelector('[data-bought-summary-list]');
+          if (!list) return;
+
+          // Clear existing list items to reflect canonical storage
+          try {
+            while (list.firstChild) list.removeChild(list.firstChild);
+          } catch (e) { /* ignore clear errors */ }
+
+          items.forEach(function (it) {
+            try {
+              var id = it && (it.id || it.ref) ? String(it.id || it.ref) : '';
+
+              var li = document.createElement('li');
+              li.className = 'bought__item';
+              try { if (id) li.setAttribute('data-ssp-paid-id', id); } catch (e) { /* ignore */ }
+
+              var titleSpan = document.createElement('span');
+              titleSpan.className = 'bought__title';
+              titleSpan.textContent = String(it.itemName || it.name || it.title || it.label || 'Purchased item');
+              li.appendChild(titleSpan);
+
+              var metaSpan = document.createElement('span');
+              metaSpan.className = 'bought__meta';
+              li.appendChild(metaSpan);
+
+              try {
+                var refSpan = document.createElement('span');
+                refSpan.className = 'bought__ref';
+                refSpan.textContent = (attr(host, 'data-bought-summary-ref-prefix') || 'Order: ') + String(id || (it.ref || ''));
+                metaSpan.appendChild(refSpan);
+
+                var copyBtn = document.createElement('button');
+                copyBtn.setAttribute('type', 'button');
+                copyBtn.className = 'bought__copy';
+                copyBtn.textContent = 'Copy';
+                copyBtn.style.marginLeft = '8px';
+                try {
+                  copyBtn.setAttribute('data-ssp-copy', 'on');
+                  copyBtn.addEventListener('click', function () { try { navigator.clipboard.writeText(String(id || '')); } catch (e) { /* ignore */ } });
+                } catch (e) { /* ignore */ }
+                metaSpan.appendChild(copyBtn);
+
+              } catch (e) { /* ignore */ }
+
+              try { list.appendChild(li); } catch (e) { /* ignore append */ }
+
+              try { createBoughtCta(li, it); } catch (e) { /* ignore */ }
+
+            } catch (e) { /* ignore per-item */ }
+          });
+
+          // After rendering this host, attempt auto-verify across the items so
+          // any direct download links are surfaced without requiring a click.
+          try { P._autoVerifyRememberedPurchases(items); } catch (e) { /* ignore */ }
+
+        } catch (e) { /* ignore per-host */ }
+      });
+
+      return;
+
+    } catch (e) { /* ignore init errors */ }
+
+    // Helper used in the loop to allow continue semantics inside try
+    function continueHost(h) { try { /* noop marker */ } catch (e) { } }
+  };
+
+  /**
+   * Initialise any [data-bought-note] hosts (the single-item note shown after
+   * a returned checkout). When a remembered purchase exists, unhide the host
+   * and populate its fields. This also attempts auto-verification through the
+   * shared helper so a "Download installers" link can appear if available.
+   */
+  P.initBoughtNote = function (root) {
+    try {
+      var hosts = [];
+      if (root && root.querySelector) hosts = root.querySelectorAll && Array.prototype.slice.call(root.querySelectorAll('[data-bought-note]')) || [];
+      else hosts = $$('[data-bought-note]');
+
+      if (!hosts || !hosts.length) return;
+
+      hosts.forEach(function (host) {
+        try {
+          if (bound(host, 'bought-note')) return;
+          var items = readBoughtArray(host);
+          if (!items || !items.length) return;
+
+          var it = items[0];
+          try { host.removeAttribute('hidden'); } catch (e) { /* ignore */ }
+          try { var titleEl = host.querySelector('[data-bought-note-title]'); if (titleEl) titleEl.textContent = String(it.itemName || it.name || it.title || it.label || 'Purchased item'); } catch (e) { /* ignore */ }
+          try { var subEl = host.querySelector('[data-bought-note-sub]'); if (subEl) subEl.textContent = String(it.email || ''); } catch (e) { /* ignore */ }
+
+          try { createBoughtCta(host, it); } catch (e) { /* ignore */ }
+
+          try { P._autoVerifyRememberedPurchases(items); } catch (e) { /* ignore */ }
+
+        } catch (e) { /* ignore per-host */ }
+      });
+
+    } catch (e) { /* ignore */ }
+  };
+
   // ... the rest of the public API and initialisers follow (unchanged) ...
 
   /* =======================================================================
