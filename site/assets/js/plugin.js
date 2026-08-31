@@ -283,10 +283,6 @@
     });
   };
 
-  /* =======================================================================
-     07  REMEMBERED PURCHASE SUMMARY
-     ======================================================================= */
-
   function maskEmail(email) {
     try {
       if (!email || typeof email !== 'string') return '';
@@ -315,17 +311,47 @@
     $$('[data-bought-summary]', root || document).forEach(function (host) {
       if (bound(host, 'bought-summary')) return;
 
-      var raw = null;
-      try { raw = attr(host, 'data-bought-summary') || window.localStorage && typeof window.localStorage.getItem === 'function' ? window.localStorage.getItem(attr(host, 'data-bought-summary')) : null; } catch (e) { raw = null; }
-
+      var attrVal = attr(host, 'data-bought-summary');
       var recs = null;
-      try { recs = JSON.parse(attr(host, 'data-bought-summary') || 'null'); } catch (e) { recs = null; }
 
-      try {
-        if (!recs && raw) {
-          try { recs = JSON.parse(raw); } catch (e) { /* ignore parse errors */ }
-        }
-      } catch (e) { /* ignore localStorage access errors */ }
+      // Step 1: If the attribute contains inline JSON that parses to an array, use it.
+      if (attrVal) {
+        try {
+          var inline = JSON.parse(attrVal);
+          if (Array.isArray(inline)) recs = inline;
+        } catch (e) { recs = recs; }
+      }
+
+      // Step 2: Otherwise, if the attribute is non-empty treat it as a localStorage key.
+      if (!recs && attrVal) {
+        try {
+          var key = String(attrVal);
+          if (key) {
+            var raw = null;
+            try { raw = window.localStorage && typeof window.localStorage.getItem === 'function' ? window.localStorage.getItem(key) : null; } catch (e) { raw = null; }
+            if (raw) {
+              try {
+                var parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) recs = parsed;
+              } catch (e) { /* ignore parse errors */ }
+            }
+          }
+        } catch (e) { /* ignore */ }
+      }
+
+      // Step 3: fallback to canonical key 'soundshop:bought:v1' if nothing found yet.
+      if (!recs) {
+        try {
+          var fallbackRaw = null;
+          try { fallbackRaw = window.localStorage && typeof window.localStorage.getItem === 'function' ? window.localStorage.getItem('soundshop:bought:v1') : null; } catch (e) { fallbackRaw = null; }
+          if (fallbackRaw) {
+            try {
+              var parsed2 = JSON.parse(fallbackRaw);
+              if (Array.isArray(parsed2)) recs = parsed2;
+            } catch (e) { /* ignore parse errors */ }
+          }
+        } catch (e) { /* ignore */ }
+      }
 
       if (!recs || !Array.isArray(recs)) return;
 
@@ -392,42 +418,46 @@
             } catch (e) { /* ignore */ }
 
             try {
-              var ref = ref; // preserve for the verification handler below
+              var preservedRef = ref; // preserve for the verification handler below
 
               var msg = document.createElement('button');
               msg.setAttribute('type', 'button');
               msg.className = 'bought__verify';
               msg.textContent = 'Verify order';
 
-              (function (reference, msg, refNode) {
+              (function (reference, msg) {
                 try {
+                  var originalLabel = msg.textContent || 'Verify order';
                   msg.addEventListener('click', function (ev) {
                     try {
                       ev.preventDefault();
-                      msg.textContent = 'Checking…';
-                      // Call the real platform verification function if present.
+
+                      // Create or find a small status node adjacent to the control
+                      var parent = msg.parentNode || msg;
+                      var msgNode = parent.querySelector('.bought__verify-msg');
+                      if (!msgNode) {
+                        msgNode = document.createElement('span');
+                        msgNode.className = 'bought__verify-msg';
+                        msgNode.style.marginLeft = '8px';
+                        parent.appendChild(msgNode);
+                      }
+
+                      // Show immediate checking status in the status node and set button state
+                      try { msgNode.textContent = 'Checking…'; } catch (e) { /* ignore */ }
+                      try { msg.textContent = originalLabel; } catch (e) { /* ignore */ }
+
+                      // Call the platform verification function if present and guarded
                       var p = null;
                       try { p = window.groupStoreVerify ? window.groupStoreVerify(reference) : null; } catch (e) { p = null; }
                       if (!p || typeof p.then !== 'function') {
-                        msg.textContent = 'Verification unavailable';
+                        try { msgNode.textContent = 'Verification unavailable'; } catch (e) { /* ignore */ }
                         return;
                       }
-                      // When the promise resolves we render a tiny status node
-                      // next to the control and emit the soundshop:verified-order
-                      // event so other listeners in the page (notably the
-                      // handler that injects the installers CTA) get a chance.
-                      var parent = msg.parentNode || msg;
-                      var msgNode = document.createElement('span');
-                      msgNode.className = 'bought__verify-msg';
-                      msgNode.style.marginLeft = '8px';
-                      parent.appendChild(msgNode);
-
-                      msgNode.textContent = 'Checking…';
 
                       p.then(function (order) {
                         try {
                           if (order && order.id) {
-                            msgNode.textContent = 'Verified: paid — order ' + String(order.id);
+                            try { msgNode.textContent = 'Verified: paid — order ' + String(order.id); } catch (e) { /* ignore */ }
 
                             try {
                               var summary = {
@@ -440,14 +470,15 @@
                             } catch (evErr) { /* swallow errors from listeners */ }
 
                           } else {
-                            msgNode.textContent = 'Not found / unpaid';
+                            try { msgNode.textContent = 'Not found / unpaid'; } catch (e) { /* ignore */ }
                           }
-                        } catch (e) { msgNode.textContent = 'Verification failed'; }
-                      }).catch(function () { msgNode.textContent = 'Verification failed'; });
-                    } catch (e) { msgNode.textContent = 'Verification failed'; }
+                        } catch (e) { try { msgNode.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
+                      }).catch(function () { try { msgNode.textContent = 'Verification failed'; } catch (e) { /* ignore */ } });
+
+                    } catch (e) { try { var pmsg = msg.parentNode ? msg.parentNode.querySelector('.bought__verify-msg') : null; if (pmsg) pmsg.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
                   });
                 } catch (e) { /* ignore */ }
-              })(ref, msg, refNode);
+              })(preservedRef, msg);
 
               metaSpan.appendChild(msg);
 
@@ -637,8 +668,8 @@
 
         // Delegate to the helper which builds, appends and initialises copy
         try { createBoughtCta(host, detail); } catch (e) { /* swallow listener errors */ }
-      } catch (e) { /* ignore if addEventListener not available */ }
+      } catch (e) { /* ignore listener errors */ }
     });
-  } catch (e) { /* ignore */ }
+  } catch (e) { /* ignore registration errors */ }
 
 })(window, document);
