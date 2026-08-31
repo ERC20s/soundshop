@@ -202,7 +202,7 @@
       var domain = parts[1];
       if (local.length <= 2) return local.replace(/.(?=.{1,}$)/g, '*') + '@' + domain;
       // show first and last char of local part, hide the middle
-      return local.charAt(0) + '…' + local.charAt(local.length - 1) + '@' + domain;
+      return local.charAt(0) + '\u2026' + local.charAt(local.length - 1) + '@' + domain;
     } catch (e) { return ''; }
   }
 
@@ -269,32 +269,71 @@
           } catch (e) { /* ignore */ }
         }
 
+        function makeSupportAnchor() {
+          try {
+            var a = document.createElement('a');
+            a.className = 'bought__cta';
+            try { a.setAttribute('href', 'docs.html#support'); } catch (e) { /* ignore */ }
+            try { a.textContent = 'Contact Support'; } catch (e) { /* ignore */ }
+            return a;
+          } catch (e) { return null; }
+        }
+
         function makeSupportButton(id) {
           try {
             var btn = document.createElement('button');
             btn.setAttribute('type', 'button');
             btn.className = 'bought__cta';
             btn.textContent = 'Check order';
-            try { btn.setAttribute('data-ssp-check-order-id', String(id || '')); } catch (e) { /* ignore */ }
+            try { if (id) btn.setAttribute('data-ssp-check-order-id', String(id || '')); } catch (e) { /* ignore */ }
 
             try {
               btn.addEventListener('click', function () {
                 try {
-                  btn.textContent = 'Checking…';
-                  if (!id || !window.groupStoreVerify) { btn.textContent = 'Contact Support'; return; }
+                  btn.textContent = 'Checking\u2026';
+
+                  // If there's no id, or the platform verify helper is not a
+                  // function, replace the button with a real Support anchor so
+                  // users can navigate to Support instead of seeing inert text.
+                  if (!id || typeof window.groupStoreVerify !== 'function') {
+                    try {
+                      var a = makeSupportAnchor();
+                      if (a) wrap.replaceChild(a, btn);
+                    } catch (e) { try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ } }
+                    return;
+                  }
+
                   var p = null;
                   try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
-                  if (!p || typeof p.then !== 'function') { btn.textContent = 'Contact Support'; return; }
+                  if (!p || typeof p.then !== 'function') {
+                    try {
+                      var a2 = makeSupportAnchor();
+                      if (a2) wrap.replaceChild(a2, btn);
+                    } catch (e) { try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ } }
+                    return;
+                  }
+
                   p.then(function (order) {
                     try {
                       var vdet = P._normalisePaidDetail(order);
                       if (vdet && vdet.downloadUrl) {
                         try { var a = document.createElement('a'); a.className = 'bought__cta'; a.setAttribute('href', vdet.downloadUrl); a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener noreferrer'); a.textContent = 'Download installers'; wrap.replaceChild(a, btn); } catch (e) { /* ignore */ }
                       } else {
-                        try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ }
+                        try {
+                          var a2 = makeSupportAnchor();
+                          if (a2) wrap.replaceChild(a2, btn);
+                        } catch (e) { try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ } }
                       }
                     } catch (e) { /* ignore */ }
-                  }).catch(function () { try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ } });
+                  }).catch(function () {
+                    // On verify failure, show Support anchor instead of leaving an
+                    // inert or error-state button.
+                    try {
+                      var a3 = makeSupportAnchor();
+                      if (a3) wrap.replaceChild(a3, btn);
+                    } catch (e) { try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ } }
+                  });
+
                 } catch (e) { /* ignore click handler */ }
               });
             } catch (e) { /* ignore event wiring */ }
@@ -308,7 +347,13 @@
             makeDownloadAnchor(extractDownloadUrl(detail));
           } else {
             var id = detail && detail.id ? String(detail.id) : '';
-            makeSupportButton(id);
+            // If there's no id or the verify helper is not present, render a
+            // proper Support anchor immediately instead of an inert button.
+            if (!id || typeof window.groupStoreVerify !== 'function') {
+              try { wrap.appendChild(makeSupportAnchor()); } catch (e) { /* ignore */ }
+            } else {
+              makeSupportButton(id);
+            }
           }
         } catch (e) { /* ignore */ }
 
