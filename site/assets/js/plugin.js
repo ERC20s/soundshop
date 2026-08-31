@@ -279,7 +279,7 @@
           .catch(function () {
             if (status) status.textContent = 'Failed to load presets.';
           });
-      } catch (e) { if (status) status.textContent = 'Failed to load presets.'; }
+      } catch (e) { if (status) status.textContent  }
     });
   };
 
@@ -359,200 +359,222 @@
       var madePerItemCta = false;
       var validCount = 0;
 
-      recs.forEach(function (r) {
-        try {
-          if (!r || typeof r !== 'object') return;
-
-          var li = document.createElement('li');
-          li.className = 'bought__item';
-
-          var label = r.name || r.itemName || r.title || r.label || '';
-          var id = r.id || r.ref || r.reference || r.payment || r.paymentRef || r.payment_reference || '';
-          var ref = null;
-          try { ref = id ? String(id) : null; } catch (e) { ref = null; }
-
-          var labelSpan = el('span', 'bought__label', label || 'Purchased item');
-          var metaSpan = el('span', 'bought__meta');
-
-          var email = r.email || r.deliveryEmail || r.buyerEmail || r.customerEmail || '';
-
-          if (ref) {
-            if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-            metaSpan.appendChild(document.createTextNode('Order reference: '));
-
-            try {
-              var refNode = el('span', 'bought__ref', ref);
-              refNode.style.marginLeft = '4px';
-              refNode.style.color = 'var(--text-dim)';
-              metaSpan.appendChild(refNode);
-
-              var revealBtn = document.createElement('button');
-              revealBtn.setAttribute('type', 'button');
-              revealBtn.className = 'bought__reveal';
-              revealBtn.setAttribute('aria-pressed', 'false');
-              revealBtn.textContent = 'Show';
-              revealBtn.style.marginLeft = '8px';
-              metaSpan.appendChild(revealBtn);
-
-              (function (node, btn, fullText) {
-                try {
-                  btn.addEventListener('click', function () {
-                    try {
-                      var revealed = btn.getAttribute('data-revealed') === '1';
-                      if (revealed) {
-                        node.textContent = fullText;
-                        btn.textContent = 'Show';
-                        btn.setAttribute('aria-pressed', 'false');
-                        btn.setAttribute('data-revealed', '0');
-                      } else {
-                        node.textContent = fullText;
-                        btn.textContent = 'Hide';
-                        btn.setAttribute('aria-pressed', 'true');
-                        btn.setAttribute('data-revealed', '1');
-                      }
-                    } catch (e) { /* ignore */ }
-                  });
-                } catch (e) { /* ignore */ }
-              })(refNode, revealBtn, ref);
-
-            } catch (e) { /* ignore */ }
-
-            try {
-              var preservedRef = ref; // preserve for the verification handler below
-
-              var msg = document.createElement('button');
-              msg.setAttribute('type', 'button');
-              msg.className = 'bought__verify';
-              msg.textContent = 'Verify order';
-
-              (function (reference, msg) {
-                try {
-                  var originalLabel = msg.textContent || 'Verify order';
-                  msg.addEventListener('click', function (ev) {
-                    try {
-                      ev.preventDefault();
-
-                      // Create or find a small status node adjacent to the control
-                      var parent = msg.parentNode || msg;
-                      var msgNode = parent.querySelector('.bought__verify-msg');
-                      if (!msgNode) {
-                        msgNode = document.createElement('span');
-                        msgNode.className = 'bought__verify-msg';
-                        msgNode.style.marginLeft = '8px';
-                        parent.appendChild(msgNode);
-                      }
-
-                      // Show immediate checking status in the status node and set button state
-                      try { msgNode.textContent = 'Checking…'; } catch (e) { /* ignore */ }
-                      try { msg.textContent = originalLabel; } catch (e) { /* ignore */ }
-
-                      // Call the platform verification function if present and guarded
-                      var p = null;
-                      try { p = window.groupStoreVerify ? window.groupStoreVerify(reference) : null; } catch (e) { p = null; }
-                      if (!p || typeof p.then !== 'function') {
-                        try { msgNode.textContent = 'Verification unavailable'; } catch (e) { /* ignore */ }
-                        return;
-                      }
-
-                      p.then(function (order) {
-                        try {
-                          if (order && order.id) {
-                            try { msgNode.textContent = 'Verified: paid — order ' + String(order.id); } catch (e) { /* ignore */ }
-
-                            try {
-                              var summary = {
-                                id: order.id,
-                                itemName: order.itemName || order.name || '',
-                                quantity: order.quantity || 1,
-                                hasDeliveryEmail: !!(order.email || order.buyerEmail || order.customerEmail)
-                              };
-                              document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: summary }));
-                            } catch (evErr) { /* swallow errors from listeners */ }
-
-                          } else {
-                            try { msgNode.textContent = 'Not found / unpaid'; } catch (e) { /* ignore */ }
-                          }
-                        } catch (e) { try { msgNode.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
-                      }).catch(function () { try { msgNode.textContent = 'Verification failed'; } catch (e) { /* ignore */ } });
-
-                    } catch (e) { try { var pmsg = msg.parentNode ? msg.parentNode.querySelector('.bought__verify-msg') : null; if (pmsg) pmsg.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
-                  });
-                } catch (e) { /* ignore */ }
-              })(preservedRef, msg);
-
-              metaSpan.appendChild(msg);
-
-            } catch (e) { /* ignore */ }
-          } else if (email) {
-            if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-            metaSpan.appendChild(document.createTextNode('Delivery email: '));
-            try {
-              var emSpanNoRef = el('span', 'bought__email', maskEmail(email));
-              emSpanNoRef.style.marginLeft = '4px';
-              emSpanNoRef.style.color = 'var(--text-dim)';
-              metaSpan.appendChild(emSpanNoRef);
-
-              var revealBtnNoRef = document.createElement('button');
-              revealBtnNoRef.setAttribute('type', 'button');
-              revealBtnNoRef.className = 'bought__reveal';
-              revealBtnNoRef.setAttribute('aria-pressed', 'false');
-              revealBtnNoRef.textContent = 'Show';
-              revealBtnNoRef.style.marginLeft = '8px';
-              metaSpan.appendChild(revealBtnNoRef);
-
-              (function (node, btn, fullEmail) {
-                try {
-                  btn.addEventListener('click', function () {
-                    try {
-                      var revealed = btn.getAttribute('data-revealed') === '1';
-                      if (revealed) {
-                        node.textContent = maskEmail(fullEmail);
-                        btn.textContent = 'Show';
-                        btn.setAttribute('aria-pressed', 'false');
-                        btn.setAttribute('data-revealed', '0');
-                      } else {
-                        node.textContent = fullEmail;
-                        btn.textContent = 'Hide';
-                        btn.setAttribute('aria-pressed', 'true');
-                        btn.setAttribute('data-revealed', '1');
-                      }
-                    } catch (e) { /* ignore */ }
-                  });
-                } catch (e) { /* ignore */ }
-              })(emSpan, revealBtn, email);
-
-            } catch (e) { /* ignore */ }
-          }
-
-          li.appendChild(labelSpan);
-          li.appendChild(metaSpan);
-          list.appendChild(li);
-          validCount++;
-
-          // If this remembered record includes a payment reference, inject
-          // a per-item Order: … + Copy button directly into the list item.
+      try {
+        recs.forEach(function (r) {
           try {
+            if (!r || typeof r !== 'object') return;
+
+            // Normalise shape to the fields this UI expects
+            var ref = r.ref || r.id || r.reference || r.paymentRef || '';
+            try { if (ref && typeof ref === 'string') ref = ref.trim(); } catch (e) { ref = String(ref || ''); }
+            if (!ref) ref = '';
+
+            var label = r.label || r.itemName || r.name || '';
+            if (!label) {
+              try {
+                var labels = host.querySelector('[data-bought-summary-labels]');
+                if (labels) {
+                  var kind = r.kind || r.item || r.itemId || '';
+                  try { kind = String(kind).trim(); } catch (e) { kind = ''; }
+                  if (kind) {
+                    var key = 'data-bought-label-' + kind.toLowerCase();
+                    try { label = labels.getAttribute(key) || ''; } catch (e) { label = ''; }
+                  }
+                }
+              } catch (e) { /* ignore */ }
+            }
+
+            if (!label) label = 'Purchased item';
+
+            // Build list item
+            var li = document.createElement('li');
+            var labelSpan = document.createElement('span');
+            labelSpan.className = 'bought__label';
+            labelSpan.textContent = label;
+
+            var metaSpan = document.createElement('span');
+            metaSpan.className = 'bought__meta';
+
+            var email = r.email || r.deliveryEmail || r.buyerEmail || '';
+
+            // If this remembered record includes a payment reference, render the
+            // per-item verify control that calls the platform for live verification
             if (ref) {
               try {
-                var detail = { id: String(ref), itemName: label, quantity: r.quantity || 1, hasDeliveryEmail: !!r.email };
-                createBoughtCta(li, detail);
-                madePerItemCta = true;
-              } catch (e) { /* ignore per-item CTA errors */ }
+                if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+                metaSpan.appendChild(document.createTextNode('Order: '));
+
+                var refNode = el('span', 'bought__ref', ref);
+                refNode.style.marginLeft = '4px';
+                metaSpan.appendChild(refNode);
+
+                var revealBtn = document.createElement('button');
+                revealBtn.setAttribute('type', 'button');
+                revealBtn.className = 'bought__reveal';
+                revealBtn.setAttribute('aria-pressed', 'false');
+                revealBtn.textContent = 'Show';
+                revealBtn.style.marginLeft = '8px';
+                metaSpan.appendChild(revealBtn);
+
+                (function (node, btn, fullText) {
+                  try {
+                    btn.addEventListener('click', function () {
+                      try {
+                        var revealed = btn.getAttribute('data-revealed') === '1';
+                        if (revealed) {
+                          node.textContent = fullText;
+                          btn.textContent = 'Show';
+                          btn.setAttribute('aria-pressed', 'false');
+                          btn.setAttribute('data-revealed', '0');
+                        } else {
+                          node.textContent = fullText;
+                          btn.textContent = 'Hide';
+                          btn.setAttribute('aria-pressed', 'true');
+                          btn.setAttribute('data-revealed', '1');
+                        }
+                      } catch (e) { /* ignore */ }
+                    });
+                  } catch (e) { /* ignore */ }
+                })(refNode, revealBtn, ref);
+
+              } catch (e) { /* ignore */ }
+
+              try {
+                var preservedRef = ref; // preserve for the verification handler below
+
+                var msg = document.createElement('button');
+                msg.setAttribute('type', 'button');
+                msg.className = 'bought__verify';
+                msg.textContent = 'Verify order';
+
+                (function (reference, msg) {
+                  try {
+                    var originalLabel = msg.textContent || 'Verify order';
+                    msg.addEventListener('click', function (ev) {
+                      try {
+                        ev.preventDefault();
+
+                        // Create or find a small status node adjacent to the control
+                        var parent = msg.parentNode || msg;
+                        var msgNode = parent.querySelector('.bought__verify-msg');
+                        if (!msgNode) {
+                          msgNode = document.createElement('span');
+                          msgNode.className = 'bought__verify-msg';
+                          msgNode.style.marginLeft = '8px';
+                          parent.appendChild(msgNode);
+                        }
+
+                        // Show immediate checking status in the status node and set button state
+                        try { msgNode.textContent = 'Checking…'; } catch (e) { /* ignore */ }
+                        try { msg.textContent = originalLabel; } catch (e) { /* ignore */ }
+
+                        // Call the platform verification function if present and guarded
+                        var p = null;
+                        try { p = window.groupStoreVerify ? window.groupStoreVerify(reference) : null; } catch (e) { p = null; }
+                        if (!p || typeof p.then !== 'function') {
+                          try { msgNode.textContent = 'Verification unavailable'; } catch (e) { /* ignore */ }
+                          return;
+                        }
+
+                        p.then(function (order) {
+                          try {
+                            if (order && order.id) {
+                              try { msgNode.textContent = 'Verified: paid — order ' + String(order.id); } catch (e) { /* ignore */ }
+
+                              try {
+                                var summary = {
+                                  id: order.id,
+                                  itemName: order.itemName || order.name || '',
+                                  quantity: order.quantity || 1,
+                                  hasDeliveryEmail: !!(order.email || order.buyerEmail || order.customerEmail)
+                                };
+                                document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: summary }));
+                              } catch (evErr) { /* swallow errors from listeners */ }
+
+                            } else {
+                              try { msgNode.textContent = 'Not found / unpaid'; } catch (e) { /* ignore */ }
+                            }
+                          } catch (e) { try { msgNode.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
+                        }).catch(function () { try { msgNode.textContent = 'Verification failed'; } catch (e) { /* ignore */ } });
+
+                      } catch (e) { try { var pmsg = msg.parentNode ? msg.parentNode.querySelector('.bought__verify-msg') : null; if (pmsg) pmsg.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
+                    });
+                  } catch (e) { /* ignore */ }
+                })(preservedRef, msg);
+
+                metaSpan.appendChild(msg);
+
+              } catch (e) { /* ignore */ }
+            } else if (email) {
+              if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+              metaSpan.appendChild(document.createTextNode('Delivery email: '));
+              try {
+                var emSpanNoRef = el('span', 'bought__email', maskEmail(email));
+                emSpanNoRef.style.marginLeft = '4px';
+                emSpanNoRef.style.color = 'var(--text-dim)';
+                metaSpan.appendChild(emSpanNoRef);
+
+                var revealBtnNoRef = document.createElement('button');
+                revealBtnNoRef.setAttribute('type', 'button');
+                revealBtnNoRef.className = 'bought__reveal';
+                revealBtnNoRef.setAttribute('aria-pressed', 'false');
+                revealBtnNoRef.textContent = 'Show';
+                revealBtnNoRef.style.marginLeft = '8px';
+                metaSpan.appendChild(revealBtnNoRef);
+
+                (function (node, btn, fullEmail) {
+                  try {
+                    btn.addEventListener('click', function () {
+                      try {
+                        var revealed = btn.getAttribute('data-revealed') === '1';
+                        if (revealed) {
+                          node.textContent = maskEmail(fullEmail);
+                          btn.textContent = 'Show';
+                          btn.setAttribute('aria-pressed', 'false');
+                          btn.setAttribute('data-revealed', '0');
+                        } else {
+                          node.textContent = fullEmail;
+                          btn.textContent = 'Hide';
+                          btn.setAttribute('aria-pressed', 'true');
+                          btn.setAttribute('data-revealed', '1');
+                        }
+                      } catch (e) { /* ignore */ }
+                    });
+                  } catch (e) { /* ignore */ }
+                })(emSpan, revealBtn, email);
+
+              } catch (e) { /* ignore */ }
             }
-          } catch (e) { /* ignore */ }
 
-        } catch (e) { /* ignore per-item */ }
+            li.appendChild(labelSpan);
+            li.appendChild(metaSpan);
+            list.appendChild(li);
+            validCount++;
+
+            // If this remembered record includes a payment reference, inject
+            // a per-item Order: … + Copy button directly into the list item.
+            try {
+              if (ref) {
+                try {
+                  var detail = { id: String(ref), itemName: label, quantity: r.quantity || 1, hasDeliveryEmail: !!r.email };
+                  createBoughtCta(li, detail);
+                  madePerItemCta = true;
+                } catch (e) { /* ignore per-item CTA errors */ }
+              }
+            } catch (e) { /* ignore */ }
+
+          } catch (e) { /* ignore per-item */ }
+        });
+
+        } catch (e) { /* defensive: do not let this break the host */ }
+
+        if (validCount) {
+          host.hidden = false;
+          // Ensure remembered-purchase summaries get the installers/support CTA too.
+          try { if (!madePerItemCta) { createBoughtCta(host, null); } } catch (e) { /* ignore */ }
+        }
       });
-
-      } catch (e) { /* defensive: do not let this break the host */ }
-
-      if (validCount) {
-        host.hidden = false;
-        // Ensure remembered-purchase summaries get the installers/support CTA too.
-        try { if (!madePerItemCta) { createBoughtCta(host, null); } } catch (e) { /* ignore */ }
-      }
-    });
-  };
+    };
 
   /* =======================================================================
      Helper: createBoughtCta(host, detail)
@@ -671,5 +693,188 @@
       } catch (e) { /* ignore listener errors */ }
     });
   } catch (e) { /* ignore registration errors */ }
+
+  /* =======================================================================
+     09  Support: manual payment-reference verification widget
+     Inserts a small accessible form into the Support area (id="support") so
+     visitors with an emailed payment reference can verify it and reveal the
+     same installers/support CTA used elsewhere. If no [data-bought-summary]
+     host exists on the page, a minimal order + links block is appended into
+     the Support section so the visitor has an immediate next step.
+     ======================================================================= */
+
+  P.initSupportVerify = function (root) {
+    try {
+      var doc = root && root.querySelector ? root : document;
+      var header = doc.getElementById && doc.getElementById('support') ? doc.getElementById('support') : null;
+      if (!header) return;
+      // Guard against double-binding
+      if (bound(header, 'support-verify')) return;
+
+      // Create wrapper and form controls
+      var wrap = document.createElement('div');
+      wrap.className = 'support__verify';
+      wrap.style.marginTop = '8px';
+
+      var label = document.createElement('label');
+      label.style.display = 'inline-block';
+      label.style.marginBottom = '6px';
+      label.textContent = 'Verify payment reference: ';
+
+      var input = document.createElement('input');
+      input.setAttribute('type', 'text');
+      input.setAttribute('aria-label', 'Payment reference');
+      input.className = 'support__verify-input';
+      input.style.marginRight = '8px';
+      input.style.padding = '6px';
+      input.style.font = '13px system-ui, sans-serif';
+
+      var btn = document.createElement('button');
+      btn.setAttribute('type', 'button');
+      btn.textContent = 'Verify';
+      btn.className = 'support__verify-btn';
+      btn.style.padding = '6px 10px';
+
+      var status = document.createElement('span');
+      status.className = 'support__verify-status';
+      status.style.marginLeft = '10px';
+      status.style.color = 'var(--text-dim)';
+
+      // Build simple flow: label on its own line, then input+button+status
+      wrap.appendChild(label);
+      var row = document.createElement('div');
+      row.appendChild(input);
+      row.appendChild(btn);
+      row.appendChild(status);
+      wrap.appendChild(row);
+
+      // Insert wrap after the header (h2#support) so it appears at the top of the section
+      try {
+        if (header.parentNode) header.parentNode.insertBefore(wrap, header.nextSibling);
+      } catch (e) { /* ignore DOM insertion errors */ }
+
+      // Handler: guarded, shows status and calls platform verify, then dispatches
+      // the same 'soundshop:verified-order' event shape used elsewhere.
+      btn.addEventListener('click', function (ev) {
+        try {
+          ev.preventDefault();
+          var val = '';
+          try { val = (input.value || '').toString().trim(); } catch (e) { val = ''; }
+          if (!val) {
+            try { status.textContent = 'Enter a payment reference'; } catch (e) {}
+            return;
+          }
+
+          try { status.textContent = 'Checking…'; } catch (e) {}
+          // Guard the platform call
+          var p = null;
+          try { p = window.groupStoreVerify ? window.groupStoreVerify(val) : null; } catch (e) { p = null; }
+          if (!p || typeof p.then !== 'function') {
+            try { status.textContent = 'Verification unavailable'; } catch (e) {}
+            return;
+          }
+
+          // Disable button while pending
+          try { btn.disabled = true; } catch (e) {}
+
+          p.then(function (order) {
+            try {
+              if (order && order.id) {
+                try { status.textContent = 'Verified: paid — order ' + String(order.id); } catch (e) {}
+
+                var summary = {
+                  id: order.id,
+                  itemName: order.itemName || order.name || '',
+                  quantity: order.quantity || 1,
+                  hasDeliveryEmail: !!(order.email || order.buyerEmail || order.customerEmail)
+                };
+
+                try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: summary })); } catch (e) {}
+
+                // If the page has no [data-bought-summary] host, append a minimal
+                // installers + order UI into the Support area so the visitor has a next step.
+                try {
+                  var anySummary = document.querySelector('[data-bought-summary]');
+                  if (!anySummary) {
+                    try {
+                      // Build minimal CTA similar to createBoughtCta but inserted here.
+                      var minimal = document.createElement('div');
+                      minimal.className = 'bought__cta bought__cta--minimal';
+
+                      var docBase = 'docs.html';
+                      try {
+                        if (typeof location !== 'undefined' && String(location.pathname).indexOf('/plugins/') !== -1) {
+                          docBase = '../docs.html';
+                        }
+                      } catch (e) { /* ignore */ }
+
+                      var linkA = document.createElement('a');
+                      linkA.href = docBase + '#delivery';
+                      linkA.textContent = 'Open installers & delivery instructions';
+                      linkA.setAttribute('target', '_blank');
+                      linkA.setAttribute('rel', 'noopener noreferrer');
+                      linkA.style.display = 'inline-block';
+                      linkA.style.marginRight = '12px';
+
+                      var linkB = document.createElement('a');
+                      linkB.href = docBase + '#support';
+                      linkB.textContent = 'Contact support';
+                      linkB.style.display = 'inline-block';
+
+                      minimal.appendChild(linkA);
+                      minimal.appendChild(linkB);
+
+                      // Order span + copy button
+                      try {
+                        var orderWrap = document.createElement('span');
+                        orderWrap.className = 'bought__order';
+                        orderWrap.textContent = 'Order: ' + String(order.id);
+                        orderWrap.style.display = 'inline-block';
+                        orderWrap.style.marginRight = '12px';
+                        orderWrap.style.marginLeft = '12px';
+
+                        var copyBtn = document.createElement('button');
+                        copyBtn.setAttribute('type', 'button');
+                        copyBtn.className = 'bought__copy';
+                        copyBtn.setAttribute('data-copy', String(order.id));
+                        var copyLabel = summary.itemName ? 'Copied order reference for ' + summary.itemName : 'Copied order reference';
+                        copyBtn.setAttribute('data-copy-label', copyLabel);
+                        copyBtn.setAttribute('aria-label', copyLabel);
+                        copyBtn.textContent = 'Copy';
+
+                        orderWrap.appendChild(document.createTextNode(' '));
+                        orderWrap.appendChild(copyBtn);
+                        minimal.insertBefore(orderWrap, linkA);
+                      } catch (e) { /* ignore order UI build errors */ }
+
+                      try { wrap.appendChild(minimal); } catch (e) {}
+
+                      // Initialise copy buttons if SS is present
+                      try { if (SS && typeof SS.initCopyButtons === 'function') SS.initCopyButtons(wrap); } catch (e) {}
+                    } catch (e) { /* ignore minimal UI errors */ }
+                  }
+                } catch (e) { /* ignore */ }
+
+              } else {
+                try { status.textContent = 'Not found / unpaid'; } catch (e) {}
+              }
+            } catch (e) { try { status.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
+          }).catch(function () { try { status.textContent = 'Verification failed'; } catch (e) { /* ignore */ } })
+            .finally(function () { try { btn.disabled = false; } catch (e) { /* ignore */ } });
+
+        } catch (e) { try { status.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
+      });
+
+    } catch (e) { /* ignore init errors */ }
+  };
+
+  // Run the Support verifier on DOM ready so docs.html gets it automatically.
+  try {
+    if (SS && typeof SS.ready === 'function') {
+      try { SS.ready(function () { try { P.initSupportVerify(); } catch (e) { /* ignore */ } }); } catch (e) { /* ignore */ }
+    } else if (document && document.addEventListener) {
+      try { document.addEventListener('DOMContentLoaded', function () { try { P.initSupportVerify(); } catch (e) { /* ignore */ } }); } catch (e) { /* ignore */ }
+    }
+  } catch (e) { /* ignore */ }
 
 })(window, document);
