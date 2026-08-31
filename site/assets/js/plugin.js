@@ -291,30 +291,30 @@
   // A token is only ever printed when the page has no label for it, so it is
   // held to the same shape the plugins page allows itself to write.
   var BOUGHT_TOKEN_RE = /^[a-z0-9][a-z0-9 ._-]{0,63}$/;
-+
-+  // A conservative email shape check for delivery addresses we may display.
-+  var BOUGHT_EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-+
-+  function maskEmail(email) {
-+    if (!email || typeof email !== 'string') return '';
-+    var at = email.indexOf('@');
-+    if (at <= 0) return email;
-+    var local = email.slice(0, at);
-+    var domain = email.slice(at + 1);
-+    // Keep first letter of local, mask rest with stars (up to 6), show domain
-+    var first = local.charAt(0);
-+    var maskedLocal = first + Array(Math.min(Math.max(local.length - 1, 1), 6) + 1).join('*');
-+    // For domain, show the TLD and first label partially: keep last two labels
-+    var parts = domain.split('.');
-+    if (parts.length >= 2) {
-+      var tld = parts.pop();
-+      var left = parts.join('.');
-+      if (left.length > 12) left = left.slice(0, 9) + '...';
-+      return maskedLocal + '@' + left + '.' + tld;
-+    }
-+    return maskedLocal + '@' + domain;
-+  }
-+
+
+  // A conservative email shape check for delivery addresses we may display.
+  var BOUGHT_EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+
+  function maskEmail(email) {
+    if (!email || typeof email !== 'string') return '';
+    var at = email.indexOf('@');
+    if (at <= 0) return email;
+    var local = email.slice(0, at);
+    var domain = email.slice(at + 1);
+    // Keep first letter of local, mask rest with stars (up to 6), show domain
+    var first = local.charAt(0);
+    var maskedLocal = first + Array(Math.min(Math.max(local.length - 1, 1), 6) + 1).join('*');
+    // For domain, show the TLD and first label partially: keep last two labels
+    var parts = domain.split('.');
+    if (parts.length >= 2) {
+      var tld = parts.pop();
+      var left = parts.join('.');
+      if (left.length > 12) left = left.slice(0, 9) + '...';
+      return maskedLocal + '@' + left + '.' + tld;
+    }
+    return maskedLocal + '@' + domain;
+  }
+
   /**
    * Everything this browser remembers buying, normalised and unexpired, as
    * token -> { t: <ms>, ref: '<payment reference>' | '' }. One parser for the
@@ -358,13 +358,13 @@
 
       var ref = isObj && typeof rec.ref === 'string' ? rec.ref.trim() : '';
       if (!BOUGHT_REF_RE.test(ref)) ref = '';
-+      var email = '';
-+      if (isObj && typeof rec.email === 'string') {
-+        var e = rec.email.trim();
-+        if (e && BOUGHT_EMAIL_RE.test(e) && e.length <= 128) email = e;
-+      }
+      var email = '';
+      if (isObj && typeof rec.email === 'string') {
+        var e = rec.email.trim();
+        if (e && BOUGHT_EMAIL_RE.test(e) && e.length <= 128) email = e;
+      }
       out[token] = { t: when, ref: ref };
-+      if (email) out[token].email = email;
+      if (email) out[token].email = email;
     }
     return out;
   }
@@ -553,7 +553,47 @@
         } else if (email) {
           // No reference but we have a delivery email — show a masked delivery hint
           if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-          metaSpan.appendChild(document.createTextNode('Delivery email: ' + maskEmail(email)));
+          try {
+            var hintWrap = el('span', 'bought__email-hint');
+            hintWrap.appendChild(document.createTextNode('Delivery email: '));
+
+            var emSpan = el('span', 'bought__email', maskEmail(email));
+            emSpan.style.marginLeft = '6px';
+            emSpan.style.color = 'var(--text-dim)';
+            hintWrap.appendChild(emSpan);
+
+            var showBtn = document.createElement('button');
+            showBtn.setAttribute('type', 'button');
+            showBtn.className = 'bought__email-toggle';
+            showBtn.setAttribute('aria-label', 'Show delivery email');
+            showBtn.textContent = 'Show';
+            showBtn.style.marginLeft = '8px';
+            hintWrap.appendChild(showBtn);
+
+            // Toggle handler — in-memory only, does not touch localStorage or attributes.
+            (function (emailNode, toggleBtn, realEmail) {
+              var shown = false;
+              try {
+                toggleBtn.addEventListener('click', function () {
+                  try {
+                    if (!shown) {
+                      emailNode.textContent = realEmail;
+                      toggleBtn.textContent = 'Hide';
+                      toggleBtn.setAttribute('aria-label', 'Hide delivery email');
+                      shown = true;
+                    } else {
+                      emailNode.textContent = maskEmail(realEmail);
+                      toggleBtn.textContent = 'Show';
+                      toggleBtn.setAttribute('aria-label', 'Show delivery email');
+                      shown = false;
+                    }
+                  } catch (e) { /* ignore */ }
+                });
+              } catch (e) { /* ignore */ }
+            })(emSpan, showBtn, email);
+
+            metaSpan.appendChild(hintWrap);
+          } catch (e) { /* ignore */ }
         } else if (norefMsg) {
           if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
           metaSpan.appendChild(document.createTextNode(norefMsg));
@@ -563,10 +603,43 @@
         if (ref && email) {
           try {
             metaSpan.appendChild(document.createTextNode(' '));
-            var emSpan = el('span', 'bought__email', maskEmail(email));
-            emSpan.style.marginLeft = '8px';
-            emSpan.style.color = 'var(--text-dim)';
-            metaSpan.appendChild(emSpan);
+            var emWrap = el('span', 'bought__email-inline');
+            var emSpan2 = el('span', 'bought__email', maskEmail(email));
+            emSpan2.style.marginLeft = '8px';
+            emSpan2.style.color = 'var(--text-dim)';
+            emWrap.appendChild(emSpan2);
+
+            var showBtn2 = document.createElement('button');
+            showBtn2.setAttribute('type', 'button');
+            showBtn2.className = 'bought__email-toggle';
+            showBtn2.setAttribute('aria-label', 'Show delivery email');
+            showBtn2.textContent = 'Show';
+            showBtn2.style.marginLeft = '6px';
+            emWrap.appendChild(showBtn2);
+
+            // Toggle handler — in-memory only.
+            (function (emailNode, toggleBtn, realEmail) {
+              var shown = false;
+              try {
+                toggleBtn.addEventListener('click', function () {
+                  try {
+                    if (!shown) {
+                      emailNode.textContent = realEmail;
+                      toggleBtn.textContent = 'Hide';
+                      toggleBtn.setAttribute('aria-label', 'Hide delivery email');
+                      shown = true;
+                    } else {
+                      emailNode.textContent = maskEmail(realEmail);
+                      toggleBtn.textContent = 'Show';
+                      toggleBtn.setAttribute('aria-label', 'Show delivery email');
+                      shown = false;
+                    }
+                  } catch (e) { /* ignore */ }
+                });
+              } catch (e) { /* ignore */ }
+            })(emSpan2, showBtn2, email);
+
+            metaSpan.appendChild(emWrap);
           } catch (e) { /* ignore */ }
         }
 
