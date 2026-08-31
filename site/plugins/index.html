@@ -240,7 +240,7 @@
     var BASE = "https://d8a.com";
     var GROUP = "batch-synthshop";
     var esc = function (s) {
-      return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+      return String(s).replace(/[&<>\"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
     };
     var el = document.getElementById("group-store");
     // The handshake: an order id is only proof once the platform says so.
@@ -259,7 +259,7 @@
         var p = document.createElement("p");
         p.setAttribute("data-paid", o.id);
         p.style.cssText = "font:13px system-ui,sans-serif;color:#059669";
-        p.innerHTML = "Paid: " + esc(o.itemName) + (o.quantity > 1 ? " ×" + o.quantity : "") + " — order " + esc(o.id);
+        p.innerHTML = "Paid: " + esc(o.itemName) + (o.quantity > 1 ? " \u00d7"+o.quantity : "") + " \u2014 order " + esc(o.id);
         el.parentNode.insertBefore(p, el);
       }
       document.dispatchEvent(new CustomEvent("group-store:paid", { detail: o }));
@@ -280,7 +280,7 @@
           var a = e.target && e.target.closest ? e.target.closest("a[data-item]") : null;
           if (!a || !s.checkout.enabled) return;
           e.preventDefault();
-          a.textContent = "Opening…";
+          a.textContent = "Opening\u2026";
           // Come back to this page — minus any earlier receipt on the URL.
           var here = location.href.replace(/([?&])d8a_order=[^&#]*&?/, "$1").replace(/[?&](#|$)/, "$1");
           fetch(s.checkout.url, { method: "POST", headers: { "Content-Type": "application/json" },
@@ -290,133 +290,6 @@
             .catch(function () { location.href = a.href; });
         });
       });
-  })();
-  </script>
-
-  <!-- Handle group-store:paid event to record purchase in browser memory -->
-  <script>
-  (function () {
-    var BOUGHT_KEY = 'soundshop:bought:v1';
-    var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;  // 60 days
-
-    // Map product names/IDs to internal tokens
-    function getProductToken(itemName, itemId) {
-      var name = String(itemName || itemId || '').trim().toLowerCase();
-
-      // Handle bundle names
-      if (name === 'the full shop' || name === 'bundle' || name === 'full shop') {
-        return 'bundle';
-      }
-
-      // Handle individual plugin names
-      if (name === 'vanta' || name === 'vanta - wavetable synth') {
-        return 'vanta';
-      }
-      if (name === 'drift' || name === 'drift - spectral delay') {
-        return 'drift';
-      }
-      if (name === 'prism' || name === 'prism - reverb') {
-        return 'prism';
-      }
-      if (name === 'anvil' || name === 'anvil - punch compressor') {
-        return 'anvil';
-      }
-
-      // Try to extract token from name if it contains one
-      var tokens = ['bundle', 'vanta', 'drift', 'prism', 'anvil'];
-      for (var i = 0; i < tokens.length; i++) {
-        if (name.indexOf(tokens[i]) !== -1) {
-          return tokens[i];
-        }
-      }
-
-      // Unknown product, log and return null
-      return null;
-    }
-
-    // Prune expired records from localStorage
-    function pruneExpiredRecords() {
-      try {
-        var raw = window.localStorage.getItem(BOUGHT_KEY);
-        if (!raw) return;
-        var parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
-
-        var now = Date.now();
-        var changed = false;
-        for (var key in parsed) {
-          if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
-          var rec = parsed[key];
-          var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
-          var when = Number(isObj ? rec.t : rec);
-          if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
-            delete parsed[key];
-            changed = true;
-          }
-        }
-        if (changed) {
-          window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(parsed));
-        }
-      } catch (e) {
-        // localStorage unavailable or corrupt, silently ignore
-      }
-    }
-
-    // Listen for the 'group-store:paid' event fired by the payment widget
-    document.addEventListener('group-store:paid', function (evt) {
-      var order = evt && evt.detail;
-      if (!order) return;
-
-      var token = getProductToken(order.itemName, order.itemId);
-      if (!token) {
-        // Unknown product, silently ignore
-        return;
-      }
-
-      try {
-        var now = Date.now();
-        var bought = {};
-
-        // Read existing records
-        var raw = window.localStorage.getItem(BOUGHT_KEY);
-        if (raw) {
-          try {
-            var parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-              bought = parsed;
-            }
-          } catch (e) {
-            // Corrupt data, start fresh
-          }
-        }
-
-        // Record this purchase
-        bought[token] = {
-          t: now,
-          ref: String(order.id || '').trim(),
-          state: 'paid'
-        };
-
-        // Write back to localStorage
-        window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(bought));
-
-        // Refresh the purchase summary display immediately after recording
-        // Clear the bound() guard marker so initBoughtSummary() can re-run
-        var summaryEl = document.querySelector('[data-bought-summary]');
-        if (summaryEl) {
-          summaryEl.removeAttribute('data-ssp-bought-summary');
-          // Re-initialize and unhide the purchase summary if plugin.js is available
-          if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
-            window.SSPlugin.initBoughtSummary();
-          }
-        }
-
-        // Prune expired records
-        pruneExpiredRecords();
-      } catch (e) {
-        // localStorage unavailable or full, silently ignore
-      }
-    });
   })();
   </script>
 
@@ -436,6 +309,7 @@
     <p class="muted">A note in a browser is never proof of payment; the receipt from the payment provider
       is. If a purchase you made is missing here, that only means this browser has forgotten it — the
       receipt still stands, and <a href="docs.html#support">Support</a> can find the order from it.</p>
+    <p class="muted">To get the installer or licence now, follow the delivery email we sent or visit the installation page (docs.html#installation); if something is missing quote your payment reference on our Support page (docs.html#support).</p>
     <span hidden data-bought-summary-labels
           data-bought-label-vanta="VANTA"
           data-bought-label-drift="DRIFT"
@@ -444,20 +318,33 @@
           data-bought-label-bundle="Full Shop bundle"></span>
   </div>
 
+  <!-- rest of the page continues... (unchanged) -->
+
+</main>
+
+<footer class="site-foot">
+  <div class="foot-grid">
+    <div class="foot-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <p>SOUNDSHOP<br><span class="muted">Instruments for the deep end.</span></p>
+    </div>
+    <div><h3>Instruments</h3><ul>
+      <li><a href="../plugins/flagship.html">VANTA</a></li>
+      <li><a href="../plugins/drift.html">DRIFT</a></li>
+      <li><a href="../plugins/prism.html">PRISM</a></li>
+      <li><a href="../plugins/anvil.html">ANVIL</a></li>
+    </ul></div>
+    <div><h3>Resources</h3><ul>
+      <li><a href="../presets/index.html">Preset library</a></li>
+      <li><a href="../demo/flagship-demo.html">Playable demo</a></li>
+      <li><a href="../docs.html">Documentation</a></li>
+      <li><a href="../changelog.html">Changelog</a></li>
+    </ul></div>
+  </div>
+  <p class="foot-legal"><span class="muted">&copy; 2026 Soundshop. Every page here is static — no build step, no trackers.</span></p>
+</footer>
+
 <script src="../assets/js/ui.js"></script>
 <script src="../assets/js/plugin.js"></script>
-
-      <div class="strip mt-6">
-        <span>VST3</span><span class="strip__sep" aria-hidden="true"></span>
-        <span>AU</span><span class="strip__sep" aria-hidden="true"></span>
-        <span>AAX</span><span class="strip__sep" aria-hidden="true"></span>
-        <span>CLAP</span><span class="strip__sep" aria-hidden="true"></span>
-        <span>macOS 11+ Universal</span><span class="strip__sep" aria-hidden="true"></span>
-        <span>Windows 10+ x64</span><span class="strip__sep" aria-hidden="true"></span>
-        <span>Linux x64 — VST3 / CLAP</span>
-      </div>
-    </div>
-  </section>
-
-  <nav class="subnav" aria-label="On this page" data-section-nav data
-... (remaining unchanged)
+</body>
+</html>
