@@ -96,6 +96,23 @@
     node.appendChild(el('p', className, text));
   }
 
+  /**
+   * Extract a best-effort installer / download URL from an order-like object
+   * and validate it. Returns a string URL when valid, otherwise null.
+   */
+  function extractDownloadUrl(obj) {
+    try {
+      if (!obj || typeof obj !== 'object') return null;
+      var cand = obj.downloadUrl || obj.installerUrl || (obj.installers && obj.installers[0] && obj.installers[0].url) || '';
+      if (typeof cand !== 'string') return null;
+      cand = cand.trim();
+      if (!cand) return null;
+      // Accept only explicit http(s) URLs to limit exposure to data: or relative links
+      if (/^https?:\/\//i.test(cand)) return cand;
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
   /* =======================================================================
      01  DEMO SLOT
      ======================================================================= */
@@ -369,74 +386,7 @@
                       } catch (e) { /* ignore */ }
                     });
                   } catch (e) { /* ignore */ }
-                })(refWrap, revealBtn, ref);
-
-              } catch (e) { /* ignore */ }
-
-              try {
-                var preservedRef = ref; // preserve for the verification handler below
-
-                var msg = document.createElement('button');
-                msg.setAttribute('type', 'button');
-                msg.className = 'bought__verify';
-                msg.textContent = 'Verify order';
-
-                (function (reference, msg) {
-                  try {
-                    var originalLabel = msg.textContent || 'Verify order';
-                    msg.addEventListener('click', function (ev) {
-                      try {
-                        ev.preventDefault();
-
-                        // Create or find a small status node adjacent to the control
-                        var parent = msg.parentNode || msg;
-                        var msgNode = parent.querySelector('.bought__verify-msg');
-                        if (!msgNode) {
-                          msgNode = document.createElement('span');
-                          msgNode.className = 'bought__verify-msg';
-                          msgNode.style.marginLeft = '8px';
-                          parent.appendChild(msgNode);
-                        }
-
-                        // Show immediate checking status in the status node and set button state
-                        try { msgNode.textContent = 'Checking…'; } catch (e) { /* ignore */ }
-                        try { msg.textContent = originalLabel; } catch (e) { /* ignore */ }
-
-                        // Call the platform verification function if present and guarded
-                        var p = null;
-                        try { p = window.groupStoreVerify ? window.groupStoreVerify(reference) : null; } catch (e) { p = null; }
-                        if (!p || typeof p.then !== 'function') {
-                          try { msgNode.textContent = 'Verification unavailable'; } catch (e) { /* ignore */ }
-                          return;
-                        }
-
-                        p.then(function (order) {
-                          try {
-                            if (order && order.id) {
-                              try { msgNode.textContent = 'Verified: paid — order ' + String(order.id); } catch (e) { /* ignore */ }
-
-                              try {
-                                var summary = {
-                                  id: order.id,
-                                  itemName: order.itemName || order.name || '',
-                                  quantity: order.quantity || 1,
-                                  hasDeliveryEmail: !!(order.email || order.buyerEmail || order.customerEmail)
-                                };
-                                document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: summary }));
-                              } catch (evErr) { /* swallow errors from listeners */ }
-
-                            } else {
-                              try { msgNode.textContent = 'Not found / unpaid'; } catch (e) { /* ignore */ }
-                            }
-                          } catch (e) { try { msgNode.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
-                        }).catch(function () { try { msgNode.textContent = 'Verification failed'; } catch (e) { /* ignore */ } });
-
-                      } catch (e) { try { var pmsg = msg.parentNode ? msg.parentNode.querySelector('.bought__verify-msg') : null; if (pmsg) pmsg.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
-                    });
-                  } catch (e) { /* ignore */ }
-                })(preservedRef, msg);
-
-                metaSpan.appendChild(msg);
+                })(refWrap, revealBtn, String(ref));
 
               } catch (e) { /* ignore */ }
             } else if (email) {
@@ -483,6 +433,7 @@
             li.appendChild(labelSpan);
             li.appendChild(metaSpan);
             list.appendChild(li);
+            // Count this rendered item so the host is unhidden below.
             validCount++;
 
             // If this remembered record includes a payment reference, inject
@@ -491,6 +442,8 @@
               if (ref) {
                 try {
                   var detail = { id: String(ref), itemName: label, quantity: r.quantity || 1, hasDeliveryEmail: !!r.email };
+                  // Extract a remembered download URL when present and valid
+                  try { var durl = extractDownloadUrl(r); if (durl) detail.downloadUrl = durl; } catch (e) { /* ignore */ }
                   createBoughtCta(li, detail);
                   madePerItemCta = true;
                 } catch (e) { /* ignore per-item CTA errors */ }
@@ -531,6 +484,22 @@
 
     var c = document.createElement('div');
     c.className = 'bought__cta';
+
+    // If the platform provided a direct download URL, surface it as the primary
+    // CTA so customers can get installers immediately. Validate URL was already
+    // handled by extractDownloadUrl; only use it when present.
+    var downloadLink = null;
+    try {
+      if (detail && detail.downloadUrl) {
+        downloadLink = document.createElement('a');
+        downloadLink.href = detail.downloadUrl;
+        downloadLink.textContent = 'Download installers';
+        downloadLink.className = 'bought__cta-download bought__cta-primary';
+        try { downloadLink.setAttribute('target', '_blank'); downloadLink.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+        downloadLink.style.marginRight = '12px';
+        c.appendChild(downloadLink);
+      }
+    } catch (e) { /* ignore */ }
 
     var a1 = document.createElement('a');
     // Compute a page-aware base so plugin pages under /plugins/ link up one level
@@ -592,7 +561,7 @@
     // Focus the primary link asynchronously so keyboard users land on it.
     try {
       setTimeout(function () {
-        try { if (a1 && typeof a1.focus === 'function') a1.focus(); } catch (e) { /* ignore */ }
+        try { if (downloadLink && typeof downloadLink.focus === 'function') { downloadLink.focus(); } else if (a1 && typeof a1.focus === 'function') a1.focus(); } catch (e) { /* ignore */ }
       }, 0);
     } catch (e) { /* ignore */ }
   }
@@ -715,6 +684,8 @@
                         quantity: order.quantity || 1,
                         hasDeliveryEmail: !!(order.email || order.buyerEmail || order.customerEmail)
                       };
+                      // Extract and include a validated download URL when present
+                      try { var d = extractDownloadUrl(order); if (d) summary.downloadUrl = d; } catch (e) { /* ignore */ }
                       document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: summary }));
                     } catch (evErr) { /* swallow listener errors */ }
 
