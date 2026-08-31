@@ -97,6 +97,24 @@
   }
 
   /* =======================================================================
+     Helper: grabInstallerUrl(order)
+     Returns the first non-empty top-level string field that looks like an
+     installer/download URL. It checks a short whitelist of likely names and
+     returns '' if none are present. Defensive: never throws.
+     ======================================================================= */
+  function grabInstallerUrl(order) {
+    try {
+      if (!order || typeof order !== 'object') return '';
+      var fields = ['downloadUrl', 'download_url', 'installersUrl', 'installers_url', 'installUrl', 'url'];
+      for (var i = 0; i < fields.length; i++) {
+        var v = order[fields[i]];
+        if (typeof v === 'string' && v.trim() !== '') return v.trim();
+      }
+    } catch (e) { /* ignore */ }
+    return '';
+  }
+
+  /* =======================================================================
      01  DEMO SLOT
      ======================================================================= */
 
@@ -284,139 +302,103 @@
   };
 
   /* =======================================================================
-     07  REMEMBERED PURCHASE SUMMARY
+     Rest of file continues unchanged until createBoughtCta…
      ======================================================================= */
 
-  function maskEmail(email) {
-    try {
-      if (!email || typeof email !== 'string') return '';
-      var parts = email.split('@');
-      if (parts.length !== 2) return email;
-      var name = parts[0];
-      if (name.length <= 2) return '•@' + parts[1];
-      return name.charAt(0) + '…' + name.charAt(name.length - 1) + '@' + parts[1];
-    } catch (e) { return '' + email; }
-  }
-
   P.initBoughtNote = function (root) {
-    $$('[data-bought-note]', root || document).forEach(function (node) {
-      try {
-        if (bound(node, 'bought-note')) return;
-        var key = attr(node, 'data-bought-note');
-        if (!key) return;
-        var raw = null;
-        try { raw = window.localStorage && typeof window.localStorage.getItem === 'function' ? window.localStorage.getItem(key) : null; } catch (e) { raw = null; }
-        try { var parsed = JSON.parse(raw); if (parsed && typeof parsed === 'object') { node.hidden = false; } } catch (e) { /* ignore parse errors */ }
-      } catch (e) { /* ignore */ }
+    $$('[data-bought-note]', root || document).forEach(function (host) {
+      if (bound(host, 'boughtnote')) return;
+      try { host.hidden = false; } catch (e) { /* ignore */ }
     });
   };
 
   P.initBoughtSummary = function (root) {
     $$('[data-bought-summary]', root || document).forEach(function (host) {
-      if (bound(host, 'bought-summary')) return;
-
-      var raw = null;
-      try { raw = attr(host, 'data-bought-summary') || window.localStorage && typeof window.localStorage.getItem === 'function' ? window.localStorage.getItem(attr(host, 'data-bought-summary')) : null; } catch (e) { raw = null; }
-
-      var recs = null;
-      try { recs = JSON.parse(attr(host, 'data-bought-summary') || 'null'); } catch (e) { recs = null; }
-
-      try {
-        if (!recs && raw) {
-          try { recs = JSON.parse(raw); } catch (e) { /* ignore parse errors */ }
-        }
-      } catch (e) { /* ignore localStorage access errors */ }
-
-      if (!recs || !Array.isArray(recs)) return;
+      if (bound(host, 'boughtsummary')) return;
 
       var list = host.querySelector('[data-bought-summary-list]') || host;
       var madePerItemCta = false;
       var validCount = 0;
 
-      recs.forEach(function (r) {
-        try {
-          if (!r || typeof r !== 'object') return;
+      try {
+        var items = [];
+        try { items = window.groupStoreBought || []; } catch (e) { items = []; }
 
-          var li = document.createElement('li');
-          li.className = 'bought__item';
+        Array.prototype.forEach.call(items, function (r) {
+          try {
+            if (!r || typeof r !== 'object') return;
+            var li = document.createElement('li');
+            li.className = 'bought__item';
 
-          var label = r.name || r.itemName || r.title || r.label || '';
-          var id = r.id || r.ref || r.reference || r.payment || r.paymentRef || r.payment_reference || '';
-          var ref = null;
-          try { ref = id ? String(id) : null; } catch (e) { ref = null; }
+            var labelSpan = el('span', 'bought__label', r.itemName || r.name || 'Unknown item');
+            var metaSpan = el('span', 'bought__meta', '');
 
-          var labelSpan = el('span', 'bought__label', label || 'Purchased item');
-          var metaSpan = el('span', 'bought__meta');
+            var email = r.email || r.buyerEmail || r.customerEmail || '';
+            var ref = r.reference || r.paymentReference || r.id || '';
 
-          var email = r.email || r.deliveryEmail || r.buyerEmail || r.customerEmail || '';
-
-          if (ref) {
-            if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-            metaSpan.appendChild(document.createTextNode('Order reference: '));
-
+            // Masked email and reveal/verify controls
             try {
-              var refNode = el('span', 'bought__ref', ref);
-              refNode.style.marginLeft = '4px';
-              refNode.style.color = 'var(--text-dim)';
-              metaSpan.appendChild(refNode);
+              if (ref && typeof ref === 'string' && ref.trim()) {
+                var refNode = el('a', 'bought__ref', 'Order: ' + String(ref));
+                refNode.href = '#';
+                refNode.style.marginLeft = '12px';
+                metaSpan.appendChild(refNode);
 
-              var revealBtn = document.createElement('button');
-              revealBtn.setAttribute('type', 'button');
-              revealBtn.className = 'bought__reveal';
-              revealBtn.setAttribute('aria-pressed', 'false');
-              revealBtn.textContent = 'Show';
-              revealBtn.style.marginLeft = '8px';
-              metaSpan.appendChild(revealBtn);
+                var msg = document.createElement('button');
+                msg.setAttribute('type', 'button');
+                msg.className = 'bought__verify';
+                msg.textContent = 'Verify';
+                msg.style.marginLeft = '8px';
 
-              (function (node, btn, fullText) {
-                try {
-                  btn.addEventListener('click', function () {
-                    try {
-                      var revealed = btn.getAttribute('data-revealed') === '1';
-                      if (revealed) {
-                        node.textContent = fullText;
-                        btn.textContent = 'Show';
-                        btn.setAttribute('aria-pressed', 'false');
-                        btn.setAttribute('data-revealed', '0');
-                      } else {
-                        node.textContent = fullText;
-                        btn.textContent = 'Hide';
-                        btn.setAttribute('aria-pressed', 'true');
-                        btn.setAttribute('data-revealed', '1');
-                      }
-                    } catch (e) { /* ignore */ }
-                  });
-                } catch (e) { /* ignore */ }
-              })(refNode, revealBtn, ref);
-
+                msg.addEventListener('click', function (ev) {
+                  try { ev.preventDefault(); } catch (e) { /* ignore */ }
+                });
+              }
             } catch (e) { /* ignore */ }
 
+            if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+
+            if (email && typeof email === 'string') email = email.trim();
+
             try {
-              var ref = ref; // preserve for the verification handler below
+              if (ref && typeof ref === 'string' && ref.trim()) {
+                var ref = String(ref).trim();
+                var refBtn = document.createElement('button');
+                refBtn.setAttribute('type', 'button');
+                refBtn.className = 'bought__verify small';
+                refBtn.textContent = 'Verify';
+                refBtn.style.marginLeft = '8px';
 
-              var msg = document.createElement('button');
-              msg.setAttribute('type', 'button');
-              msg.className = 'bought__verify';
-              msg.textContent = 'Verify order';
+                var maskEmail = function (e) {
+                  if (!e || typeof e !== 'string') return '';
+                  var parts = e.split('@');
+                  if (!parts || parts.length !== 2) return e;
+                  var name = parts[0];
+                  return name.charAt(0) + '***@' + parts[1];
+                };
 
-              (function (reference, msg, refNode) {
+                var revealBtn = document.createElement('button');
+
+                revealBtn.setAttribute('type', 'button');
+                revealBtn.className = 'bought__reveal';
+                revealBtn.setAttribute('aria-pressed', 'false');
+                revealBtn.textContent = 'Show';
+                revealBtn.style.marginLeft = '8px';
+
+                // Lightweight verify control which calls the platform's verifier if present
                 try {
-                  msg.addEventListener('click', function (ev) {
+                  refBtn.addEventListener('click', function (ev) {
                     try {
                       ev.preventDefault();
-                      msg.textContent = 'Checking…';
-                      // Call the real platform verification function if present.
+                      refBtn.textContent = 'Checking…';
                       var p = null;
-                      try { p = window.groupStoreVerify ? window.groupStoreVerify(reference) : null; } catch (e) { p = null; }
+                      try { p = window.groupStoreVerify ? window.groupStoreVerify(ref) : null; } catch (e) { p = null; }
                       if (!p || typeof p.then !== 'function') {
-                        msg.textContent = 'Verification unavailable';
+                        refBtn.textContent = 'Verification unavailable';
                         return;
                       }
-                      // When the promise resolves we render a tiny status node
-                      // next to the control and emit the soundshop:verified-order
-                      // event so other listeners in the page (notably the
-                      // handler that injects the installers CTA) get a chance.
-                      var parent = msg.parentNode || msg;
+
+                      var parent = refBtn.parentNode || refBtn;
                       var msgNode = document.createElement('span');
                       msgNode.className = 'bought__verify-msg';
                       msgNode.style.marginLeft = '8px';
@@ -444,82 +426,80 @@
                           }
                         } catch (e) { msgNode.textContent = 'Verification failed'; }
                       }).catch(function () { msgNode.textContent = 'Verification failed'; });
-                    } catch (e) { msgNode.textContent = 'Verification failed'; }
+                    } catch (e) { msgBtn && (msgBtn.textContent = 'Verification failed'); }
                   });
                 } catch (e) { /* ignore */ }
-              })(ref, msg, refNode);
 
-              metaSpan.appendChild(msg);
-
-            } catch (e) { /* ignore */ }
-          } else if (email) {
-            if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-            metaSpan.appendChild(document.createTextNode('Delivery email: '));
-            try {
-              var emSpanNoRef = el('span', 'bought__email', maskEmail(email));
-              emSpanNoRef.style.marginLeft = '4px';
-              emSpanNoRef.style.color = 'var(--text-dim)';
-              metaSpan.appendChild(emSpanNoRef);
-
-              var revealBtnNoRef = document.createElement('button');
-              revealBtnNoRef.setAttribute('type', 'button');
-              revealBtnNoRef.className = 'bought__reveal';
-              revealBtnNoRef.setAttribute('aria-pressed', 'false');
-              revealBtnNoRef.textContent = 'Show';
-              revealBtnNoRef.style.marginLeft = '8px';
-              metaSpan.appendChild(revealBtnNoRef);
-
-              (function (node, btn, fullEmail) {
+                metaSpan.appendChild(refBtn);
+              } else if (email) {
+                if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
+                metaSpan.appendChild(document.createTextNode('Delivery email: '));
                 try {
-                  btn.addEventListener('click', function () {
+                  var emSpan = el('span', 'bought__email', maskEmail(email));
+                  emSpan.style.marginLeft = '4px';
+                  emSpan.style.color = 'var(--text-dim)';
+                  metaSpan.appendChild(emSpan);
+
+                  var revealBtn2 = document.createElement('button');
+                  revealBtn2.setAttribute('type', 'button');
+                  revealBtn2.className = 'bought__reveal';
+                  revealBtn2.setAttribute('aria-pressed', 'false');
+                  revealBtn2.textContent = 'Show';
+                  revealBtn2.style.marginLeft = '8px';
+                  metaSpan.appendChild(revealBtn2);
+
+                  (function (node, btn, fullEmail) {
                     try {
-                      var revealed = btn.getAttribute('data-revealed') === '1';
-                      if (revealed) {
-                        node.textContent = maskEmail(fullEmail);
-                        btn.textContent = 'Show';
-                        btn.setAttribute('aria-pressed', 'false');
-                        btn.setAttribute('data-revealed', '0');
-                      } else {
-                        node.textContent = fullEmail;
-                        btn.textContent = 'Hide';
-                        btn.setAttribute('aria-pressed', 'true');
-                        btn.setAttribute('data-revealed', '1');
-                      }
+                      btn.addEventListener('click', function () {
+                        try {
+                          var revealed = btn.getAttribute('data-revealed') === '1';
+                          if (revealed) {
+                            node.textContent = maskEmail(fullEmail);
+                            btn.textContent = 'Show';
+                            btn.setAttribute('aria-pressed', 'false');
+                            btn.setAttribute('data-revealed', '0');
+                          } else {
+                            node.textContent = fullEmail;
+                            btn.textContent = 'Hide';
+                            btn.setAttribute('aria-pressed', 'true');
+                            btn.setAttribute('data-revealed', '1');
+                          }
+                        } catch (e) { /* ignore */ }
+                      });
                     } catch (e) { /* ignore */ }
-                  });
+                  })(emSpan, revealBtn2, email);
+
                 } catch (e) { /* ignore */ }
-              })(emSpan, revealBtn, email);
+              }
 
-            } catch (e) { /* ignore */ }
-          }
+              li.appendChild(labelSpan);
+              li.appendChild(metaSpan);
+              list.appendChild(li);
+              validCount++;
 
-          li.appendChild(labelSpan);
-          li.appendChild(metaSpan);
-          list.appendChild(li);
-          validCount++;
-
-          // If this remembered record includes a payment reference, inject
-          // a per-item Order: … + Copy button directly into the list item.
-          try {
-            if (ref) {
+              // If this remembered record includes a payment reference, inject
+              // a per-item Order: … + Copy button directly into the list item.
               try {
-                var detail = { id: String(ref), itemName: label, quantity: r.quantity || 1, hasDeliveryEmail: !!r.email };
-                createBoughtCta(li, detail);
-                madePerItemCta = true;
-              } catch (e) { /* ignore per-item CTA errors */ }
-            }
-          } catch (e) { /* ignore */ }
+                if (ref) {
+                  try {
+                    var detail = { id: String(ref), itemName: labelSpan.textContent || labelSpan.innerText || '', quantity: r.quantity || 1, hasDeliveryEmail: !!r.email };
+                    createBoughtCta(li, detail);
+                    madePerItemCta = true;
+                  } catch (e) { /* ignore per-item CTA errors */ }
+                }
+              } catch (e) { /* ignore */ }
 
-        } catch (e) { /* ignore per-item */ }
-      });
+            } catch (e) { /* ignore per-item */ }
+          });
 
-      } catch (e) { /* defensive: do not let this break the host */ }
+        } catch (e) { /* defensive: do not let this break the host */ }
 
-      if (validCount) {
-        host.hidden = false;
-        // Ensure remembered-purchase summaries get the installers/support CTA too.
-        try { if (!madePerItemCta) { createBoughtCta(host, null); } } catch (e) { /* ignore */ }
-      }
+        if (validCount) {
+          host.hidden = false;
+          // Ensure remembered-purchase summaries get the installers/support CTA too.
+          try { if (!madePerItemCta) { createBoughtCta(host, null); } } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore host-level errors */ }
     });
   };
 
@@ -567,6 +547,43 @@
     a2.href = docBase + '#support';
     a2.textContent = 'Contact support';
     a2.className = 'bought__cta-secondary';
+
+    // Try to synchronously prefer a direct installer URL from a remembered
+    // order object on the page (window.groupStorePaid). This is non-destructive
+    // and preserves the CTA text and a11y attributes.
+    try {
+      try {
+        var paid = (typeof window.groupStorePaid !== 'undefined') ? window.groupStorePaid : null;
+        if (paid && typeof paid === 'object') {
+          var url = grabInstallerUrl(paid);
+          if (url) {
+            try { a1.href = url; } catch (e) { /* ignore */ }
+          }
+        }
+      } catch (e) { /* ignore */ }
+
+      // Optionally, if we have a detail with an id and the platform exposes
+      // groupStoreVerify, probe the verified order non-blockingly and update
+      // the CTA if a direct installer URL is found. Fail silently.
+      try {
+        if (detail && detail.id && typeof window.groupStoreVerify === 'function') {
+          try {
+            var probe = null;
+            try { probe = window.groupStoreVerify(detail.id); } catch (e) { probe = null; }
+            if (probe && typeof probe.then === 'function') {
+              probe.then(function (order) {
+                try {
+                  var url2 = grabInstallerUrl(order);
+                  if (url2) {
+                    try { a1.href = url2; } catch (e) { /* ignore */ }
+                  }
+                } catch (e) { /* ignore */ }
+              }).catch(function () { /* silent */ });
+            }
+          } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
 
     c.appendChild(a1);
     c.appendChild(a2);
@@ -637,8 +654,22 @@
 
         // Delegate to the helper which builds, appends and initialises copy
         try { createBoughtCta(host, detail); } catch (e) { /* swallow listener errors */ }
-      } catch (e) { /* ignore if addEventListener not available */ }
+      } catch (e) { /* ignore event handler errors */ }
     });
   } catch (e) { /* ignore */ }
+
+  /* =======================================================================
+     09  Init wrapper
+     ======================================================================= */
+
+  P.init = function () {
+    try { P.initDemoSlot(); } catch (e) { /* ignore */ }
+    try { P.initPresetTeaser(); } catch (e) { /* ignore */ }
+    try { P.initSectionNav(); } catch (e) { /* ignore */ }
+    try { P.initTabs(); } catch (e) { /* ignore */ }
+    try { P.initCounters(); } catch (e) { /* ignore */ }
+    try { P.initBoughtNote(); } catch (e) { /* ignore */ }
+    try { P.initBoughtSummary(); } catch (e) { /* ignore */ }
+  };
 
 })(window, document);
