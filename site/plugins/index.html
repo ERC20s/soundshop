@@ -362,16 +362,14 @@
       }
     }
 
-    // Listen for the 'group-store:paid' event fired by the payment widget
-    document.addEventListener('group-store:paid', function (evt) {
-      var order = evt && evt.detail;
+    // Persist a returned checkout into the canonical BOUGHT_KEY and refresh the
+    // page-level bought-summary display. This is exported as a safe global so
+    // other scripts (plugin.js) can trigger the same behaviour without owning
+    // the storage logic.
+    function persistBought(order) {
       if (!order) return;
-
       var token = getProductToken(order.itemName, order.itemId);
-      if (!token) {
-        // Unknown product, silently ignore
-        return;
-      }
+      if (!token) return;
 
       try {
         var now = Date.now();
@@ -436,6 +434,22 @@
       } catch (e) {
         // localStorage unavailable or full, silently ignore
       }
+    }
+
+    // Expose the small, defensive wrapper as a safe global. Other scripts may
+    // call this when they detect a returned checkout so the canonical storage
+    // logic here remains authoritative and per-page verification UI is not
+    // regressed.
+    try { window.soundshopPersistBought = persistBought; } catch (e) { /* ignore */ }
+
+    // Listen for the 'group-store:paid' event fired by the payment widget
+    document.addEventListener('group-store:paid', function (evt) {
+      var order = evt && evt.detail;
+      if (!order) return;
+      // Keep behaviour identical: persist the purchase into localStorage and
+      // refresh the summary. Delegate to the wrapper to avoid duplicating logic
+      // if possible.
+      try { persistBought(order); } catch (e) { /* ignore */ }
     });
   })();
   </script>
