@@ -516,6 +516,30 @@
               can clear this note.</p>
           </div>
 
+          <!-- Purchase summary for product pages: what this browser remembers buying.
+               Ships hidden; plugin.js will unhide it when purchases are remembered locally. -->
+          <div class="note note--good" hidden
+               data-bought-summary
+               data-bought-summary-date-prefix="bought on this device on "
+               data-bought-summary-ref-prefix="Payment reference: "
+               data-bought-summary-ref-suffix=" — quote this when you write to us."
+               data-bought-summary-noref="No payment reference was stored with this one — the receipt email from the payment provider carries it.">
+            <p class="note__title">You have purchased</p>
+            <p>This page was returned from a completed checkout for the following. This is a note kept in this
+              browser, not proof of your licence, so it disappears if you clear site data or switch machines
+              — but it is enough to verify what you bought.</p>
+            <ul data-bought-summary-list></ul>
+            <p class="muted">A note in a browser is never proof of payment; the receipt from the payment provider
+              is. If a purchase you made is missing here, that only means this browser has forgotten it — the
+              receipt still stands, and <a href="docs.html#support">Support</a> can find the order from it.</p>
+            <span hidden data-bought-summary-labels
+                  data-bought-label-vanta="VANTA"
+                  data-bought-label-drift="DRIFT"
+                  data-bought-label-prism="PRISM"
+                  data-bought-label-anvil="ANVIL"
+                  data-bought-label-bundle="Full Shop bundle"></span>
+          </div>
+
           <div class="panel">
             <div class="panel__head"><h3>Cheaper as part of the rack</h3></div>
             <div class="panel__body stack">
