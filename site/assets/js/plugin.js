@@ -358,71 +358,39 @@
               metaSpan.appendChild(document.createTextNode(refPrefix + ref + refSuffix));
 
               try {
-                var btn = document.createElement('button');
-                btn.setAttribute('type', 'button');
-                btn.setAttribute('data-copy', ref);
-                btn.setAttribute('data-copy-label', 'Payment reference for ' + label);
-                btn.setAttribute('aria-label', 'Copy payment reference for ' + label);
-                btn.className = 'bought__copy';
-                btn.textContent = 'Copy';
-                metaSpan.appendChild(document.createTextNode(' '));
-                metaSpan.appendChild(btn);
+                var refNode = el('span', 'bought__ref', '');
+                refNode.style.marginLeft = '6px';
+                refNode.style.color = 'var(--text-dim)';
+                metaSpan.appendChild(refNode);
 
-                var verifyBtn = document.createElement('button');
-                verifyBtn.setAttribute('type', 'button');
-                verifyBtn.className = 'bought__verify';
-                verifyBtn.setAttribute('aria-label', 'Verify payment for ' + label);
-                verifyBtn.setAttribute('title', 'Send this stored payment reference to the shop to confirm the order');
-                verifyBtn.textContent = 'Verify';
+                var revealBtn = document.createElement('button');
+                revealBtn.setAttribute('type', 'button');
+                revealBtn.className = 'bought__reveal';
+                revealBtn.setAttribute('aria-pressed', 'false');
+                revealBtn.textContent = 'Show';
+                revealBtn.style.marginLeft = '8px';
+                metaSpan.appendChild(revealBtn);
 
-                var msg = document.createElement('span');
-                msg.className = 'bought__verify-msg';
-                msg.setAttribute('aria-live', 'polite');
-                msg.style.marginLeft = '8px';
-
-                metaSpan.appendChild(document.createTextNode(' '));
-                metaSpan.appendChild(verifyBtn);
-                metaSpan.appendChild(msg);
-
-                (function (refText, msgNode) {
+                (function (node, btn, fullRef) {
                   try {
-                    verifyBtn.addEventListener('click', function () {
+                    btn.addEventListener('click', function () {
                       try {
-                        if (!window.groupStoreVerify || typeof window.groupStoreVerify !== 'function') {
-                          msgNode.textContent = 'To confirm delivery, check your delivery email or contact Support.';
-                          return;
+                        var revealed = btn.getAttribute('data-revealed') === '1';
+                        if (revealed) {
+                          node.textContent = fullRef.replace(/.(?=.{4})/g, '*');
+                          btn.textContent = 'Show';
+                          btn.setAttribute('aria-pressed', 'false');
+                          btn.setAttribute('data-revealed', '0');
+                        } else {
+                          node.textContent = fullRef;
+                          btn.textContent = 'Hide';
+                          btn.setAttribute('aria-pressed', 'true');
+                          btn.setAttribute('data-revealed', '1');
                         }
-                        msgNode.textContent = 'Verifying…';
-                        var p = null;
-                        try { p = window.groupStoreVerify(refText); } catch (e) { p = null; }
-                        if (!p || typeof p.then !== 'function') {
-                          msgNode.textContent = 'Verification failed';
-                          return;
-                        }
-                        p.then(function (order) {
-                          try {
-                            if (order && order.id) {
-                              msgNode.textContent = 'Verified: paid — order ' + String(order.id);
-
-                              try {
-                                var summary = {
-                                  id: order.id,
-                                  itemName: order.itemName || order.name || '',
-                                  quantity: order.quantity || 1,
-                                  hasDeliveryEmail: !!(order.email || order.buyerEmail || order.customerEmail)
-                                };
-                                document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: summary }));
-                              } catch (evErr) { /* swallow errors from listeners */ }
-
-                            } else {
-                              msgNode.textContent = 'Not found / unpaid';
-                            }
-                          } catch (e) { msgNode.textContent = 'Verification failed'; }
-                        }).catch(function () { msgNode.textContent = 'Verification failed'; });
-                      } catch (e) { msgNode.textContent = 'Verification failed'; }
+                      } catch (e) { /* ignore */ }
                     });
                   } catch (e) { /* ignore */ }
-                })(ref, msg);
+                })(refNode, revealBtn, ref);
 
               } catch (e) { /* ignore */ }
             } else if (email) {
@@ -477,9 +445,82 @@
 
       if (validCount) {
         host.hidden = false;
+        // Inject the installers/support CTA for remembered purchases so the
+        // experience matches the post-Verify UI and users can readily access
+        // installers or contact support from a remembered-summary view.
+        try { createBoughtCta(host, null); } catch (e) { /* ignore */ }
       }
     });
   };
+
+  /* =======================================================================
+     Helper: create and append the bought CTA block for a given host.
+     Idempotent: marks host with data-bought-verified="1" to avoid dupes.
+     ======================================================================= */
+  function createBoughtCta(host, detail) {
+    try {
+      if (!host || (host.getAttribute && host.getAttribute('data-bought-verified') === '1')) return;
+
+      var list = host.querySelector('[data-bought-summary-list]') || host;
+
+      var c = document.createElement('div');
+      c.className = 'bought__cta';
+
+      var a1 = document.createElement('a');
+      a1.href = 'docs.html#delivery';
+      a1.textContent = 'Open installers & delivery instructions';
+      a1.className = 'bought__cta-primary';
+      try {
+        a1.setAttribute('target', '_blank');
+        a1.setAttribute('rel', 'noopener noreferrer');
+        a1.setAttribute('aria-label', a1.textContent + ' (opens in a new tab)');
+      } catch (e) { /* ignore environments that forbid setting attributes */ }
+      a1.style.marginRight = '12px';
+
+      var a2 = document.createElement('a');
+      a2.href = 'docs.html#support';
+      a2.textContent = 'Contact support';
+      a2.className = 'bought__cta-secondary';
+
+      c.appendChild(a1);
+      c.appendChild(a2);
+
+      if (detail && detail.id) {
+        try {
+          var orderWrap = el('span', 'bought__order', 'Order: ' + String(detail.id));
+          orderWrap.style.marginRight = '12px';
+
+          var copyBtn = document.createElement('button');
+          copyBtn.setAttribute('type', 'button');
+          copyBtn.className = 'bought__copy';
+          copyBtn.setAttribute('data-copy', String(detail.id));
+          var copyLabel = detail.itemName ? 'Copied order reference for ' + detail.itemName : 'Copied order reference';
+          copyBtn.setAttribute('data-copy-label', copyLabel);
+          copyBtn.setAttribute('aria-label', copyLabel);
+          copyBtn.textContent = 'Copy';
+
+          orderWrap.appendChild(document.createTextNode(' '));
+          orderWrap.appendChild(copyBtn);
+          c.insertBefore(orderWrap, a1);
+        } catch (e) { /* ignore errors when building non-essential UI */ }
+      }
+
+      try { list.appendChild(c); } catch (e) { /* ignore DOM errors */ }
+      try { host.setAttribute('data-bought-verified', '1'); } catch (e) { /* ignore */ }
+
+      // Bind copy buttons only if the UI helper exists; avoid runtime errors
+      try {
+        if (SS && typeof SS.initCopyButtons === 'function') {
+          try { SS.initCopyButtons(host); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+
+      try {
+        setTimeout(function () { try { if (a1 && typeof a1.focus === 'function') a1.focus(); } catch (e) { /* ignore */ } }, 0);
+      } catch (e) { /* ignore */ }
+
+    } catch (e) { /* swallow */ }
+  }
 
   /* =======================================================================
      08  Event handler: append installers/support CTA after Verify
@@ -505,67 +546,9 @@
         }
         if (!host) return;
 
-        // Prefer appending to an explicit list container when present
-        var list = host.querySelector('[data-bought-summary-list]') || host;
-
-        var c = document.createElement('div');
-        c.className = 'bought__cta';
-
-        var a1 = document.createElement('a');
-        a1.href = 'docs.html#delivery';
-        a1.textContent = 'Open installers & delivery instructions';
-        a1.className = 'bought__cta-primary';
-        // Make this a normal link that opens in a new tab for predictability
-        try {
-          a1.setAttribute('target', '_blank');
-          a1.setAttribute('rel', 'noopener noreferrer');
-          a1.setAttribute('aria-label', a1.textContent + ' (opens in a new tab)');
-        } catch (e) { /* ignore environments that forbid setting attributes */ }
-        a1.style.marginRight = '12px';
-
-        var a2 = document.createElement('a');
-        a2.href = 'docs.html#support';
-        a2.textContent = 'Contact support';
-        a2.className = 'bought__cta-secondary';
-        // Leave a2 as a plain link (do not use role="button")
-
-        c.appendChild(a1);
-        c.appendChild(a2);
-
-        // If the event supplied a non-sensitive order id, surface it here with
-        // a small copy button so users can easily paste it into support mails.
-        if (detail && detail.id) {
-          try {
-            var orderWrap = el('span', 'bought__order', 'Order: ' + String(detail.id));
-            orderWrap.style.marginRight = '12px';
-
-            var copyBtn = document.createElement('button');
-            copyBtn.setAttribute('type', 'button');
-            copyBtn.className = 'bought__copy';
-            copyBtn.setAttribute('data-copy', String(detail.id));
-            var copyLabel = detail.itemName ? 'Copied order reference for ' + detail.itemName : 'Copied order reference';
-            copyBtn.setAttribute('data-copy-label', copyLabel);
-            copyBtn.setAttribute('aria-label', copyLabel);
-            copyBtn.textContent = 'Copy';
-
-            // Put the copy control next to the id, and insert before the primary link
-            orderWrap.appendChild(document.createTextNode(' '));
-            orderWrap.appendChild(copyBtn);
-            c.insertBefore(orderWrap, a1);
-          } catch (e) { /* ignore errors when building non-essential UI */ }
-        }
-
-        // Append once and mark the host so this handler is idempotent
-        try { list.appendChild(c); } catch (e) { /* ignore DOM errors */ }
-        try { host.setAttribute('data-bought-verified', '1'); } catch (e) { /* ignore */ }
-
-        // Attempt a safe asynchronous focus on the primary link so keyboard and
-        // assistive users land directly on the new control. Swallow any errors.
-        try {
-          setTimeout(function () {
-            try { if (a1 && typeof a1.focus === 'function') a1.focus(); } catch (e) { /* ignore */ }
-          }, 0);
-        } catch (e) { /* ignore */ }
+        // Delegate markup creation to the shared helper so remembered-purchase
+        // and post-Verify flows render identical UI and avoid duplication.
+        try { createBoughtCta(host, detail); } catch (e) { /* ignore */ }
 
       } catch (e) { /* swallow listener errors */ }
     });
