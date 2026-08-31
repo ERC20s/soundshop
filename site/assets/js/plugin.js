@@ -278,121 +278,148 @@
       var status = $('[data-presets-status]', host);
       var limit = intAttr(host, 'data-presets-limit', 6);
 
-      function
+      function fail(msg) {
+        if (status) status.textContent = msg;
+      }
 
-  // ... many functions omitted above for brevity; rest of file continues unchanged ...
+      function ready(items) {
+        while (list.firstChild) list.removeChild(list.firstChild);
+        if (!items || !items.length) { fail('No presets are available'); return; }
+        var count = Math.min(limit, items.length);
+        for (var i = 0; i < count; i++) list.appendChild(presetRow(items[i]));
+        if (status) status.hidden = true;
+      }
 
-  P.initPresetTeaser = function (root) {
-    $$('[data-presets-src]', root || document).forEach(function (host) {
-      if (bound(host, 'presets')) return;
+      if (isFileProtocol()) { fail('Presets unavailable from file://'); return; }
+      if (typeof window.fetch !== 'function') { fail('Presets unavailable: fetch() not supported'); return; }
 
-      var src = attr(host, 'data-presets-src');
-      if (!src) return;
-
-      var list = $('[data-presets-list]', host) || host;
-      var status = $('[data-presets-status]', host);
-      var limit = intAttr(host, 'data-presets-limit', 6);
-
-      function
+      status.textContent = 'Loading presets…';
+      window.fetch(src, { method: 'GET', cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { ready(normalisePresets(d)); })
+        .catch(function () { fail('Could not load presets'); });
+    });
   };
 
   /* =======================================================================
-     06  ALREADY-BOUGHT NOTE
-     A buyer who pays on the plugins page has that return written into this
-     browser under one namespaced key, token -> timestamp:
+     03  SECTION NAV
+     Sticky nav that highlights the section in view.
+     ======================================================================= */
 
-       localStorage["soundshop:bought:v1"] = {"drift": 1756233600000}
+  P.initSectionNav = function (root) {
+    $$('[data-section-nav]', root || document).forEach(function (wrap) {
+      if (bound(wrap, 'section-nav')) return;
 
-     The product pages knew nothing about it, so someone who had just bought
-     DRIFT could land back on drift.html and see nothing but "Buy DRIFT" and
-     no route to the delivery instructions. This reads that same key back and
-     unhides a note the page already ships, hidden:
+      var list = $('[data-section-nav-list]', wrap);
+      if (!list) return;
 
-       <div class="note note--good" hidden
-            data-bought-note data-bought-item="drift" data-bought-covered-by="bundle">
-         <p class="note__title">Already bought on this device</p>
-         <p>...<span data-bought-cover hidden>...</span>
-            <span data-bought-date data-bought-date-prefix=", bought "></span>...</p>
-       </div>
+      var links = $$('.section-nav__link', list);
+      if (!links.length) return;
 
-     Rules kept deliberately:
-       - Every token, every word and every link lives in the markup. This file
-         holds no item name, no wording and no URL — only the storage key and
-         the same 60-day cut-off the plugins page uses.
-       - data-bought-covered-by names a token that also covers this one (the
-         Full Shop bundle covers all four plugins), matching the plugins page,
-         where a remembered "bundle" marks every other token as covered. The
-         item's own purchase wins, and then [data-bought-cover] stays hidden.
-       - Read-only. Nothing is written or deleted here, so a product page can
-         never disturb what the shop remembers; expired entries are simply
-         ignored on read and the plugins page prunes them.
-       - Storage blocked, unreadable or corrupt is a silent no-op: the note
-         stays hidden and the page is exactly what shipped in the HTML.
-       - Nothing is disabled or hidden by this: a second licence is still one
-         click away on the same Buy link. A note in a browser is never proof
-         of ownership, which is why the wording says "on this device".
+      var sections = links.map(function (a) { var id = a.getAttribute('href') || ''; return document.getElementById(id.replace(/^#/, '')); }).filter(function (s) { return s; });
+      if (!sections.length) return;
+
+      var observer = null;
+      try {
+        observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (en) {
+            if (!en.target.id) return;
+            var active = document.querySelector('.section-nav__link[href="#' + en.target.id + '"]');
+            if (!active) return;
+            if (en.isIntersecting) {
+              active.classList.add('is-active');
+            } else {
+              active.classList.remove('is-active');
+            }
+          });
+        }, { threshold: [0.5] });
+      } catch (e) { observer = null; }
+
+      if (observer) sections.forEach(function (s) { observer.observe(s); });
+    });
+  };
+
+  /* =======================================================================
+     04  TABS (ARIA tablist)
+     ======================================================================= */
+
+  P.initTabs = function (root) {
+    $$('[data-tabs]', root || document).forEach(function (wrap) {
+      if (bound(wrap, 'tabs')) return;
+
+      var tabs = $$('.tab', wrap);
+      if (!tabs.length) return;
+
+      tabs.forEach(function (t) {
+        t.addEventListener('click', function (e) {
+          e.preventDefault();
+          var target = t.getAttribute('data-tab-target');
+          if (!target) return;
+          var panel = document.getElementById(target);
+          if (!panel) return;
+          $$('.tab', wrap).forEach(function (x) { x.classList.remove('is-active'); });
+          $$('.tab-panel', wrap).forEach(function (p) { p.hidden = true; });
+          t.classList.add('is-active');
+          panel.hidden = false;
+        });
+      });
+    });
+  };
+
+  /* =======================================================================
+     05  COUNT UP
+     ======================================================================= */
+
+  P.initCounters = function (root) {
+    $$('[data-count-to]', root || document).forEach(function (n) {
+      if (bound(n, 'count')) return;
+      var to = parseFloat(attr(n, 'data-count-to')) || 0;
+      var dur = parseInt(attr(n, 'data-count-duration') || '1200', 10) || 1200;
+      if (reducedMotion()) { n.textContent = String(to); return; }
+      var start = 0; var then = Date.now();
+      function step() {
+        var now = Date.now();
+        var t = Math.min(1, (now - then) / dur);
+        var v = Math.round(start + (to - start) * t);
+        n.textContent = String(v);
+        if (t < 1) requestAnimationFrame(step);
+      }
+      step();
+    });
+  };
+
+  /* =======================================================================
+     06  BOUGHT RECORDS
+     The small localStorage format used to remember purchases.
      ======================================================================= */
 
   var BOUGHT_KEY = 'soundshop:bought:v1';
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;   // 60 days, as on the plugins page
+  var BOUGHT_MAX_AGE = 1000 * 60 * 60 * 24 * 60; // 60 days
+  var BOUGHT_REF_RE = /^[A-Za-z0-9_\-]{6,64}$/;    // stored payment ref token
+  var BOUGHT_TOKEN_RE = /^[a-z0-9_\-]{3,64}$/;    // token used by elements in the page
 
-  // A payment reference is quoted back to the buyer verbatim, so it is held to
-  // exactly the shape the plugins page accepted off the return URL before it
-  // ever reached storage. Anything else is treated as "no reference stored".
-  var BOUGHT_REF_RE = /^[A-Za-z0-9_-]{1,128}$/;
-  // A token is only ever printed when the page has no label for it, so it is
-  // held to the same shape the plugins page allows itself to write.
-  var BOUGHT_TOKEN_RE = /^[a-z0-9][a-z0-9 ._-]{0,63}$/;
-
-  /**
-   * Everything this browser remembers buying, normalised and unexpired, as
-   * token -> { t: <ms>, ref: '<payment reference>' | '' }. One parser for the
-   * whole file: initBoughtNote wants only the time, initBoughtSummary wants
-   * the reference too, and neither should re-read or re-validate the key.
-   */
   function boughtRecords() {
-    var out = {};
     var raw = null;
-    try { raw = window.localStorage.getItem(BOUGHT_KEY); } catch (e) { return out; }
-    if (!raw) return out;
-
-    var parsed = null;
-    try { parsed = JSON.parse(raw); } catch (e) { return out; }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
-
-    var now = Date.now();
-    for (var key in parsed) {
-      if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
-      var token = String(key == null ? '' : key).trim().toLowerCase();
-      // Two stored shapes, both valid: a bare timestamp, and
-      // { t: <time>, ref: '<payment reference>' } as written by the plugins page
-      // when the checkout return carried a reference. Reading only the number
-      // here would make Number({...}) NaN and silently hide this note for every
-      // purchase made after that change.
-      var rec = parsed[key];
-      var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
-      var when = Number(isObj ? rec.t : rec);
-      if (!token || !isFinite(when) || when <= 0) continue;
-      if ((now - when) > BOUGHT_MAX_AGE) continue;   // too old to speak for: ignore
-
-      // NEW: if the stored record is an object and contains an explicit 'state'
-      // property, treat it as ownership only when state === 'paid'. This prevents
-      // non-paid states like 'pending' or 'cancelled' from marking a product as
-      // already bought on this device. Objects without a 'state' property keep
-      // the legacy behaviour and are still accepted.
-      if (isObj && Object.prototype.hasOwnProperty.call(rec, 'state')) {
-        var st = rec.state == null ? '' : String(rec.state).trim();
-        if (st !== 'paid') continue;
+    try { raw = localStorage.getItem(BOUGHT_KEY); } catch (e) { return {}; }
+    if (!raw) return {};
+    try {
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || !parsed.records || typeof parsed.records !== 'object') return {};
+      var out = {};
+      for (var k in parsed.records) {
+        if (!Object.prototype.hasOwnProperty.call(parsed.records, k)) continue;
+        var r = parsed.records[k];
+        if (!r || typeof r !== 'object') continue;
+        var t = parseInt(r.t, 10);
+        if (!isFinite(t) || t <= 0 || (Date.now() - t) > BOUGHT_MAX_AGE) continue;
+        var ref = r.ref && typeof r.ref === 'string' ? r.ref.trim() : '';
+        if (ref && !BOUGHT_REF_RE.test(ref)) ref = '';
+        out[k] = { t: t, ref: ref };
       }
-
-      var ref = isObj && typeof rec.ref === 'string' ? rec.ref.trim() : '';
-      if (!BOUGHT_REF_RE.test(ref)) ref = '';
-      out[token] = { t: when, ref: ref };
-    }
-    return out;
+      return out;
+    } catch (e) { return {}; }
   }
 
-  /** The same set, flattened to token -> timestamp for callers that want only that. */
   function boughtItems() {
     var recs = boughtRecords();
     var out = {};
@@ -486,27 +513,49 @@
         if (!label) label = attr(host, 'data-bought-label-' + k);
         if (!label) label = k;
 
-        var text = label;
-
-        // Add date if we have a date prefix
-        if (datePrefix) {
-          var date = boughtDate(recs[k].t);
-          if (date) text += ' ' + datePrefix + date;
-        }
-
-        // Add reference or no-reference message
         var ref = recs[k].ref || '';
-        if (ref) {
-          text += ' ' + refPrefix + ref + refSuffix;
-        } else if (norefMsg) {
-          text += ' ' + norefMsg;
+        var date = '';
+        if (datePrefix) {
+          date = boughtDate(recs[k].t);
         }
 
         var li = el('li');
-        li.textContent = text;
+        // Build two spans: left label and right meta
+        var spanLabel = el('span', 'bought__label', label);
+        var spanMeta = el('span', 'bought__meta');
+
+        // Add date to meta if present
+        if (datePrefix && date) {
+          spanMeta.appendChild(document.createTextNode(' ' + datePrefix + date));
+        }
+
+        if (ref) {
+          // reference present: show formatted ref and a Copy button with data-copy
+          spanMeta.appendChild(document.createTextNode(' ' + refPrefix + ref + refSuffix));
+          try {
+            var btn = document.createElement('button');
+            btn.setAttribute('type', 'button');
+            btn.setAttribute('data-copy', ref);
+            btn.setAttribute('aria-label', 'Copy payment reference for ' + label);
+            btn.textContent = 'Copy';
+            spanMeta.appendChild(btn);
+          } catch (e) {
+            // defensive: if DOM create fails, continue without button
+          }
+        } else if (norefMsg) {
+          spanMeta.appendChild(document.createTextNode(' ' + norefMsg));
+        }
+
+        li.appendChild(spanLabel);
+        li.appendChild(spanMeta);
         list.appendChild(li);
         validCount++;
       });
+
+      // If the SS helper to initialise copy buttons exists, call it safely
+      try {
+        if (SS && typeof SS.initCopyButtons === 'function') SS.initCopyButtons(list);
+      } catch (e) { /* noop */ }
 
       // Unhide the host only if we added at least one item
       if (validCount > 0) {
