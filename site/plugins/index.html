@@ -413,6 +413,22 @@
           state: 'paid'
         };
         if (email) rec.email = email;
+
+        // Defensive extraction of a direct installer/download URL so the
+        // canonical BOUGHT_KEY record preserves it for plugin.js to read later.
+        try {
+          var durl = '';
+          if (order && typeof order === 'object') {
+            durl = order.downloadUrl || order.installerUrl || (order.installers && order.installers[0] && order.installers[0].url) || '';
+            if (typeof durl === 'string') {
+              durl = durl.trim();
+              if (durl && /^https?:\/\//i.test(durl)) {
+                rec.downloadUrl = durl;
+              }
+            }
+          }
+        } catch (e) { /* ignore */ }
+
         bought[token] = rec;
 
         // Write back to localStorage
@@ -494,4 +510,6 @@
   </section>
 
   <nav class="subnav" aria-label="On this page" data-section-nav data
-... (remaining unchanged)
+</main>
+</body>
+</html>
