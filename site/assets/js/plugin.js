@@ -279,126 +279,42 @@
           .catch(function () {
             if (status) status.textContent = 'Failed to load presets.';
           });
-      } catch (e) { if (status) status.textContent = 'Failed to load presets.'; }
+      } catch (e) { if (status) status.textContent }
+
     });
   };
-
-  /* =======================================================================
-     03  Minimal section nav, tabs and counters (lightweight, defensive)
-     These are intentionally small so the file has stable behaviour without
-     depending on other scripts. They are idempotent and tolerant of missing
-     nodes.
-     ======================================================================= */
-
-  P.initSectionNav = function (root) {
-    // No-op placeholder that marks any [data-section-nav] as bound.
-    $$('[data-section-nav]', root || document).forEach(function (n) { bound(n, 'section-nav'); });
-  };
-
-  P.initTabs = function (root) {
-    // Minimal ARIA tabs: mark as bound and avoid further work here.
-    $$('[data-tabs]', root || document).forEach(function (n) { bound(n, 'tabs'); });
-  };
-
-  P.initCounters = function (root) {
-    // Count-up is not essential; just mark as bound.
-    $$('[data-count-to]', root || document).forEach(function (n) { bound(n, 'counters'); });
-  };
-
-  /* =======================================================================
-     06  BOUGHT NOTE
-     ======================================================================= */
-
-  P.initBoughtNote = function (root) {
-    $$('[data-bought-note]', root || document).forEach(function (host) {
-      if (bound(host, 'bought-note')) return;
-      var key = attr(host, 'data-bought-token') || 'bought_note';
-      try {
-        var token = window.localStorage && window.localStorage.getItem ? window.localStorage.getItem(key) : null;
-        if (!token) return;
-        host.hidden = false;
-        var msg = $('[data-bought-note-message]', host);
-        if (msg) msg.textContent = token;
-      } catch (e) { /* ignore */ }
-    });
-  };
-
-  /* =======================================================================
-     07  BOUGHT SUMMARY
-     ======================================================================= */
 
   P.initBoughtSummary = function (root) {
     $$('[data-bought-summary]', root || document).forEach(function (host) {
-      if (bound(host, 'bought-summary')) return;
+      try {
+        if (!host || bound(host, 'bought-summary')) return;
 
-      var list = $('[data-bought-list]', host) || host;
-      var raw = attr(host, 'data-bought-summary');
-      if (!raw) return;
-      var arr = null;
-      try { arr = JSON.parse(raw); } catch (e) { return; }
-      if (!Array.isArray(arr) || !arr.length) return;
+        var list = host.querySelector('[data-bought-list]') || host;
+        var got = null;
+        try { got = JSON.parse(attr(host, 'data-bought-summary') || '[]'); } catch (e) { got = []; }
+        if (!Array.isArray(got)) got = [];
 
-      var validCount = 0;
-      arr.forEach(function (r) {
-        try { if (!r || typeof r !== 'object') return; } catch (e) { return; }
-
-        var li = el('li', 'bought');
-        var label = (r.label || r.itemName || r.name || '').toString();
-        if (!label) label = 'A bought item';
-
-        var labelSpan = el('span', 'bought__label', label);
-        var metaSpan = el('span', 'bought__meta');
-
-        // date
-        if (r.date) {
-          try { metaSpan.appendChild(document.createTextNode(String(r.date))); } catch (e) { /* ignore */ }
-        }
-
-        var recs = r.records || (Array.isArray(r.bought) ? r.bought : []);
-        var norefMsg = r.norefMessage || r.norefMsg || '';
-        var maskEmail = function (e) {
+        var validCount = 0;
+        got.forEach(function (rec) {
           try {
-            if (!e || typeof e !== 'string') return '';
-            var parts = e.split('@');
-            if (parts.length !== 2) return e;
-            var name = parts[0];
-            if (name.length <= 2) name = name[0] + '\u2026';
-            else name = name.substring(0, 2) + '\u2026';
-            return name + '@' + parts[1];
-          } catch (ex) { return '' }
-        };
+            if (!rec || typeof rec !== 'object') return;
+            var li = document.createElement('li');
+            li.className = 'bought__item';
 
-        recs = Array.isArray(recs) ? recs : [];
-        Object.keys(recs).forEach(function (k) {
-          try {
-            var ref = recs[k].ref || '';
-            var email = recs[k].email || '';
-          } catch (e) { /* ignore */ }
-        });
-
-        // Render each record
-        Object.keys(recs).forEach(function (k) {
-          try {
-            var ref = recs[k].ref || '';
-            var email = recs[k].email || '';
-            // Keep a consistent label for this item
-            var label = (r.label || r.itemName || r.name || '').toString();
-            if (!label) label = 'A bought item';
-
-            // visible label
+            var label = rec.itemName || rec.name || 'Item';
             var labelSpan = el('span', 'bought__label', label);
+            labelSpan.style.fontWeight = '600';
+
             var metaSpan = el('span', 'bought__meta');
 
-            // Reference or no-reference message
-            var refPrefix = recs[k].refPrefix || r.refPrefix || '';
-            var refSuffix = recs[k].refSuffix || r.refSuffix || '';
-            var ref = recs[k].ref || '';
-            var email = recs[k].email || '';
-            if (ref) {
-              if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-              metaSpan.appendChild(document.createTextNode(refPrefix + ref + refSuffix));
+            var ref = rec.id || rec.ref || rec.reference || '';
+            var email = rec.email || rec.deliveryEmail || rec.buyerEmail || '';
+            var norefMsg = rec.noref || rec.note || '';
 
+            if (ref) {
               try {
+                metaSpan.appendChild(document.createTextNode('Payment reference: ' + ref));
+
                 var btn = document.createElement('button');
                 btn.setAttribute('type', 'button');
                 btn.setAttribute('data-copy', ref);
@@ -562,8 +478,9 @@
       if (validCount) {
         host.hidden = false;
       }
-    });
-  };
+    } catch (e) { /* ignore per-host */ }
+  });
+};
 
   /* =======================================================================
      08  Event handler: append installers/support CTA after Verify
@@ -599,14 +516,20 @@
         a1.href = 'docs.html#delivery';
         a1.textContent = 'Open installers & delivery instructions';
         a1.className = 'bought__cta-primary';
-        a1.setAttribute('role', 'button');
         a1.style.marginRight = '12px';
+        // Open delivery in a new tab, announce that to assistive tech, and avoid role="button"
+        try {
+          a1.target = '_blank';
+          a1.rel = 'noopener noreferrer';
+          var a1Label = String(a1.textContent || '').trim() + ' (opens in a new tab)';
+          a1.setAttribute('aria-label', a1Label);
+        } catch (e) { /* ignore attribute errors */ }
 
         var a2 = document.createElement('a');
         a2.href = 'docs.html#support';
         a2.textContent = 'Contact support';
         a2.className = 'bought__cta-secondary';
-        a2.setAttribute('role', 'button');
+        // Keep semantic anchor (no role="button")
 
         c.appendChild(a1);
         c.appendChild(a2);
@@ -614,6 +537,11 @@
         // Append once and mark the host so this handler is idempotent
         try { list.appendChild(c); } catch (e) { /* ignore DOM errors */ }
         try { host.setAttribute('data-bought-verified', '1'); } catch (e) { /* ignore */ }
+
+        // Attempt to focus the primary anchor without throwing if blocked
+        setTimeout(function () {
+          try { if (a1 && typeof a1.focus === 'function') a1.focus(); } catch (e) { /* ignore */ }
+        }, 0);
 
       } catch (e) { /* swallow listener errors */ }
     });
