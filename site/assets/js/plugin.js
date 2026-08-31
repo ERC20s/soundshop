@@ -280,41 +280,48 @@
 
       function
 
-  // ---------- bought records and purchase summary (plugins page) ----------
+  /* =======================================================================
+     Remaining features omitted from this excerpt in the repository snapshot;
+     this file is long. The parts we will change are in the bought-records
+     and purchase-summary rendering code lower down; reassembles continue.
+     ======================================================================= */
 
+  // (continues...)
+
+  // A key used to store purchased notes in localStorage
+  var BOUGHT_KEY = 'soundshop:bought:v1';
   var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;   // 60 days, as on the plugins page
 
-  // A payment reference is quoted back to the buyer verbatim, so it is held to
   // exactly the shape the plugins page accepted off the return URL before it
   // ever reached storage. Anything else is treated as "no reference stored".
   var BOUGHT_REF_RE = /^[A-Za-z0-9_-]{1,128}$/;
   // A token is only ever printed when the page has no label for it, so it is
   // held to the same shape the plugins page allows itself to write.
   var BOUGHT_TOKEN_RE = /^[a-z0-9][a-z0-9 ._-]{0,63}$/;
-+
-+  // A conservative email shape check for delivery addresses we may display.
-+  var BOUGHT_EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-+
-+  function maskEmail(email) {
-+    if (!email || typeof email !== 'string') return '';
-+    var at = email.indexOf('@');
-+    if (at <= 0) return email;
-+    var local = email.slice(0, at);
-+    var domain = email.slice(at + 1);
-+    // Keep first letter of local, mask rest with stars (up to 6), show domain
-+    var first = local.charAt(0);
-+    var maskedLocal = first + Array(Math.min(Math.max(local.length - 1, 1), 6) + 1).join('*');
-+    // For domain, show the TLD and first label partially: keep last two labels
-+    var parts = domain.split('.');
-+    if (parts.length >= 2) {
-+      var tld = parts.pop();
-+      var left = parts.join('.');
-+      if (left.length > 12) left = left.slice(0, 9) + '...';
-+      return maskedLocal + '@' + left + '.' + tld;
-+    }
-+    return maskedLocal + '@' + domain;
-+  }
-+
+
+  // A conservative email shape check for delivery addresses we may display.
+  var BOUGHT_EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+
+  function maskEmail(email) {
+    if (!email || typeof email !== 'string') return '';
+    var at = email.indexOf('@');
+    if (at <= 0) return email;
+    var local = email.slice(0, at);
+    var domain = email.slice(at + 1);
+    // Keep first letter of local, mask rest with stars (up to 6), show domain
+    var first = local.charAt(0);
+    var maskedLocal = first + Array(Math.min(Math.max(local.length - 1, 1), 6) + 1).join('*');
+    // For domain, show the TLD and first label partially: keep last two labels
+    var parts = domain.split('.');
+    if (parts.length >= 2) {
+      var tld = parts.pop();
+      var left = parts.join('.');
+      if (left.length > 12) left = left.slice(0, 9) + '...';
+      return maskedLocal + '@' + left + '.' + tld;
+    }
+    return maskedLocal + '@' + domain;
+  }
+
   /**
    * Everything this browser remembers buying, normalised and unexpired, as
    * token -> { t: <ms>, ref: '<payment reference>' | '' }. One parser for the
@@ -358,13 +365,13 @@
 
       var ref = isObj && typeof rec.ref === 'string' ? rec.ref.trim() : '';
       if (!BOUGHT_REF_RE.test(ref)) ref = '';
-+      var email = '';
-+      if (isObj && typeof rec.email === 'string') {
-+        var e = rec.email.trim();
-+        if (e && BOUGHT_EMAIL_RE.test(e) && e.length <= 128) email = e;
-+      }
+      var email = '';
+      if (isObj && typeof rec.email === 'string') {
+        var e = rec.email.trim();
+        if (e && BOUGHT_EMAIL_RE.test(e) && e.length <= 128) email = e;
+      }
       out[token] = { t: when, ref: ref };
-+      if (email) out[token].email = email;
+      if (email) out[token].email = email;
     }
     return out;
   }
@@ -381,24 +388,18 @@
   }
 
   function boughtDate(ms) {
-    var d = new Date(ms);
-    if (isNaN(d.getTime())) return '';
-    try { return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); }
-    catch (e) { return d.toDateString(); }
+    try {
+      var d = new Date(ms);
+      if (!isFinite(d.getTime())) return '';
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch (e) { return ''; }
   }
 
   P.initBoughtNote = function (root) {
-    var notes = $$('[data-bought-note]', root || document);
-    if (!notes.length) return;                       // e.g. the plugins page: untouched
-
-    var items = boughtItems();
-    var tokens = 0;
-    for (var t in items) { if (Object.prototype.hasOwnProperty.call(items, t)) tokens++; }
-    if (!tokens) return;                             // nothing remembered, nothing to say
-
-    notes.forEach(function (note) {
+    $$('[data-bought-note]', root || document).forEach(function (note) {
       if (bound(note, 'bought')) return;
 
+      var items = boughtItems();
       var token = attr(note, 'data-bought-item').toLowerCase();
       if (!token) return;
 
@@ -553,7 +554,44 @@
         } else if (email) {
           // No reference but we have a delivery email — show a masked delivery hint
           if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-          metaSpan.appendChild(document.createTextNode('Delivery email: ' + maskEmail(email)));
+          metaSpan.appendChild(document.createTextNode('Delivery email: '));
+          try {
+            var emSpanNoRef = el('span', 'bought__email', maskEmail(email));
+            emSpanNoRef.style.marginLeft = '4px';
+            emSpanNoRef.style.color = 'var(--text-dim)';
+            metaSpan.appendChild(emSpanNoRef);
+
+            // Add a reveal button that toggles the email in-memory only.
+            var revealBtnNoRef = document.createElement('button');
+            revealBtnNoRef.setAttribute('type', 'button');
+            revealBtnNoRef.className = 'bought__reveal';
+            revealBtnNoRef.setAttribute('aria-pressed', 'false');
+            revealBtnNoRef.textContent = 'Show';
+            revealBtnNoRef.style.marginLeft = '8px';
+            metaSpan.appendChild(revealBtnNoRef);
+
+            (function (node, btn, fullEmail) {
+              try {
+                btn.addEventListener('click', function () {
+                  try {
+                    var revealed = btn.getAttribute('data-revealed') === '1';
+                    if (revealed) {
+                      node.textContent = maskEmail(fullEmail);
+                      btn.textContent = 'Show';
+                      btn.setAttribute('aria-pressed', 'false');
+                      btn.setAttribute('data-revealed', '0');
+                    } else {
+                      node.textContent = fullEmail;
+                      btn.textContent = 'Hide';
+                      btn.setAttribute('aria-pressed', 'true');
+                      btn.setAttribute('data-revealed', '1');
+                    }
+                  } catch (e) { /* ignore */ }
+                });
+              } catch (e) { /* ignore */ }
+            })(emSpanNoRef, revealBtnNoRef, email);
+
+          } catch (e) { metaSpan.appendChild(document.createTextNode('Delivery email: ' + maskEmail(email))); }
         } else if (norefMsg) {
           if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
           metaSpan.appendChild(document.createTextNode(norefMsg));
@@ -567,6 +605,37 @@
             emSpan.style.marginLeft = '8px';
             emSpan.style.color = 'var(--text-dim)';
             metaSpan.appendChild(emSpan);
+
+            // Reveal button for the small email next to ref controls
+            var revealBtn = document.createElement('button');
+            revealBtn.setAttribute('type', 'button');
+            revealBtn.className = 'bought__reveal';
+            revealBtn.setAttribute('aria-pressed', 'false');
+            revealBtn.textContent = 'Show';
+            revealBtn.style.marginLeft = '8px';
+            metaSpan.appendChild(revealBtn);
+
+            (function (node, btn, fullEmail) {
+              try {
+                btn.addEventListener('click', function () {
+                  try {
+                    var revealed = btn.getAttribute('data-revealed') === '1';
+                    if (revealed) {
+                      node.textContent = maskEmail(fullEmail);
+                      btn.textContent = 'Show';
+                      btn.setAttribute('aria-pressed', 'false');
+                      btn.setAttribute('data-revealed', '0');
+                    } else {
+                      node.textContent = fullEmail;
+                      btn.textContent = 'Hide';
+                      btn.setAttribute('aria-pressed', 'true');
+                      btn.setAttribute('data-revealed', '1');
+                    }
+                  } catch (e) { /* ignore */ }
+                });
+              } catch (e) { /* ignore */ }
+            })(emSpan, revealBtn, email);
+
           } catch (e) { /* ignore */ }
         }
 
