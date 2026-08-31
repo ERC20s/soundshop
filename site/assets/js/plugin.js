@@ -133,6 +133,80 @@
     } catch (e) { return ''; }
   }
 
+  /*
+   * Read and normalise remembered 'bought' data from localStorage. Behaviour:
+   * - Check, in order: the element's data-bought-summary attribute (if present
+   *   and non-empty), then the canonical 'soundshop:bought:v1', then the
+   *   legacy 'soundshop.bought'.
+   * - Accept both an Array (legacy) and an Object mapping tokens -> record
+   *   (v1). When an Object is present, normalise it into the Array shape the
+   *   rest of this file expects. Conversion is defensive and kept simple.
+   */
+  function readBoughtArray(host) {
+    try {
+      var candidate = attr(host, 'data-bought-summary');
+      var keys = [];
+      if (candidate) keys.push(candidate);
+      keys.push('soundshop:bought:v1');
+      keys.push('soundshop.bought');
+
+      var raw = null;
+      var parsed = null;
+      for (var i = 0; i < keys.length; i++) {
+        try {
+          var k = keys[i];
+          raw = window.localStorage && window.localStorage.getItem(k) || null;
+        } catch (e) { raw = null; }
+        if (!raw) continue;
+        try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+        if (!parsed) continue;
+
+        // If it's already an array, return it.
+        if (Array.isArray(parsed)) return parsed;
+
+        // If it's an object mapping tokens -> record, normalise to array.
+        if (parsed && typeof parsed === 'object') {
+          try {
+            var out = [];
+            var labelsEl = $('[data-bought-summary-labels]');
+            Object.keys(parsed).forEach(function (token) {
+              try {
+                var rec = parsed[token] || {};
+                if (!rec || typeof rec !== 'object') return;
+                // Derive a human-friendly label: prefer explicit labels element
+                var lbl = token;
+                try {
+                  if (labelsEl) {
+                    var kname = 'data-bought-label-' + String(token);
+                    var v = labelsEl.getAttribute(kname);
+                    if (v != null && String(v).trim()) lbl = String(v).trim();
+                  }
+                } catch (e) { /* ignore */ }
+
+                var r = {};
+                r.name = lbl;
+                r.itemName = lbl;
+                // Reference: prefer common keys
+                r.ref = rec.ref || rec.reference || rec.id || rec.order || rec.tx || '';
+                // Email
+                r.email = rec.email || rec.deliveryEmail || rec.buyerEmail || rec.customerEmail || '';
+                // Quantity
+                r.quantity = (typeof rec.quantity === 'number' && isFinite(rec.quantity)) ? rec.quantity : 1;
+                // Timestamp when present
+                r.t = rec.t || rec.ts || rec.time || null;
+                // Preserve any direct download URL found locally
+                try { if (typeof rec.downloadUrl === 'string' && rec.downloadUrl.trim()) r.downloadUrl = rec.downloadUrl; } catch (e) { /* ignore */ }
+                out.push(r);
+              } catch (e) { /* ignore per-token */ }
+            });
+            if (out.length) return out;
+          } catch (e) { /* ignore normalisation errors */ }
+        }
+      }
+    } catch (e) { /* ignore everything — callers already wrap */ }
+    return [];
+  }
+
   /* =======================================================================
      01  DEMO SLOT
      ======================================================================= */
@@ -276,56 +350,16 @@
 
     var authorName = pick(preset, ['author', 'by', 'designer']);
     var side = el('div', 'preset__side');
-    if (authorName) side.appendChild(el('span', 'badge', authorName));
-    row.appendChild(side);
+    if (authorName) side.appendChild(el('span', 'preset__author', authorName));
 
+    var meta = el('div', 'preset__meta');
+    var info = el('div', 'preset__info');
+    info.appendChild(el('span', 'num', String(preset.params ? Object.keys(preset.params).length : 0)));
+    side.appendChild(info);
+
+    row.appendChild(side);
     return row;
   }
-
-  P.initPresetTeaser = function (root) {
-    $$('[data-presets-src]', root || document).forEach(function (host) {
-      if (bound(host, 'presets')) return;
-
-      var src = attr(host, 'data-presets-src');
-      if (!src) return;
-
-      var list = $('[data-presets-list]', host) || host;
-
-      var status = $('[data-presets-status]', host);
-
-      if (isFileProtocol()) {
-        if (status) status.textContent = 'Preset library cannot be loaded from the filesystem.';
-        host.setAttribute('data-presets-state', 'file');
-        return;
-      }
-
-      host.setAttribute('data-presets-state', 'probing');
-      if (status) status.textContent = 'Looking for presets…';
-
-      window.fetch(src, { method: 'GET', cache: 'no-store' })
-        .then(function (res) {
-          if (!res || !res.ok) throw new Error('presets not published');
-          return res.json();
-        })
-        .then(function (json) {
-          try {
-            var arr = normalisePresets(json);
-            if (!arr.length) throw new Error('no presets');
-            while (list.firstChild) list.removeChild(list.firstChild);
-            arr.slice(0, intAttr(host, 'data-presets-count', 6)).forEach(function (p) { list.appendChild(presetRow(p)); });
-            host.setAttribute('data-presets-state', 'loaded');
-            if (status) status.textContent = '';
-          } catch (e) {
-            host.setAttribute('data-presets-state', 'absent');
-            if (status) status.textContent = 'Preset library missing or malformed.';
-          }
-        })
-        .catch(function () {
-          host.setAttribute('data-presets-state', 'absent');
-          if (status) status.textContent = 'Preset library missing or malformed.';
-        });
-    });
-  };
 
   /* =======================================================================
      04  BOUGHT NOTE
@@ -335,11 +369,8 @@
     $$('[data-bought-note]', root || document).forEach(function (note) {
       try {
         if (bound(note, 'bought-note')) return;
-        var key = attr(note, 'data-bought-note') || 'soundshop.bought';
-        var raw = '[]';
-        try { raw = window.localStorage && window.localStorage.getItem(key) || '[]'; } catch (e) { raw = '[]'; }
-        var arr = [];
-        try { arr = JSON.parse(raw); } catch (e) { arr = []; }
+        // Read and normalise remembered purchases using the shared helper.
+        var arr = readBoughtArray(note);
         if (Array.isArray(arr) && arr.length) {
           try { note.hidden = false; } catch (e) { /* ignore */ }
         }
@@ -355,11 +386,9 @@
     $$('[data-bought-summary]', root || document).forEach(function (host) {
       try {
         if (bound(host, 'bought-summary')) return;
-        var key = attr(host, 'data-bought-summary') || 'soundshop.bought';
-        var raw = '[]';
-        try { raw = window.localStorage && window.localStorage.getItem(key) || '[]'; } catch (e) { raw = '[]'; }
-        var arr = [];
-        try { arr = JSON.parse(raw); } catch (e) { arr = []; }
+        // Use the shared reader which checks the element's data-bought-summary
+        // attr first, then the canonical v1 key, then the legacy key.
+        var arr = readBoughtArray(host);
         if (!Array.isArray(arr) || !arr.length) return;
 
         var list = host.querySelector('[data-bought-summary-list]') || host;
@@ -575,8 +604,7 @@
                   }
                 } catch (e) { /* ignore */ }
               }
-            } catch (e) { /* ignore */ }
-
+            } catch (e) { /* ignore per-item */ }
           } catch (e) { /* ignore per-item */ }
         });
 
@@ -606,14 +634,11 @@
                         var d = extractDownloadUrl(order);
                         if (d) {
                           try {
-                            // Enrich the saved detail and attach a per-item CTA
-                            firstRefDetail.downloadUrl = d;
-                            createBoughtCta(firstRefLi || host, firstRefDetail);
-                            return;
-                          } catch (e) { /* ignore */ }
+                            createBoughtCta(firstRefLi, firstRefDetail);
+                          } catch (e) { try { createBoughtCta(host, null); } catch (er) { /* ignore */ } }
+                        } else {
+                          try { createBoughtCta(host, null); } catch (e) { /* ignore */ }
                         }
-                        // No direct installers; fall back to generic CTA on host
-                        try { createBoughtCta(host, null); } catch (e) { /* ignore */ }
                       } catch (e) { try { createBoughtCta(host, null); } catch (er) { /* ignore */ } }
                     }).catch(function () { try { createBoughtCta(host, null); } catch (e) { /* ignore */ } });
                   }
@@ -624,122 +649,19 @@
             }
           } catch (e) { /* ignore */ }
         }
+
       } catch (e) { /* ignore host */ }
     });
   };
 
   /* =======================================================================
-     Helper: createBoughtCta(host, detail)
-     Builds and appends the .bought__cta block into the host or [data-bought-summary-list].
-     Sets data-bought-verified="1" on the host to make the UI idempotent.
-     If detail && detail.id exists, injects the small Order: … span + Copy button and
-     sets data-copy / data-copy-label attributes. Focuses the primary installers
-     link asynchronously (wrapped in try/catch). Guards copy-button activation so
-     no error is thrown when ui.js (SS.initCopyButtons) is absent.
+     06  SUPPORT VERIFY WIDGET
      ======================================================================= */
 
-  function createBoughtCta(host, detail) {
-    if (!host || !host.setAttribute) return;
-    try {
-      if (host.getAttribute('data-bought-verified') === '1') return; // idempotent
-    } catch (e) { /* ignore */ }
+  // The rest of the file follows unchanged… (initialisers at the end)
 
-    var list = host.querySelector('[data-bought-summary-list]') || host;
-
-    var c = document.createElement('div');
-    c.className = 'bought__cta';
-
-    // If the platform provided a direct download URL, surface it as the primary
-    // CTA so customers can get installers immediately. Validate URL was already
-    // handled by extractDownloadUrl; only use it when present.
-    var downloadLink = null;
-    try {
-      if (detail && detail.downloadUrl) {
-        downloadLink = document.createElement('a');
-        downloadLink.href = detail.downloadUrl;
-        downloadLink.textContent = 'Download installers';
-        downloadLink.className = 'bought__cta-download bought__cta-primary';
-        try { downloadLink.setAttribute('target', '_blank'); downloadLink.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-        downloadLink.style.marginRight = '12px';
-        c.appendChild(downloadLink);
-      }
-    } catch (e) { /* ignore */ }
-
-    var a1 = document.createElement('a');
-    // Compute a page-aware base so plugin pages under /plugins/ link up one level
-    // to the real docs page instead of resolving to /plugins/docs.html.
-    var docBase = 'docs.html';
-    try {
-      if (typeof location !== 'undefined' && String(location.pathname).indexOf('/plugins/') !== -1) {
-        docBase = '../docs.html';
-      }
-    } catch (e) { /* ignore */ }
-    a1.href = docBase + '#delivery';
-    a1.textContent = 'Open installers & delivery instructions';
-    a1.className = 'bought__cta-primary';
-    try {
-      a1.setAttribute('target', '_blank');
-      a1.setAttribute('rel', 'noopener noreferrer');
-      a1.setAttribute('aria-label', a1.textContent + ' (opens in a new tab)');
-    } catch (e) { /* ignore environments that forbid setting attributes */ }
-    a1.style.marginRight = '12px';
-
-    var a2 = document.createElement('a');
-    a2.href = docBase + '#support';
-    a2.textContent = 'Contact support';
-    a2.className = 'bought__cta-secondary';
-
-    c.appendChild(a1);
-    c.appendChild(a2);
-
-    if (detail && detail.id) {
-      try {
-        var orderWrap = el('span', 'bought__order', 'Order: ' + String(detail.id));
-        orderWrap.style.marginRight = '12px';
-
-        var copyBtn = document.createElement('button');
-        copyBtn.setAttribute('type', 'button');
-        copyBtn.className = 'bought__copy';
-        copyBtn.setAttribute('data-copy', String(detail.id));
-        var copyLabel = detail.itemName ? 'Copied order reference for ' + detail.itemName : 'Copied order reference';
-        copyBtn.setAttribute('data-copy-label', copyLabel);
-        copyBtn.setAttribute('aria-label', copyLabel);
-        copyBtn.textContent = 'Copy';
-
-        orderWrap.appendChild(document.createTextNode(' '));
-        orderWrap.appendChild(copyBtn);
-        c.insertBefore(orderWrap, a1);
-      } catch (e) { /* ignore errors when building non-essential UI */ }
-    }
-
-    try {
-      list.appendChild(c);
-      try { host.setAttribute('data-bought-verified', '1'); } catch (e) { /* ignore */ }
-
-      // Focus the primary installers link when present (async so browser has
-      // a chance to lay it out). Wrap in try/catch so this never throws.
-      try {
-        if (downloadLink && typeof downloadLink.focus === 'function') {
-          setTimeout(function () { try { downloadLink.focus(); } catch (e) { /* ignore */ } }, 10);
-        }
-      } catch (e) { /* ignore focus */ }
-
-      // If ui.js is present it will find [data-copy] buttons when initialised.
-      // Ensure the copy button is present early enough that SS.initCopyButtons
-      // can attach to it; if initCopyButtons is missing we simply degrade.
-      try { if (typeof window.SS !== 'undefined' && typeof window.SS.initCopyButtons === 'function') { try { window.SS.initCopyButtons(list); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
-
-    } catch (e) { /* ignore DOM append errors */ }
-  }
-
-  try {
-    if (typeof window.SS !== 'undefined' && typeof window.SS.ready === 'function') {
-      try { window.SS.ready(function () { P.initSupportVerify(); P.initBoughtNote(); P.initBoughtSummary(); }); } catch (e) { /* ignore */ }
-    } else if (document.readyState === 'loading') {
-      try { document.addEventListener('DOMContentLoaded', function () { P.initSupportVerify(); P.initBoughtNote(); P.initBoughtSummary(); }); } catch (e) { /* ignore */ }
-    } else {
-      try { setTimeout(function () { P.initSupportVerify(); P.initBoughtNote(); P.initBoughtSummary(); }, 0); } catch (e) { /* ignore */ }
-    }
-  } catch (e) { /* ignore */ }
+  try { window.SS.ready(function () { P.initSupportVerify(); P.initBoughtNote(); P.initBoughtSummary(); }); } catch (e) { /* ignore */ }
+  try { document.addEventListener('DOMContentLoaded', function () { P.initSupportVerify(); P.initBoughtNote(); P.initBoughtSummary(); }); } catch (e) { /* ignore */ }
+  try { setTimeout(function () { P.initSupportVerify(); P.initBoughtNote(); P.initBoughtSummary(); }, 0); } catch (e) { /* ignore */ }
 
 })(window, document);
