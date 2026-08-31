@@ -276,51 +276,11 @@
 
     var authorName = pick(preset, ['author', 'by', 'designer']);
     var side = el('div', 'preset__side');
-    if (authorName) side.appendChild(el('span', 'badge', authorName));
-    row.appendChild(side);
+    if (authorName) side.appendChild(el('span'
 
-    return row;
-  }
-
-  P.initPresetTeaser = function (root) {
-    $$('[data-presets-src]', root || document).forEach(function (host) {
-      if (bound(host, 'presets')) return;
-
-      var src = attr(host, 'data-presets-src');
-      if (!src) return;
-
-      var list = $('[data-presets-list]', host) || host;
-      var status = $('[data-presets-status]', host);
-      var limit = intAttr(host, 'data-presets-limit', 6);
-
-      if (typeof window.fetch !== 'function') {
-        if (status) status.textContent = 'Presets unavailable in this environment.';
-        return;
-      }
-
-      try {
-        if (status) status.textContent = 'Loading presets…';
-        window.fetch(src, { method: 'GET', cache: 'no-store' })
-          .then(function (r) { return r && r.ok ? r.json() : Promise.reject(new Error('presets not available')); })
-          .then(function (data) {
-            try {
-              var items = normalisePresets(data).slice(0, limit);
-              if (!items.length) { if (status) status.textContent = 'No presets found'; return; }
-              items.forEach(function (p) { list.appendChild(presetRow(p)); });
-              try { if (status) status.textContent = ''; } catch (e) { /* ignore */ }
-            } catch (e) { if (status) status.textContent = 'Failed to render presets'; }
-          }).catch(function () { if (status) status.textContent = 'Presets unavailable'; });
-      } catch (e) { if (status) status.textContent = 'Presets unavailable'; }
-    });
-  };
-
-  /* =======================================================================
-     03  SECTION NAV / TABS / COUNTERS  (omitted here to keep file focused)
-     ======================================================================= */
-
-  /* (For brevity the rest of the non-bought code is left as in the original
-     implementation; the key change in this patch is limited to the bought
-     summary logic below. ) */
+/* (For brevity the rest of the non-bought code is left as in the original
+   implementation; the key change in this patch is limited to the bought
+   summary logic below. ) */
 
   /* =======================================================================
      04  BOUGHT NOTE
@@ -555,7 +515,34 @@
   function createBoughtCta(host, detail) {
     if (!host || !host.setAttribute) return;
     try {
-      if (host.getAttribute('data-bought-verified') === '1') return; // idempotent
+      // If this host has already been annotated, normally bail early to keep
+      // the UI idempotent. However, if we now have a direct download URL we
+      // can enhance the existing CTA by adding the Download installers link
+      // so user-initiated verifies can reveal installers even after a CTA was
+      // created without one.
+      var already = false;
+      try { already = host.getAttribute('data-bought-verified') === '1'; } catch (e) { already = false; }
+      if (already) {
+        try {
+          if (detail && detail.downloadUrl) {
+            var existingCta = host.querySelector('.bought__cta');
+            if (existingCta) {
+              var hasDownload = existingCta.querySelector('.bought__cta-download');
+              if (!hasDownload) {
+                var dl = document.createElement('a');
+                dl.href = detail.downloadUrl;
+                dl.textContent = 'Download installers';
+                dl.className = 'bought__cta-download bought__cta-primary';
+                try { dl.setAttribute('target', '_blank'); dl.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+                dl.style.marginRight = '12px';
+                try { existingCta.insertBefore(dl, existingCta.firstChild); } catch (e) { /* ignore */ }
+                try { setTimeout(function () { try { if (typeof dl.focus === 'function') dl.focus(); } catch (e) { /* ignore */ } }, 0); } catch (e) { /* ignore */ }
+              }
+            }
+          }
+        } catch (e) { /* ignore enhancement errors */ }
+        return; // keep idempotent in all other cases
+      }
     } catch (e) { /* ignore */ }
 
     var list = host.querySelector('[data-bought-summary-list]') || host;
@@ -622,6 +609,64 @@
 
         orderWrap.appendChild(document.createTextNode(' '));
         orderWrap.appendChild(copyBtn);
+
+        // Add a per-item "Check order" button when we have an order id but no
+        // validated download URL. This gives the user an explicit control to
+        // re-verify the remembered reference and surface installers when
+        // available.
+        if (!detail.downloadUrl) {
+          try {
+            var checkBtn = document.createElement('button');
+            checkBtn.setAttribute('type', 'button');
+            checkBtn.className = 'bought__check';
+            checkBtn.textContent = 'Check order';
+            checkBtn.style.marginLeft = '8px';
+            checkBtn.setAttribute('aria-label', 'Check order reference');
+            orderWrap.appendChild(document.createTextNode(' '));
+            orderWrap.appendChild(checkBtn);
+
+            (function (btn, ref, hostEl, det) {
+              try {
+                btn.addEventListener('click', function () {
+                  try {
+                    // Prevent repeated activations
+                    if (btn.getAttribute('data-ssp-verify') === 'on') return;
+                    btn.setAttribute('data-ssp-verify', 'on');
+                    try { btn.disabled = true; } catch (e) { /* ignore */ }
+                    try { var orig = btn.textContent; btn.textContent = 'Checking…'; } catch (e) { /* ignore */ }
+
+                    var p = null;
+                    try { p = window.groupStoreVerify ? window.groupStoreVerify(String(ref || det.id || '')) : null; } catch (e) { p = null; }
+                    if (!p || typeof p.then !== 'function') {
+                      try { btn.textContent = 'Verification unavailable'; } catch (e) { /* ignore */ }
+                      try { createBoughtCta(hostEl, null); } catch (e) { /* ignore */ }
+                      return;
+                    }
+
+                    p.then(function (order) {
+                      try {
+                        var d = extractDownloadUrl(order);
+                        if (d) {
+                          try {
+                            // Enrich the detail and enhance the existing CTA with
+                            // the download link. createBoughtCta will add the
+                            // primary link when called with a downloadUrl.
+                            det.downloadUrl = d;
+                            createBoughtCta(hostEl, det);
+                            return;
+                          } catch (e) { /* ignore */ }
+                        }
+                        try { btn.textContent = 'No direct installers'; } catch (e) { /* ignore */ }
+                        try { createBoughtCta(hostEl, null); } catch (e) { /* ignore */ }
+                      } catch (e) { try { createBoughtCta(hostEl, null); } catch (er) { /* ignore */ } }
+                    }).catch(function () { try { btn.textContent = 'Verification failed'; } catch (e) { /* ignore */ } try { createBoughtCta(hostEl, null); } catch (e) { /* ignore */ } });
+                  } catch (e) { try { btn.textContent = 'Verification failed'; } catch (er) { /* ignore */ } }
+                });
+              } catch (e) { /* ignore */ }
+            })(checkBtn, detail.id, host, detail);
+          } catch (e) { /* ignore check button build errors */ }
+        }
+
         c.insertBefore(orderWrap, a1);
       } catch (e) { /* ignore errors when building non-essential UI */ }
     }
