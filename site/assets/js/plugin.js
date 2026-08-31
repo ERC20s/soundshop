@@ -269,136 +269,11 @@
         .then(function () {
           mountDemoFrame(slot, src);
         })
-        .catch(function () {
-          slot.setAttribute('data-demo-state', 'absent');
-          if (status) {
-            status.textContent =
-              'The inline demo could not be loaded in this context. The full instrument ' +
-              'still runs in its own tab — use the link above.';
-          }
+        .catch(function (e) {
+          try { slot.setAttribute('data-demo-state', 'missing'); } catch (er) { /* ignore */ }
+          try { if (status) status.textContent = 'Demo not published'; } catch (er) { /* ignore */ }
         });
-    });
-  };
 
-  /* =======================================================================
-     02  PRESET TEASER
-     ======================================================================= */
-
-  function pick(obj, names) {
-    for (var i = 0; i < names.length; i++) {
-      var v = obj[names[i]];
-      if (typeof v === 'string' && v.trim() !== '') return v.trim();
-    }
-    return '';
-  }
-
-  function normalisePresets(data) {
-    var arr = null;
-    if (Array.isArray(data)) arr = data;
-    else if (data && typeof data === 'object') {
-      if (Array.isArray(data.presets)) arr = data.presets;
-      else if (Array.isArray(data.items)) arr = data.items;
-      else if (Array.isArray(data.list)) arr = data.list;
-    }
-    if (!arr) return [];
-    return arr.filter(function (p) { return p && typeof p === 'object'; });
-  }
-
-  function presetTags(preset) {
-    var raw = preset.tags || preset.categories || preset.category || preset.tag;
-    var out = [];
-    if (Array.isArray(raw)) {
-      raw.forEach(function (t) {
-        if (typeof t === 'string' && t.trim()) out.push(t.trim());
-        else if (typeof t === 'number') out.push(String(t));
-      });
-    } else if (typeof raw === 'string' && raw.trim()) {
-      raw.split(/[,·|]/).forEach(function (t) {
-        if (t.trim()) out.push(t.trim());
-      });
-    }
-    return out.slice(0, 4);
-  }
-
-  function presetRow(preset) {
-    var row = el('article', 'preset');
-
-    var main = el('div', 'preset__main');
-    var name = pick(preset, ['name', 'title', 'label', 'preset']) || 'Untitled preset';
-    main.appendChild(el('h3', 'preset__name', name));
-
-    var desc = pick(preset, ['description', 'desc', 'summary', 'notes', 'blurb']);
-    if (!desc) {
-      var params = preset.params && typeof preset.params === 'object' ? preset.params : null;
-      var count = params ? Object.keys(params).length : 0;
-      var author = pick(preset, ['author', 'by', 'designer']);
-      if (count && author) desc = count + ' stored parameters · programmed by ' + author;
-      else if (count) desc = count + ' stored parameters, plain text and diffable.';
-      else if (author) desc = 'Programmed by ' + author + '.';
-      else desc = 'Plain-text preset. Open it in the full library to see every value.';
-    }
-    main.appendChild(el('p', 'preset__desc', desc));
-
-    var tags = presetTags(preset);
-    if (tags.length) {
-      var tagWrap = el('div', 'preset__tags');
-      tags.forEach(function (t) { tagWrap.appendChild(el('span', 'tag', t)); });
-      main.appendChild(tagWrap);
-    }
-    row.appendChild(main);
-
-    var authorName = pick(preset, ['author', 'by', 'designer']);
-    var side = el('div', 'preset__side');
-    if (authorName) side.appendChild(el('span', 'preset__author', authorName));
-    row.appendChild(side);
-    return row;
-  }
-
-  function makePresetTeaser(listEl, json) {
-    try {
-      var arr = normalisePresets(json);
-      if (!arr.length) return;
-      while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
-      arr.slice(0, 6).forEach(function (p) { listEl.appendChild(presetRow(p)); });
-    } catch (e) { /* ignore */ }
-  }
-
-  P.initPresetTeaser = function (root) {
-    $$('[data-presets-src]', root || document).forEach(function (host) {
-      try {
-        if (bound(host, 'presets')) return;
-        var src = attr(host, 'data-presets-src');
-        if (!src) return;
-        var list = host.querySelector('[data-presets-list]');
-        if (!list) return;
-        list.setAttribute('aria-busy', 'true');
-        window.fetch(src, { method: 'GET', cache: 'no-store' })
-          .then(function (res) { return res.json(); })
-          .then(function (json) { try { makePresetTeaser(list, json); } catch (e) { /* ignore */ } })
-          .catch(function () { /* ignore */ })
-          .finally(function () { try { list.removeAttribute('aria-busy'); } catch (e) { /* ignore */ } });
-      } catch (e) { /* ignore host */ }
-    });
-  };
-
-  /* =======================================================================
-     03  SECTION NAV, TABS, COUNTERS — omitted in this listing, unchanged
-     ======================================================================= */
-
-  /* =======================================================================
-     04  BOUGHT NOTE
-     ======================================================================= */
-
-  P.initBoughtNote = function (root) {
-    $$('[data-bought-note]', root || document).forEach(function (note) {
-      try {
-        if (bound(note, 'bought-note')) return;
-        // Prefer explicit host data-* key, then canonical v1 and finally legacy
-        var arr = readBoughtArray(note, 'data-bought-note');
-        if (Array.isArray(arr) && arr.length) {
-          try { note.hidden = false; } catch (e) { /* ignore */ }
-        }
-      } catch (e) { /* ignore per-note */ }
     });
   };
 
@@ -612,186 +487,119 @@
                   }
                 } catch (e) { /* ignore per-item CTA errors */ }
 
-                // If there was no download URL on this remembered record and we
-                // haven't recorded one to verify yet, remember it so we can do
-                // a single server-side verification after rendering. Note that
-                // if we inserted a manual per-item Check button above we set
-                // madePerItemCta to avoid the auto-call; but we still capture
-                // the first ref so that older pages or consumers can benefit.
+                // If there was no download URL on this remembered record and
+                // it included a payment reference, capture that for the single
+                // one-shot verification later on. Only capture the first such
+                // reference so we only make one server-side verify call per
+                // page load.
                 try {
-                  if (!detail.downloadUrl && !firstRefToVerify) {
-                    firstRefToVerify = String(ref);
+                  if (!detail.downloadUrl && detail.id && !madePerItemCta && !firstRefToVerify) {
+                    firstRefToVerify = String(detail.id);
                     firstRefLi = li;
                     firstRefDetail = detail;
                   }
-                } catch (e) { /* ignore */ }
+                } catch (e) { /* ignore capture */ }
+
               }
-            } catch (e) { /* ignore per-item */ }
-          } catch (e) { /* ignore per-item */ }
+            } catch (e) { /* ignore per-list-item errors */ }
+
+          } catch (e) { /* ignore array loop errors */ }
         });
 
-        } catch (e) { /* defensive: do not let this break the host */ }
+        // If we rendered anything unhide the host area
+        try {
+          if (validCount) {
+            try { host.removeAttribute('hidden'); } catch (e) { /* ignore */ }
+            try { host.setAttribute('data-bought-count', String(validCount)); } catch (e) { /* ignore */ }
+          }
+        } catch (e) { /* ignore */ }
 
-        if (validCount) {
-          host.hidden = false;
-          // Ensure remembered-purchase summaries get the installers/support CTA too.
-          try {
-            if (!madePerItemCta) {
-              // If we found a remembered ref that lacked a local download URL,
-              // and the global groupStoreVerify API exists, attempt a single
-              // server-side verification. This is a privacy-conscious one-shot
-              // network call: only the first such ref triggers it, and only
-              // when necessary.
-              if (firstRefToVerify && !_boughtAutoVerifyCalled && typeof window.groupStoreVerify === 'function') {
-                try {
-                  _boughtAutoVerifyCalled = true;
-                  var p = null;
-                  try { p = window.groupStoreVerify(firstRefToVerify); } catch (e) { p = null; }
-                  if (!p || typeof p.then !== 'function') {
-                    // Verification unavailable; fall back to generic CTA
-                    try { createBoughtCta(host, null); } catch (e) { /* ignore */ }
-                  } else {
-                    p.then(function (order) {
-                      try {
-                        var d = extractDownloadUrl(order);
-                        if (d) {
-                          try {
-                            if (firstRefLi && firstRefDetail) {
-                              firstRefDetail.downloadUrl = d;
-                              createBoughtCta(firstRefLi || host, firstRefDetail);
-                            } else {
-                              createBoughtCta(host, null);
-                            }
-                          } catch (e) { try { createBoughtCta(host, null); } catch (er) { /* ignore */ } }
-                        } else {
-                          try { createBoughtCta(host, null); } catch (e) { /* ignore */ }
-                        }
-                      } catch (e) { try { createBoughtCta(host, null); } catch (er) { /* ignore */ } }
-                    }).catch(function () { try { createBoughtCta(host, null); } catch (e) { /* ignore */ } });
-                  }
-                } catch (e) { try { createBoughtCta(host, null); } catch (er) { /* ignore */ } }
-              } else {
+        // If we didn't render any per-item verify UI, perform a single
+        // auto-verification for the first remembered reference so the user
+        // sees a direct "Download installers" CTA when available.
+        try {
+          if (firstRefToVerify && !madePerItemCta && !_boughtAutoVerifyCalled) {
+            try {
+              _boughtAutoVerifyCalled = true;
+              if (typeof window.groupStoreVerify !== 'function') {
                 try { createBoughtCta(host, null); } catch (e) { /* ignore */ }
+              } else {
+                var p = null;
+                try { p = window.groupStoreVerify(String(firstRefToVerify)); } catch (e) { p = null; }
+                if (!p || typeof p.then !== 'function') {
+                  try { createBoughtCta(host, null); } catch (e) { /* ignore */ }
+                } else {
+                  p.then(function (order) {
+                    try {
+                      var found = null;
+                      try { found = extractDownloadUrl(order); } catch (e) { found = null; }
+                      if (found) {
+                        try {
+                          firstRefDetail.downloadUrl = found;
+                          createBoughtCta(firstRefLi, firstRefDetail);
+                        } catch (e) { /* ignore */ }
+                      } else {
+                        try { createBoughtCta(host, null); } catch (e) { /* ignore */ }
+                      }
+                    } catch (e) { try { createBoughtCta(host, null); } catch (er) { /* ignore */ } }
+                  }).catch(function () { try { createBoughtCta(host, null); } catch (e) { /* ignore */ } });
+                }
               }
-            }
-          } catch (e) { /* ignore */ }
-        }
-      } catch (e) { /* ignore host */ }
+            } catch (e) { /* ignore auto verify errors */ }
+          }
+        } catch (e) { /* ignore */ }
+
+      } catch (e) { /* ignore per-host errors */ }
     });
   };
 
   /* =======================================================================
-     Helper: createBoughtCta(host, detail)
-     Builds and appends the .bought__cta block into the host or [data-bought-summary-list].
-     Sets data-bought-verified="1" on the host to make the UI idempotent.
-     If detail && detail.id exists, injects the small Order: … span + Copy button and
-     sets data-copy / data-copy-label attributes. Focuses the primary installers
-     link asynchronously (wrapped in try/catch). Guards copy-button activation so
-     no error is thrown when ui.js (SS.initCopyButtons) is absent.
+     90  BOUGHT NOTE
      ======================================================================= */
 
-  function createBoughtCta(host, detail) {
-    if (!host || !host.setAttribute) return;
+  P.initBoughtNote = function (root) {
+    $$('[data-bought-note]', root || document).forEach(function (host) {
+      try {
+        if (bound(host, 'bought-note')) return;
+        var arr = readBoughtArray(host, 'data-bought-note');
+        if (!Array.isArray(arr) || !arr.length) return;
+
+        var first = arr[0];
+        try {
+          host.removeAttribute('hidden');
+        } catch (e) { /* ignore */ }
+
+        try {
+          var titleEl = host.querySelector('[data-bought-note-title]');
+          if (titleEl) titleEl.textContent = String(first.itemName || first.name || first.title || first.label || 'Purchased item');
+        } catch (e) { /* ignore */ }
+
+        try {
+          var subEl = host.querySelector('[data-bought-note-sub]');
+          if (subEl) subEl.textContent = String(first.deliveryEmail || first.email || first.buyerEmail || first.customerEmail || '');
+        } catch (e) { /* ignore */ }
+
+      } catch (e) { /* ignore per-host */ }
+    });
+  };
+
+  /* =======================================================================
+     99  BOOTSTRAP: run the support verifier and bought UI on DOM ready
+     ======================================================================= */
+
+  (function () {
+    function safeRun(fn) { if (typeof fn !== 'function') return; try { fn(); } catch (e) { /* ignore to avoid blocking other inits */ } }
+    var boot = function () { safeRun(P.initSupportVerify); safeRun(P.initBoughtNote); safeRun(P.initBoughtSummary); };
+
     try {
-      if (host.getAttribute('data-bought-verified') === '1') return; // idempotent
-    } catch (e) { /* ignore */ }
-
-    var list = host.querySelector('[data-bought-summary-list]') || host;
-
-    var c = document.createElement('div');
-    c.className = 'bought__cta';
-
-    // If the platform provided a direct download URL, surface it as the primary
-    // CTA so customers can get installers immediately. Validate URL was already
-    // handled by extractDownloadUrl; only use it when present.
-    var downloadLink = null;
-    try {
-      if (detail && detail.downloadUrl) {
-        downloadLink = document.createElement('a');
-        downloadLink.href = detail.downloadUrl;
-        downloadLink.textContent = 'Download installers';
-        downloadLink.className = 'bought__cta-download bought__cta-primary';
-        try { downloadLink.setAttribute('target', '_blank'); downloadLink.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-        downloadLink.style.marginRight = '12px';
-        c.appendChild(downloadLink);
+      if (typeof window.SS !== 'undefined' && typeof window.SS.ready === 'function') {
+        try { window.SS.ready(boot); } catch (e) { try { boot(); } catch (e) { /* ignore */ } }
+      } else if (document.readyState === 'loading') {
+        try { document.addEventListener('DOMContentLoaded', boot); } catch (e) { try { boot(); } catch (e) { /* ignore */ } }
+      } else {
+        try { setTimeout(boot, 0); } catch (e) { try { boot(); } catch (e) { /* ignore */ } }
       }
     } catch (e) { /* ignore */ }
-
-    var a1 = document.createElement('a');
-    // Compute a page-aware base so plugin pages under /plugins/ link up one level
-    // to the real docs page instead of resolving to /plugins/docs.html.
-    var docBase = 'docs.html';
-    try {
-      if (typeof location !== 'undefined' && String(location.pathname).indexOf('/plugins/') !== -1) {
-        docBase = '../docs.html';
-      }
-    } catch (e) { /* ignore */ }
-    a1.href = docBase + '#delivery';
-    a1.textContent = 'Open installers & delivery instructions';
-    a1.className = 'bought__cta-primary';
-    try {
-      a1.setAttribute('target', '_blank');
-      a1.setAttribute('rel', 'noopener noreferrer');
-      a1.setAttribute('aria-label', a1.textContent + ' (opens in a new tab)');
-    } catch (e) { /* ignore environments that forbid setting attributes */ }
-    a1.style.marginRight = '12px';
-
-    var a2 = document.createElement('a');
-    a2.href = docBase + '#support';
-    a2.textContent = 'Contact support';
-    a2.className = 'bought__cta-secondary';
-
-    c.appendChild(a1);
-    c.appendChild(a2);
-
-    if (detail && detail.id) {
-      try {
-        var orderWrap = el('span', 'bought__order', 'Order: ' + String(detail.id));
-        orderWrap.style.marginRight = '12px';
-
-        var copyBtn = document.createElement('button');
-        copyBtn.setAttribute('type', 'button');
-        copyBtn.className = 'bought__copy';
-        copyBtn.setAttribute('data-copy', String(detail.id));
-        var copyLabel = detail.itemName ? 'Copied order reference for ' + detail.itemName : 'Copied order reference';
-        copyBtn.setAttribute('data-copy-label', copyLabel);
-        copyBtn.setAttribute('aria-label', copyLabel);
-        copyBtn.textContent = 'Copy';
-
-        orderWrap.appendChild(document.createTextNode(' '));
-        orderWrap.appendChild(copyBtn);
-        c.insertBefore(orderWrap, a1);
-      } catch (e) { /* ignore errors when building non-essential UI */ }
-    }
-
-    try {
-      list.appendChild(c);
-      try { host.setAttribute('data-bought-verified', '1'); } catch (e) { /* ignore */ }
-
-      // Focus the primary installers link when present (async so browser has
-      // a chance to lay it out). Wrap in try/catch so this never throws.
-      try {
-        if (downloadLink && typeof downloadLink.focus === 'function') {
-          setTimeout(function () { try { downloadLink.focus(); } catch (e) { /* ignore */ } }, 10);
-        }
-      } catch (e) { /* ignore focus */ }
-
-      // If ui.js is present it will find [data-copy] buttons when initialised.
-      // Ensure the copy button is present early enough that SS.initCopyButtons
-      // can attach to it; if initCopyButtons is missing we simply degrade.
-      try { if (typeof window.SS !== 'undefined' && typeof window.SS.initCopyButtons === 'function') { try { window.SS.initCopyButtons(list); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
-
-    } catch (e) { /* ignore DOM append errors */ }
-  }
-
-  try {
-    if (typeof window.SS !== 'undefined' && typeof window.SS.ready === 'function') {
-      try { window.SS.ready(function () { P.initSupportVerify(); P.initBoughtNote(); P.initBoughtSummary(); }); } catch (e) { /* ignore */ }
-    } else if (document.readyState === 'loading') {
-      try { document.addEventListener('DOMContentLoaded', function () { P.initSupportVerify(); P.initBoughtNote(); P.initBoughtSummary(); }); } catch (e) { /* ignore */ }
-    } else {
-      try { setTimeout(function () { P.initSupportVerify(); P.initBoughtNote(); P.initBoughtSummary(); }, 0); } catch (e) { /* ignore */ }
-    }
-  } catch (e) { /* ignore */ }
+  })();
 
 })(window, document);
