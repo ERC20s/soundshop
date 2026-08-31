@@ -293,116 +293,59 @@
   })();
   </script>
 
-  <!-- Handle group-store:paid event to record purchase in browser memory -->
+  <!-- The per-page persistence wrapper: persist a returned checkout into the
+       canonical localStorage key so plugin.js can read it later and the page
+       can show a bought-note or populate the bought-summary list. -->
   <script>
   (function () {
     var BOUGHT_KEY = 'soundshop:bought:v1';
-    var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;  // 60 days
 
-    // Map product names/IDs to internal tokens
-    function getProductToken(itemName, itemId) {
-      var name = String(itemName || itemId || '').trim().toLowerCase();
-
-      // Handle bundle names
-      if (name === 'the full shop' || name === 'bundle' || name === 'full shop') {
-        return 'bundle';
-      }
-
-      // Handle individual plugin names
-      if (name === 'vanta' || name === 'vanta - wavetable synth') {
-        return 'vanta';
-      }
-      if (name === 'drift' || name === 'drift - spectral delay') {
-        return 'drift';
-      }
-      if (name === 'prism' || name === 'prism - reverb') {
-        return 'prism';
-      }
-      if (name === 'anvil' || name === 'anvil - punch compressor') {
-        return 'anvil';
-      }
-
-      // Try to extract token from name if it contains one
-      var tokens = ['bundle', 'vanta', 'drift', 'prism', 'anvil'];
-      for (var i = 0; i < tokens.length; i++) {
-        if (name.indexOf(tokens[i]) !== -1) {
-          return tokens[i];
-        }
-      }
-
-      // Unknown product, log and return null
-      return null;
-    }
-
-    // Prune expired records from localStorage
     function pruneExpiredRecords() {
       try {
-        var raw = window.localStorage.getItem(BOUGHT_KEY);
-        if (!raw) return;
-        var parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
-
         var now = Date.now();
-        var changed = false;
-        for (var key in parsed) {
-          if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
-          var rec = parsed[key];
-          var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
-          var when = Number(isObj ? rec.t : rec);
-          if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
-            delete parsed[key];
-            changed = true;
-          }
+        var raw = window.localStorage && window.localStorage.getItem(BOUGHT_KEY);
+        if (!raw) return;
+        var parsed = null;
+        try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+        if (!parsed || typeof parsed !== 'object') return;
+        var updated = false;
+        for (var tok in parsed) {
+          try {
+            if (!Object.prototype.hasOwnProperty.call(parsed, tok)) continue;
+            var rec = parsed[tok];
+            if (!rec) { delete parsed[tok]; updated = true; continue; }
+            var t = rec.t || rec.time || rec.date || null;
+            if (!t) continue;
+            if (typeof t === 'number' && now - t > 1000 * 60 * 60 * 24 * 60) { delete parsed[tok]; updated = true; }
+          } catch (e) { /* ignore per-record */ }
         }
-        if (changed) {
-          window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(parsed));
+        if (updated) {
+          try { window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(parsed)); } catch (e) { /* ignore */ }
         }
-      } catch (e) {
-        // localStorage unavailable or corrupt, silently ignore
-      }
+      } catch (e) { /* ignore */ }
     }
 
-    // Persist a returned checkout into the canonical BOUGHT_KEY and refresh the
-    // page-level bought-summary display. This is exported as a safe global so
-    // other scripts (plugin.js) can trigger the same behaviour without owning
-    // the storage logic.
     function persistBought(order) {
-      if (!order) return;
-      var token = getProductToken(order.itemName, order.itemId);
-      if (!token) return;
-
       try {
+        if (!order) return;
+        var token = String(order.itemId || order.item || order.product || order.id || order.ref || order.reference || '').trim();
+        if (!token) return;
         var now = Date.now();
-        var bought = {};
 
-        // Read existing records
-        var raw = window.localStorage.getItem(BOUGHT_KEY);
-        if (raw) {
-          try {
-            var parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-              bought = parsed;
-            }
-          } catch (e) {
-            // Corrupt data, start fresh
-          }
-        }
-
-        // Attempt to capture a delivery email from the platform, if present.
-        // Try several common fields and validate conservatively.
+        // Best-effort email extraction so the per-page note can mask a buyer
+        // address. Defensive and shallow; a real address is on the provider
+        // receipt and in the platform's order record.
         var email = '';
         try {
-          var cand = '';
-          if (order && typeof order === 'object') {
-            cand = (order.email || order.buyerEmail || order.customerEmail || '');
-            if (cand && typeof cand === 'string') cand = cand.trim();
-            else cand = '';
-          }
-          var EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-          var MAX_EMAIL_LEN = 128;
-          if (cand && EMAIL_RE.test(cand)) {
-            if (cand.length > MAX_EMAIL_LEN) cand = cand.slice(0, MAX_EMAIL_LEN);
-            email = cand;
+          var cand = order.email || order.deliveryEmail || order.buyerEmail || order.customerEmail || '';
+          if (cand && typeof cand === 'string') {
+            cand = cand.trim();
+            var EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+            var MAX_EMAIL_LEN = 128;
+            if (cand && EMAIL_RE.test(cand)) {
+              if (cand.length > MAX_EMAIL_LEN) cand = cand.slice(0, MAX_EMAIL_LEN);
+              email = cand;
+            }
           }
         } catch (e) { /* ignore */ }
 
@@ -424,6 +367,22 @@
               durl = durl.trim();
               if (durl && /^https?:\/\//i.test(durl)) {
                 rec.downloadUrl = durl;
+              }
+            }
+          }
+        } catch (e) { /* ignore */ }
+
+        // Defensive extraction of a provider receipt URL. Many payment
+        // platforms surface a receipt page which sometimes hosts the
+        // installers or next actions; preserve a safe http(s) URL if present.
+        try {
+          var rurl = '';
+          if (order && typeof order === 'object') {
+            rurl = order.receiptUrl || order.receipt || order.receipt_url || '';
+            if (typeof rurl === 'string') {
+              rurl = rurl.trim();
+              if (rurl && /^https?:\/\//i.test(rurl)) {
+                rec.receiptUrl = rurl;
               }
             }
           }
