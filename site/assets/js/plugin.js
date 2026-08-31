@@ -252,99 +252,163 @@
 
       try { host.setAttribute('data-ssp-bought-cta', 'on'); } catch (e) { /* ignore */ }
 
-      // Helper to c
-      try {
-        // Helper to create a download anchor inside the host when we have a
-        // verified installer URL.
-        function makeDownloadAnchor(url) {
-          try {
-            if (!url) return;
-            var a = document.createElement('a');
-            a.className = 'bought__cta';
-            try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
-            try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-            try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-            try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-            try { host.appendChild(a); } catch (e) { /* ignore */ }
-          } catch (e) { /* ignore */ }
-        }
-
-        // Helper to create a Contact Support / Check order fallback when no
-        // verified installer URL is known. This provides the per-item "Check
-        // order" button that lets buyers verify an order and surface installers.
-        function makeSupportButton(id) {
-          try {
-            var wrap = document.createElement('div');
-            wrap.className = 'bought__cta-wrap';
-            var btn = document.createElement('button');
-            btn.className = 'bought__cta';
-            btn.setAttribute('type', 'button');
-            try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ }
-            try {
-              btn.addEventListener('click', function () {
-                try {
-                  if (!id) {
-                    // If we don't have an id, open support docs
-                    try { window.location.href = 'docs.html#support'; } catch (e) { /* ignore */ }
-                    return;
-                  }
-
-                  // Avoid hammering the platform: do nothing if verify is absent
-                  if (typeof window.groupStoreVerify !== 'function') {
-                    try { window.location.href = 'docs.html#support'; } catch (e) { /* ignore */ }
-                    return;
-                  }
-
-                  var p = null;
-                  try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
-                  if (!p || typeof p.then !== 'function') return;
-                  btn.textContent = 'Checking\u2026';
-                  p.then(function (order) {
-                    try {
-                      var vdet = P._normalisePaidDetail(order);
-                      if (!vdet) {
-                        try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ }
-                        return;
-                      }
-                      // If a downloadUrl was discovered, update UI
-                      if (vdet.downloadUrl) {
-                        try {
-                          // Replace button with a proper download anchor
-                          var a = document.createElement('a');
-                          a.className = 'bought__cta';
-                          try { a.setAttribute('href', vdet.downloadUrl); } catch (e) { /* ignore */ }
-                          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-                          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-                          try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-                          try { wrap.replaceChild(a, btn); } catch (e) { /* ignore */ }
-                        } catch (e) { /* ignore */ }
-                      } else {
-                        try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ }
-                      }
-                    } catch (e) { /* ignore */ }
-                  }).catch(function () { try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ } });
-                } catch (e) { /* ignore click handler */ }
-              });
-            } catch (e) { /* ignore event wiring */ }
-            try { wrap.appendChild(btn); } catch (e) { /* ignore */ }
-            try { host.appendChild(wrap); } catch (e) { /* ignore */ }
-          } catch (e) { /* ignore */ }
-        }
-
-        // Decide which CTA to render immediately
+      // Helper to create or find a .bought__cta-wrap inside host so both
+      // anchor and button variants are always kept in the same container.
+      function getOrMakeWrap() {
         try {
-          if (detail && extractDownloadUrl(detail)) {
-            makeDownloadAnchor(extractDownloadUrl(detail));
-          } else {
-            var id = detail && detail.id ? String(detail.id) : '';
-            makeSupportButton(id);
-          }
-        } catch (e) { /* ignore */ }
-      } catch (e) {
-        // ignore
+          var existingWrap = null;
+          try { existingWrap = host.querySelector('.bought__cta-wrap'); } catch (e) { existingWrap = null; }
+          if (existingWrap) return existingWrap;
+          var nw = document.createElement('div');
+          nw.className = 'bought__cta-wrap';
+          try { host.appendChild(nw); } catch (e) { /* ignore */ }
+          return nw;
+        } catch (e) { return null; }
       }
 
-    } catch (e) { /* ignore whole CTA creation */ }
+      // Helper to create a download anchor inside the host when we have a
+      // verified installer URL.
+      function makeDownloadAnchor(url) {
+        try {
+          if (!url) return;
+          var a = document.createElement('a');
+          a.className = 'bought__cta';
+          try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
+          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+          try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
+          // Ensure a wrapper is present and append the anchor into it so the
+          // layout matches the button fallback and replace logic can find it.
+          var wrap = getOrMakeWrap();
+          try {
+            if (wrap) wrap.appendChild(a);
+            else host.appendChild(a);
+          } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore */ }
+      }
+
+      // Helper to create a Contact Support / Check order fallback when no
+      // verified installer URL is known. This provides the per-item "Check
+      // order" button that lets buyers verify an order and surface installers.
+      function makeSupportButton(id) {
+        try {
+          var wrap = getOrMakeWrap();
+          if (!wrap) return;
+          // Avoid creating duplicate buttons when this helper is called more than once
+          var existingBtn = null;
+          try { existingBtn = wrap.querySelector('.bought__cta'); } catch (e) { existingBtn = null; }
+          if (existingBtn) return;
+
+          var btn = document.createElement('button');
+          btn.className = 'bought__cta';
+          btn.setAttribute('type', 'button');
+          try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ }
+          try {
+            btn.addEventListener('click', function () {
+              try {
+                if (!id) {
+                  // If we don't have an id, open support docs
+                  try { window.location.href = 'docs.html#support'; } catch (e) { /* ignore */ }
+                  return;
+                }
+
+                // Avoid hammering the platform: do nothing if verify is absent
+                if (typeof window.groupStoreVerify !== 'function') {
+                  try { window.location.href = 'docs.html#support'; } catch (e) { /* ignore */ }
+                  return;
+                }
+
+                var p = null;
+                try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
+                if (!p || typeof p.then !== 'function') return;
+                btn.textContent = 'Checking\u2026';
+                p.then(function (order) {
+                  try {
+                    var vdet = P._normalisePaidDetail(order);
+                    if (!vdet) {
+                      try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ }
+                      return;
+                    }
+                    // If a downloadUrl was discovered, update UI
+                    if (vdet.downloadUrl) {
+                      try {
+                        // Replace button with a proper download anchor
+                        var a = document.createElement('a');
+                        a.className = 'bought__cta';
+                        try { a.setAttribute('href', vdet.downloadUrl); } catch (e) { /* ignore */ }
+                        try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+                        try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+                        try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
+                        try { wrap.replaceChild(a, btn); } catch (e) { /* ignore */ }
+                      } catch (e) { /* ignore */ }
+                    } else {
+                      try { btn.textContent = 'Contact Support'; } catch (e) { /* ignore */ }
+                    }
+                  } catch (e) { /* ignore */ }
+                }).catch(function () { try { btn.textContent = 'Check order'; } catch (e) { /* ignore */ } });
+              } catch (e) { /* ignore click handler */ }
+            });
+          } catch (e) { /* ignore event wiring */ }
+          try { wrap.appendChild(btn); } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore */ }
+      }
+
+      // Decide which CTA to render immediately
+      try {
+        if (detail && extractDownloadUrl(detail)) {
+          makeDownloadAnchor(extractDownloadUrl(detail));
+        } else {
+          var id = detail && detail.id ? String(detail.id) : '';
+          makeSupportButton(id);
+        }
+      } catch (e) { /* ignore */ }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  /**
+   * Create a small reference display inside a data-bought-note host showing
+   * the payment reference / order id and a Copy button. This helper is
+   * defensive and idempotent: it guards with data-ssp-paid-ref so repeated
+   * calls do not duplicate UI.
+   */
+  function createBoughtNoteRef(host, id) {
+    try {
+      if (!host || !host.appendChild || !id) return;
+      // Avoid adding twice
+      try { if (host.getAttribute('data-ssp-paid-ref') === String(id)) return; } catch (e) { /* ignore */ }
+      try { host.setAttribute('data-ssp-paid-ref', String(id)); } catch (e) { /* ignore */ }
+
+      // Build a small meta span to match bought-summary's visual weight but
+      // scoped to the note area.
+      try {
+        var meta = document.createElement('span');
+        meta.className = 'bought__meta';
+
+        var refSpan = document.createElement('span');
+        refSpan.className = 'bought__ref';
+        // Use the explicit label that matches the page's bought-summary prefix
+        refSpan.textContent = 'Payment reference: ' + String(id);
+        meta.appendChild(refSpan);
+
+        var copyBtn = document.createElement('button');
+        copyBtn.setAttribute('type', 'button');
+        copyBtn.className = 'bought__copy';
+        copyBtn.textContent = 'Copy';
+        copyBtn.style.marginLeft = '8px';
+        try {
+          copyBtn.setAttribute('data-ssp-copy', 'on');
+          copyBtn.addEventListener('click', function () { try { navigator.clipboard && navigator.clipboard.writeText(String(id || '')); } catch (e) { /* ignore */ } });
+        } catch (e) { /* ignore */ }
+        meta.appendChild(copyBtn);
+
+        // Append near the end of the host so it follows the date span used in
+        // the product page bought-note markup and stays visible.
+        try { host.appendChild(meta); } catch (e) { /* ignore append errors */ }
+      } catch (e) { /* ignore building errors */ }
+
+    } catch (e) { /* ignore */ }
   }
 
   /**
@@ -399,6 +463,13 @@
               var subEl = host.querySelector('[data-bought-note-sub]');
               if (subEl) subEl.textContent = maskEmail(det.deliveryEmail || det.email || det.buyerEmail || det.customerEmail || '');
             } catch (e) { /* ignore */ }
+
+            // Render payment reference + Copy control into the note area
+            try { createBoughtNoteRef(host, det.id || det.ref || ''); } catch (e) { /* ignore */ }
+
+            // Also append any CTA area into the note host
+            try { createBoughtCta(host, det); } catch (e) { /* ignore */ }
+
           } catch (e) { /* ignore per-host */ }
         });
       } catch (e) { /* ignore */ }
@@ -573,6 +644,72 @@
 
       } catch (e) { /* ignore per-item */ }
     });
+  };
+
+  /**
+   * Initialise any data-bought-note hosts on the page from localStorage.
+   * This reveals the note, masks the buyer email, renders a payment reference
+   * and Copy control (when a stored id exists) and inserts the CTA area.
+   */
+  P.initBoughtNote = function (root) {
+    try {
+      // Read the canonical bought array and render into any matching hosts
+      var arr = readBoughtArray(null, null) || [];
+      if (!arr || !arr.length) return;
+
+      $$('[data-bought-note]').forEach(function (host) {
+        try {
+          // If this host is already revealed by a returned checkout, skip
+          if (host.getAttribute && host.getAttribute('data-ssp-paid-ref')) return;
+
+          var itemKey = attr(host, 'data-bought-item');
+          var coveredBy = attr(host, 'data-bought-covered-by') || '';
+
+          // Find a remembered purchase that matches this host (either direct
+          // item id or a cover from a bundle)
+          var matched = null;
+          for (var i = 0; i < arr.length; i++) {
+            var it = arr[i];
+            if (!it) continue;
+            // The readBoughtArray normalises a v1 mapping into item.itemName etc
+            // but also preserves an id/ref on the record.
+            // Match when either the token name matches data-bought-item or the
+            // 'coveredBy' mapping applies (a bundle covering multiple items).
+            try {
+              var tok = '';
+              try { tok = it.label || it.name || it.itemName || ''; } catch (e) { tok = ''; }
+              // Normalise token-ish strings for comparison (lowercase)
+              var tokNorm = String(tok || '').toLowerCase();
+              if (tokNorm && itemKey && tokNorm === String(itemKey).toLowerCase()) { matched = it; break; }
+              if (coveredBy) {
+                // If the host is covered by a bundle token, check that token too
+                if (String(coveredBy).toLowerCase() === tokNorm) { matched = it; break; }
+              }
+            } catch (e) { /* ignore per-item */ }
+          }
+
+          if (!matched) return;
+
+          // Reveal the host and populate title/sub as handleGroupStorePaid does
+          try { host.removeAttribute('hidden'); } catch (e) { /* ignore */ }
+          try {
+            var titleEl = host.querySelector('[data-bought-note-title]');
+            if (titleEl) titleEl.textContent = String(matched.itemName || matched.name || matched.title || matched.label || 'Purchased item');
+          } catch (e) { /* ignore */ }
+          try {
+            var subEl = host.querySelector('[data-bought-note-sub]');
+            if (subEl) subEl.textContent = maskEmail(matched.email || '');
+          } catch (e) { /* ignore */ }
+
+          // Render payment reference and copy button when available
+          try { createBoughtNoteRef(host, matched.id || matched.ref || matched.t || ''); } catch (e) { /* ignore */ }
+
+          // Insert CTA area for this host as well
+          try { createBoughtCta(host, matched); } catch (e) { /* ignore */ }
+
+        } catch (e) { /* ignore per-host */ }
+      });
+    } catch (e) { /* ignore */ }
   };
 
   // If the existing public initialisers for bought-note / bought-summary exist,
