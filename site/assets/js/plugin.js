@@ -290,12 +290,12 @@
   function maskEmail(email) {
     try {
       if (!email || typeof email !== 'string') return '';
-      var parts = email.split('@');
-      if (parts.length !== 2) return email;
-      var name = parts[0];
-      if (name.length <= 2) return '•@' + parts[1];
-      return name.charAt(0) + '…' + name.charAt(name.length - 1) + '@' + parts[1];
-    } catch (e) { return '' + email; }
+      var parts = String(email).split('@');
+      if (parts.length !== 2) return '';
+      var left = parts[0];
+      if (left.length <= 2) return left.replace(/./g, '*') + '@' + parts[1];
+      return left.slice(0, 2) + left.slice(2).replace(/./g, '*') + '@' + parts[1];
+    } catch (e) { return ''; }
   }
 
   P.initBoughtNote = function (root) {
@@ -315,17 +315,38 @@
     $$('[data-bought-summary]', root || document).forEach(function (host) {
       if (bound(host, 'bought-summary')) return;
 
-      var raw = null;
-      try { raw = attr(host, 'data-bought-summary') || window.localStorage && typeof window.localStorage.getItem === 'function' ? window.localStorage.getItem(attr(host, 'data-bought-summary')) : null; } catch (e) { raw = null; }
-
+      var attrVal = attr(host, 'data-bought-summary');
       var recs = null;
-      try { recs = JSON.parse(attr(host, 'data-bought-summary') || 'null'); } catch (e) { recs = null; }
 
-      try {
-        if (!recs && raw) {
-          try { recs = JSON.parse(raw); } catch (e) { /* ignore parse errors */ }
-        }
-      } catch (e) { /* ignore localStorage access errors */ }
+      // Step 1: If the attribute contains inline JSON that parses to an array, use it.
+      if (attrVal) {
+        try {
+          var inline = JSON.parse(attrVal);
+          if (Array.isArray(inline)) recs = inline;
+        } catch (e) { /* not JSON, continue to treat attr as key */ }
+      }
+
+      // Step 2: If attr is present but wasn't inline JSON, treat it as a localStorage key.
+      if (!recs && attrVal) {
+        try {
+          var rawKey = null;
+          try { rawKey = window.localStorage && typeof window.localStorage.getItem === 'function' ? window.localStorage.getItem(attrVal) : null; } catch (e) { rawKey = null; }
+          if (rawKey) {
+            try { var parsedKey = JSON.parse(rawKey); if (Array.isArray(parsedKey)) recs = parsedKey; } catch (e) { /* ignore parse errors */ }
+          }
+        } catch (e) { /* ignore access errors */ }
+      }
+
+      // Step 3: If still not found, fall back to the canonical key.
+      if (!recs) {
+        try {
+          var rawFallback = null;
+          try { rawFallback = window.localStorage && typeof window.localStorage.getItem === 'function' ? window.localStorage.getItem('soundshop:bought:v1') : null; } catch (e) { rawFallback = null; }
+          if (rawFallback) {
+            try { var parsedFall = JSON.parse(rawFallback); if (Array.isArray(parsedFall)) recs = parsedFall; } catch (e) { /* ignore parse errors */ }
+          }
+        } catch (e) { /* ignore access errors */ }
+      }
 
       if (!recs || !Array.isArray(recs)) return;
 
