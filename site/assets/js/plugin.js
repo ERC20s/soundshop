@@ -283,6 +283,35 @@
     });
   };
 
+  /* =======================================================================
+     07  REMEMBERED PURCHASE SUMMARY
+     ======================================================================= */
+
+  function maskEmail(email) {
+    try {
+      if (!email || typeof email !== 'string') return '';
+      var parts = email.split('@');
+      if (parts.length !== 2) return email;
+      var name = parts[0];
+      if (name.length <= 2) return '•@' + parts[1];
+      return name.charAt(0) + '…' + name.charAt(name.length - 1) + '@' + parts[1];
+    } catch (e) { return '' + email; }
+  }
+
+  P.initBoughtNote = function (root) {
+    $$('[data-bought-note]', root || document).forEach(function (node) {
+      if (bound(node, 'bought-note')) return;
+      try {
+        var key = attr(node, 'data-bought-note');
+        if (!key) return;
+        var raw = null;
+        try { raw = window.localStorage && typeof window.localStorage.getItem === 'function' ? window.localStorage.getItem(key) : null; } catch (e) { raw = null; }
+        if (!raw) return;
+        try { var parsed = JSON.parse(raw); if (parsed && typeof parsed === 'object') { node.hidden = false; } } catch (e) { /* ignore parse errors */ }
+      } catch (e) { /* ignore */ }
+    });
+  };
+
   P.initBoughtSummary = function (root) {
     $$('[data-bought-summary]', root || document).forEach(function (host) {
       try {
@@ -334,6 +363,7 @@
         var list = host.querySelector('[data-bought-summary-list]') || host;
 
         var validCount = 0;
+        var madePerItemCta = false;
         Object.keys(recs).forEach(function (k) {
           try {
             var li = document.createElement('li');
@@ -471,6 +501,19 @@
             li.appendChild(metaSpan);
             list.appendChild(li);
             validCount++;
+
+            // If this remembered record includes a payment reference, inject
+            // a per-item Order: … + Copy button directly into the list item.
+            try {
+              if (ref) {
+                try {
+                  var detail = { id: String(ref), itemName: label, quantity: r.quantity || 1, hasDeliveryEmail: !!r.email };
+                  createBoughtCta(li, detail);
+                  madePerItemCta = true;
+                } catch (e) { /* ignore per-item CTA errors */ }
+              }
+            } catch (e) { /* ignore */ }
+
           } catch (e) { /* ignore per-item */ }
         });
 
@@ -479,7 +522,7 @@
       if (validCount) {
         host.hidden = false;
         // Ensure remembered-purchase summaries get the installers/support CTA too.
-        try { createBoughtCta(host, null); } catch (e) { /* ignore */ }
+        try { if (!madePerItemCta) { createBoughtCta(host, null); } } catch (e) { /* ignore */ }
       }
     });
   };
