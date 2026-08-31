@@ -279,124 +279,8 @@
           .catch(function () {
             if (status) status.textContent = 'Failed to load presets.';
           });
-      } catch (e) { if (status) status.textContent = 'Failed to load presets.'; }
-    });
-  };
+      } catch (e) { if (status) status.textContent 
 
-  /* =======================================================================
-     07  REMEMBERED PURCHASE SUMMARY
-     ======================================================================= */
-
-  function maskEmail(email) {
-    try {
-      if (!email || typeof email !== 'string') return '';
-      var parts = email.split('@');
-      if (parts.length !== 2) return email;
-      var name = parts[0];
-      if (name.length <= 2) return '•@' + parts[1];
-      return name.charAt(0) + '…' + name.charAt(name.length - 1) + '@' + parts[1];
-    } catch (e) { return '' + email; }
-  }
-
-  P.initBoughtNote = function (root) {
-    $$('[data-bought-note]', root || document).forEach(function (node) {
-      if (bound(node, 'bought-note')) return;
-      try {
-        var key = attr(node, 'data-bought-note');
-        if (!key) return;
-        var raw = null;
-        try { raw = window.localStorage && typeof window.localStorage.getItem === 'function' ? window.localStorage.getItem(key) : null; } catch (e) { raw = null; }
-        if (!raw) return;
-        try { var parsed = JSON.parse(raw); if (parsed && typeof parsed === 'object') { node.hidden = false; } } catch (e) { /* ignore parse errors */ }
-      } catch (e) { /* ignore */ }
-    });
-  };
-
-  P.initBoughtSummary = function (root) {
-    $$('[data-bought-summary]', root || document).forEach(function (host) {
-      try {
-        if (bound(host, 'bought-summary')) return;
-
-        var recs = null;
-        try { recs = JSON.parse(attr(host, 'data-bought-summary') || 'null'); } catch (e) { recs = null; }
-        recs = recs || {};
-
-        // If there are no records supplied in the attribute, fall back to the
-        // localStorage snapshot written by the shop page's purchase listener.
-        try {
-          if (!Object.keys(recs).length && window.localStorage && typeof window.localStorage.getItem === 'function') {
-            var BOUGHT_KEY = 'soundshop:bought:v1';
-            var raw = window.localStorage.getItem(BOUGHT_KEY);
-            if (raw) {
-              try {
-                var parsed = JSON.parse(raw);
-                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                  var labelsSpan = host.querySelector('[data-bought-summary-labels]');
-                  Object.keys(parsed).forEach(function (tok) {
-                    try {
-                      var p = parsed[tok];
-                      var rec = {};
-                      if (typeof p === 'number' || (typeof p === 'string' && /^\d+$/.test(p))) {
-                        rec.t = Number(p);
-                      } else if (p && typeof p === 'object') {
-                        if (p.t) rec.t = Number(p.t);
-                        if (p.ref) rec.ref = String(p.ref);
-                        if (p.email) rec.email = String(p.email);
-                      }
-                      if (labelsSpan) {
-                        try {
-                          var lab = labelsSpan.getAttribute('data-bought-label-' + tok);
-                          if (lab) rec.label = String(lab);
-                        } catch (e) { /* ignore */ }
-                      }
-                      if ((rec.t && isFinite(rec.t)) || rec.ref || rec.email) {
-                        recs[tok] = rec;
-                      }
-                    } catch (e) { /* ignore per-item */ }
-                  });
-                }
-              } catch (e) { /* ignore parse errors */ }
-            }
-          }
-        } catch (e) { /* ignore localStorage access errors */ }
-
-        var list = host.querySelector('[data-bought-summary-list]') || host;
-
-        var validCount = 0;
-        var madePerItemCta = false;
-        Object.keys(recs).forEach(function (k) {
-          try {
-            var li = document.createElement('li');
-            li.className = 'bought';
-
-            var r = recs[k] || {};
-
-            // visible label
-            var label = (r.label || r.itemName || r.name || '').toString();
-            if (!label) label = 'A bought item';
-
-            var labelSpan = el('span', 'bought__label', label);
-            var metaSpan = el('span', 'bought__meta');
-
-            // Reference or no-reference message
-            var refPrefix = recs[k].refPrefix || r.refPrefix || '';
-            var refSuffix = recs[k].refSuffix || r.refSuffix || '';
-            var ref = recs[k].ref || '';
-            var email = recs[k].email || '';
-            if (ref) {
-              if (metaSpan.textContent) metaSpan.appendChild(document.createTextNode(' '));
-              metaSpan.appendChild(document.createTextNode(refPrefix + ref + refSuffix));
-
-              try {
-                var msg = document.createElement('a');
-                msg.textContent = 'View order & verification status';
-                msg.className = 'bought__verify';
-                msg.setAttribute('href', '#');
-                msg.style.marginLeft = '8px';
-
-                var ref = recs[k].ref;
-                var refNode = ref;
-                var msgNode = null;
 
                 // The original order verification handshake is intentionally
                 // preserved here: it calls the platform verify endpoint via
@@ -549,7 +433,16 @@
     c.className = 'bought__cta';
 
     var a1 = document.createElement('a');
-    a1.href = 'docs.html#delivery';
+    // Compute a docs base that resolves correctly from both root pages and
+    // product pages under /plugins/. When on a plugin page the docs file sits
+    // one level up, so use '../docs.html'. Default to 'docs.html' otherwise.
+    var docBase = 'docs.html';
+    try {
+      if (typeof location !== 'undefined' && typeof location.pathname === 'string' && location.pathname.indexOf('/plugins/') !== -1) {
+        docBase = '../docs.html';
+      }
+    } catch (e) { /* ignore and keep default */ }
+    a1.href = docBase + '#delivery';
     a1.textContent = 'Open installers & delivery instructions';
     a1.className = 'bought__cta-primary';
     try {
@@ -560,7 +453,7 @@
     a1.style.marginRight = '12px';
 
     var a2 = document.createElement('a');
-    a2.href = 'docs.html#support';
+    a2.href = docBase + '#support';
     a2.textContent = 'Contact support';
     a2.className = 'bought__cta-secondary';
 
@@ -632,11 +525,4 @@
         var list = host.querySelector('[data-bought-summary-list]') || host;
 
         // Delegate to the helper which builds, appends and initialises copy
-        // controls safely and marks the host as verified so this handler is idempotent.
-        try { createBoughtCta(host, detail); } catch (e) { /* ignore */ }
-
-      } catch (e) { /* swallow listener errors */ }
-    });
-  } catch (e) { /* ignore if addEventListener not available */ }
-
-})(window, document);
+  
