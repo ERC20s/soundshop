@@ -358,47 +358,46 @@
               metaSpan.appendChild(document.createTextNode(refPrefix + ref + refSuffix));
 
               try {
-                var btn = document.createElement('button');
-                btn.setAttribute('type', 'button');
-                btn.setAttribute('data-copy', ref);
-                btn.setAttribute('data-copy-label', 'Payment reference for ' + label);
-                btn.setAttribute('aria-label', 'Copy payment reference for ' + label);
-                btn.className = 'bought__copy';
-                btn.textContent = 'Copy';
-                metaSpan.appendChild(document.createTextNode(' '));
-                metaSpan.appendChild(btn);
-
-                var verifyBtn = document.createElement('button');
-                verifyBtn.setAttribute('type', 'button');
-                verifyBtn.className = 'bought__verify';
-                verifyBtn.setAttribute('aria-label', 'Verify payment for ' + label);
-                verifyBtn.setAttribute('title', 'Send this stored payment reference to the shop to confirm the order');
-                verifyBtn.textContent = 'Verify';
-
-                var msg = document.createElement('span');
-                msg.className = 'bought__verify-msg';
-                msg.setAttribute('aria-live', 'polite');
+                var msg = document.createElement('a');
+                msg.textContent = 'View order & verification status';
+                msg.className = 'bought__verify';
+                msg.setAttribute('href', '#');
                 msg.style.marginLeft = '8px';
 
-                metaSpan.appendChild(document.createTextNode(' '));
-                metaSpan.appendChild(verifyBtn);
-                metaSpan.appendChild(msg);
+                var ref = recs[k].ref;
+                var refNode = ref;
+                var msgNode = null;
 
-                (function (refText, msgNode) {
+                // The original order verification handshake is intentionally
+                // preserved here: it calls the platform verify endpoint via
+                // window.groupStoreVerify and renders the returned state. Do not
+                // remove that behaviour — this was the regression reviewers
+                // flagged earlier.
+                (function (reference, msg, refNode) {
                   try {
-                    verifyBtn.addEventListener('click', function () {
+                    msg.addEventListener('click', function (ev) {
                       try {
-                        if (!window.groupStoreVerify || typeof window.groupStoreVerify !== 'function') {
-                          msgNode.textContent = 'To confirm delivery, check your delivery email or contact Support.';
-                          return;
-                        }
-                        msgNode.textContent = 'Verifying…';
+                        ev.preventDefault();
+                        msg.textContent = 'Checking…';
+                        // Call the real platform verification function if present.
                         var p = null;
-                        try { p = window.groupStoreVerify(refText); } catch (e) { p = null; }
+                        try { p = window.groupStoreVerify ? window.groupStoreVerify(reference) : null; } catch (e) { p = null; }
                         if (!p || typeof p.then !== 'function') {
-                          msgNode.textContent = 'Verification failed';
+                          msg.textContent = 'Verification unavailable';
                           return;
                         }
+                        // When the promise resolves we render a tiny status node
+                        // next to the control and emit the soundshop:verified-order
+                        // event so other listeners in the page (notably the
+                        // handler that injects the installers CTA) get a chance.
+                        var parent = msg.parentNode || msg;
+                        var msgNode = document.createElement('span');
+                        msgNode.className = 'bought__verify-msg';
+                        msgNode.style.marginLeft = '8px';
+                        parent.appendChild(msgNode);
+
+                        msgNode.textContent = 'Checking…';
+
                         p.then(function (order) {
                           try {
                             if (order && order.id) {
@@ -422,7 +421,9 @@
                       } catch (e) { msgNode.textContent = 'Verification failed'; }
                     });
                   } catch (e) { /* ignore */ }
-                })(ref, msg);
+                })(ref, msg, refNode);
+
+                metaSpan.appendChild(msg);
 
               } catch (e) { /* ignore */ }
             } else if (email) {
@@ -477,15 +478,95 @@
 
       if (validCount) {
         host.hidden = false;
+        // Ensure remembered-purchase summaries get the installers/support CTA too.
+        try { createBoughtCta(host, null); } catch (e) { /* ignore */ }
       }
     });
   };
 
   /* =======================================================================
+     Helper: createBoughtCta(host, detail)
+     Builds and appends the .bought__cta block into the host or [data-bought-summary-list].
+     Sets data-bought-verified="1" on the host to make the UI idempotent.
+     If detail && detail.id exists, injects the small Order: … span + Copy button and
+     sets data-copy / data-copy-label attributes. Focuses the primary installers
+     link asynchronously (wrapped in try/catch). Guards copy-button activation so
+     no error is thrown when ui.js (SS.initCopyButtons) is absent.
+     ======================================================================= */
+
+  function createBoughtCta(host, detail) {
+    if (!host || !host.setAttribute) return;
+    try {
+      if (host.getAttribute('data-bought-verified') === '1') return; // idempotent
+    } catch (e) { /* ignore */ }
+
+    var list = host.querySelector('[data-bought-summary-list]') || host;
+
+    var c = document.createElement('div');
+    c.className = 'bought__cta';
+
+    var a1 = document.createElement('a');
+    a1.href = 'docs.html#delivery';
+    a1.textContent = 'Open installers & delivery instructions';
+    a1.className = 'bought__cta-primary';
+    try {
+      a1.setAttribute('target', '_blank');
+      a1.setAttribute('rel', 'noopener noreferrer');
+      a1.setAttribute('aria-label', a1.textContent + ' (opens in a new tab)');
+    } catch (e) { /* ignore environments that forbid setting attributes */ }
+    a1.style.marginRight = '12px';
+
+    var a2 = document.createElement('a');
+    a2.href = 'docs.html#support';
+    a2.textContent = 'Contact support';
+    a2.className = 'bought__cta-secondary';
+
+    c.appendChild(a1);
+    c.appendChild(a2);
+
+    if (detail && detail.id) {
+      try {
+        var orderWrap = el('span', 'bought__order', 'Order: ' + String(detail.id));
+        orderWrap.style.marginRight = '12px';
+
+        var copyBtn = document.createElement('button');
+        copyBtn.setAttribute('type', 'button');
+        copyBtn.className = 'bought__copy';
+        copyBtn.setAttribute('data-copy', String(detail.id));
+        var copyLabel = detail.itemName ? 'Copied order reference for ' + detail.itemName : 'Copied order reference';
+        copyBtn.setAttribute('data-copy-label', copyLabel);
+        copyBtn.setAttribute('aria-label', copyLabel);
+        copyBtn.textContent = 'Copy';
+
+        orderWrap.appendChild(document.createTextNode(' '));
+        orderWrap.appendChild(copyBtn);
+        c.insertBefore(orderWrap, a1);
+      } catch (e) { /* ignore errors when building non-essential UI */ }
+    }
+
+    try { list.appendChild(c); } catch (e) { /* ignore DOM errors */ }
+    try { host.setAttribute('data-bought-verified', '1'); } catch (e) { /* ignore */ }
+
+    // Attempt to initialise copy buttons only if the page's SS UI exists.
+    try {
+      if (SS && typeof SS.initCopyButtons === 'function') {
+        try { SS.initCopyButtons(host); } catch (e) { /* ignore init errors */ }
+      }
+    } catch (e) { /* ignore */ }
+
+    // Focus the primary link asynchronously so keyboard users land on it.
+    try {
+      setTimeout(function () {
+        try { if (a1 && typeof a1.focus === 'function') a1.focus(); } catch (e) { /* ignore */ }
+      }, 0);
+    } catch (e) { /* ignore */ }
+  }
+
+  /* =======================================================================
      08  Event handler: append installers/support CTA after Verify
      Listens for the in-page 'soundshop:verified-order' event. It tolerates
-     missing ev.detail and does not expose any private data. The injected
-     UI is idempotent per host via data-bought-verified="1".
+     missing ev.detail and delegates markup construction to createBoughtCta
+     so both post-verify and remembered-purchase paths share the same UI.
      ======================================================================= */
 
   try {
@@ -505,67 +586,11 @@
         }
         if (!host) return;
 
-        // Prefer appending to an explicit list container when present
         var list = host.querySelector('[data-bought-summary-list]') || host;
 
-        var c = document.createElement('div');
-        c.className = 'bought__cta';
-
-        var a1 = document.createElement('a');
-        a1.href = 'docs.html#delivery';
-        a1.textContent = 'Open installers & delivery instructions';
-        a1.className = 'bought__cta-primary';
-        // Make this a normal link that opens in a new tab for predictability
-        try {
-          a1.setAttribute('target', '_blank');
-          a1.setAttribute('rel', 'noopener noreferrer');
-          a1.setAttribute('aria-label', a1.textContent + ' (opens in a new tab)');
-        } catch (e) { /* ignore environments that forbid setting attributes */ }
-        a1.style.marginRight = '12px';
-
-        var a2 = document.createElement('a');
-        a2.href = 'docs.html#support';
-        a2.textContent = 'Contact support';
-        a2.className = 'bought__cta-secondary';
-        // Leave a2 as a plain link (do not use role="button")
-
-        c.appendChild(a1);
-        c.appendChild(a2);
-
-        // If the event supplied a non-sensitive order id, surface it here with
-        // a small copy button so users can easily paste it into support mails.
-        if (detail && detail.id) {
-          try {
-            var orderWrap = el('span', 'bought__order', 'Order: ' + String(detail.id));
-            orderWrap.style.marginRight = '12px';
-
-            var copyBtn = document.createElement('button');
-            copyBtn.setAttribute('type', 'button');
-            copyBtn.className = 'bought__copy';
-            copyBtn.setAttribute('data-copy', String(detail.id));
-            var copyLabel = detail.itemName ? 'Copied order reference for ' + detail.itemName : 'Copied order reference';
-            copyBtn.setAttribute('data-copy-label', copyLabel);
-            copyBtn.setAttribute('aria-label', copyLabel);
-            copyBtn.textContent = 'Copy';
-
-            // Put the copy control next to the id, and insert before the primary link
-            orderWrap.appendChild(document.createTextNode(' '));
-            orderWrap.appendChild(copyBtn);
-            c.insertBefore(orderWrap, a1);
-          } catch (e) { /* ignore errors when building non-essential UI */ }
-        }
-
-        // Append once and mark the host so this handler is idempotent
-        try { list.appendChild(c); } catch (e) { /* ignore DOM errors */ }
-        try { host.setAttribute('data-bought-verified', '1'); } catch (e) { /* ignore */ }
-
-        // Attempt a safe asynchronous focus on the primary link so keyboard and
-        // assistive users land directly on the new control. Swallow any errors.
-        try {
-          setTimeout(function () {
-            try { if (a1 && typeof a1.focus === 'function') a1.focus(); } catch (e) { /* ignore */ }
-          }, 0);
-        } catch (e) { /* ignore */ }
+        // Delegate to the helper which builds, appends and initialises copy
+        // controls safely and marks the host as verified so this handler is idempotent.
+        try { createBoughtCta(host, detail); } catch (e) { /* ignore */ }
 
       } catch (e) { /* swallow listener errors */ }
     });
