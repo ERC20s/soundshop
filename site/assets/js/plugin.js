@@ -270,11 +270,12 @@
         if (!isFinite(when) || when <= 0) continue;
         if ((now - when) > BOUGHT_MAX_AGE) continue; // expired
         // Shallow copy of accepted fields
-        var rec = { t: when, ref: r.ref || '', state: r.state || 'paid' };
-        if (r.email && typeof r.email === 'string') rec.email = String(r.email);
-        if (r.downloadUrl && typeof r.downloadUrl === 'string') rec.downloadUrl = String(r.downloadUrl);
-        if (r.receiptUrl && typeof r.receiptUrl === 'string') rec.receiptUrl = String(r.receiptUrl);
-        out[k] = rec;
+        out[k] = {};
+        try { if (r.t) out[k].t = Number(r.t); } catch (e) { /* ignore */ }
+        try { if (r.ref) out[k].ref = String(r.ref); } catch (e) { /* ignore */ }
+        try { if (r.email) out[k].email = String(r.email); } catch (e) { /* ignore */ }
+        try { if (r.downloadUrl) out[k].downloadUrl = String(r.downloadUrl); } catch (e) { /* ignore */ }
+        try { if (r.receiptUrl) out[k].receiptUrl = String(r.receiptUrl); } catch (e) { /* ignore */ }
       }
     } catch (e) { /* ignore */ }
     return out;
@@ -363,6 +364,59 @@
           dl.rel = 'noopener noreferrer';
           dl.setAttribute('aria-label', 'Open download in a new tab');
           wrapper.appendChild(dl);
+        } catch (e) { /* ignore */ }
+      } else if (ref && typeof window.groupStoreVerify === 'function') {
+        // Conservative, user-initiated: if we have a payment reference but no
+        // download link, offer a button to ask the platform to verify the order
+        // and persist any returned details. This is intentionally guarded so it
+        // only appears when a platform helper exists and the user clicks it.
+        try {
+          var verifyBtn = el('button', 'btn btn-ghost btn--sm', 'Verify & reveal');
+          verifyBtn.type = 'button';
+          verifyBtn.setAttribute('aria-label', 'Verify payment reference and reveal any download');
+          verifyBtn.addEventListener('click', function () {
+            try {
+              if (!ref || typeof window.groupStoreVerify !== 'function') return;
+              // Guard rapid re-clicks by disabling the control and changing text
+              var origText = verifyBtn.textContent || 'Verify & reveal';
+              try { verifyBtn.disabled = true; verifyBtn.textContent = 'Checking…'; } catch (e) { /* ignore */ }
+
+              try {
+                var p = null;
+                try { p = window.groupStoreVerify(ref); } catch (e) { p = null; }
+                if (p && typeof p.then === 'function') {
+                  p.then(function (order) {
+                    try {
+                      if (!order) return;
+                      // Persist the returned order if the canonical helper exists
+                      try {
+                        if (typeof window.soundshopPersistBought === 'function') {
+                          try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
+
+                      // Notify other listeners and refresh UI
+                      try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: order })); } catch (e) { /* ignore */ }
+                      try {
+                        if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
+                          try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
+
+                    } catch (e) { /* ignore */ }
+                  }).catch(function () { /* ignore network/verify errors */ }).finally(function () {
+                    try { verifyBtn.disabled = false; verifyBtn.textContent = origText; } catch (e) { /* ignore */ }
+                  });
+                } else {
+                  // Not a promise — restore UI
+                  try { verifyBtn.disabled = false; verifyBtn.textContent = origText; } catch (e) { /* ignore */ }
+                }
+              } catch (e) {
+                try { verifyBtn.disabled = false; verifyBtn.textContent = origText; } catch (e) { /* ignore */ }
+              }
+            } catch (e) { /* ignore handler errors */ }
+          });
+          wrapper.appendChild(verifyBtn);
         } catch (e) { /* ignore */ }
       }
 
