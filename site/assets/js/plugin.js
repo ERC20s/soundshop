@@ -240,68 +240,6 @@
     } catch (e) { return false; }
   }
 
-  // BOUGHT_MAX_AGE: how long we keep the local note (ms)
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
-
-  function readBoughtArray() {
-    try {
-      var raw = window.localStorage.getItem('soundshop:bought:v1');
-      if (!raw) return {};
-      var parsed = null;
-      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-      // Prune expired entries (best effort)
-      var now = Date.now();
-      for (var k in parsed) {
-        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
-        var r = parsed[k];
-        var isObj = !!r && typeof r === 'object' && !Array.isArray(r);
-        var when = Number(isObj ? r.t : r);
-        if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
-          delete parsed[k];
-        }
-      }
-      return parsed;
-    } catch (e) { return {}; }
-  }
-
-  // Mask a payment reference for use in support links and UI. Returns a
-  // short, human-meaningful representation: keep the last 6 characters and
-  // replace the preceding characters with an ellipsis. Fail closed: return
-  // the empty string for missing/invalid input.
-  function maskRef(ref) {
-    try {
-      if (!ref && ref !== 0) return '';
-      var s = String(ref).trim();
-      if (!s) return '';
-      var keep = 6;
-      if (s.length <= keep) return s;
-      var tail = s.slice(-keep);
-      return '…' + tail;
-    } catch (e) { return ''; }
-  }
-
-  // Mask an email address for display/query use: preserve the domain and show
-  // only a small hint of the local part. Return empty string for invalid
-  // inputs. This is intentionally conservative and does not attempt perfect
-  // RFC compliance; it mirrors the conservative validation above.
-  function maskEmail(email) {
-    try {
-      if (!email || typeof email !== 'string') return '';
-      var s = email.trim();
-      var EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-      if (!s || !EMAIL_RE.test(s)) return '';
-      var parts = s.split('@');
-      var local = parts[0] || '';
-      var domain = parts[1] || '';
-      if (!domain) return '';
-      if (!local) return '•••@' + domain;
-      var first = local.charAt(0) || '';
-      if (local.length === 1) return first + '•••@' + domain;
-      return first + '•••@' + domain;
-    } catch (e) { return ''; }
-  }
-
   // -----------------------------------------------------------------------
   // (many functions omitted here in edits — preserved in original)
   // -----------------------------------------------------------------------
@@ -423,6 +361,60 @@
           container.appendChild(a);
         } catch (e) { /* ignore */ }
       } catch (e) { /* ignore */ }
+
+      // Re-verify purchase CTA: only when no validated download or receipt is
+      // present, the recorded ref exists, and a verifier function is provided
+      // by the host page as window.groupStoreVerify. The handler accepts a
+      // synchronous or Promise return and calls the safe local persist helper
+      // when an order object is returned.
+      try {
+        var hasReceipt = false;
+        try { hasReceipt = !!(receiptUrl); } catch (e) { hasReceipt = false; }
+        if (!hasDownload && !hasReceipt && rec && rec.ref && typeof window.groupStoreVerify === 'function') {
+          var revBtn = el('button', 'button', 'Re-verify purchase');
+          try { revBtn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+          try {
+            revBtn.addEventListener('click', function (e) {
+              try {
+                var btn = e && e.currentTarget ? e.currentTarget : null;
+                try { if (btn) btn.disabled = true; } catch (err) { /* ignore */ }
+
+                var show = function (msg) {
+                  try { if (SS && typeof SS.toast === 'function') SS.toast(msg); } catch (e) { /* ignore */ }
+                };
+
+                var handleOrder = function (order) {
+                  try {
+                    if (order && typeof order === 'object') {
+                      try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                      try { show('Purchase verified'); } catch (e) { /* ignore */ }
+                    } else {
+                      try { show('Verification failed'); } catch (e) { /* ignore */ }
+                    }
+                  } catch (e) { try { show('Verification failed'); } catch (err) { /* ignore */ } }
+                  try { if (btn) btn.disabled = false; } catch (e) { /* ignore */ }
+                };
+
+                var res;
+                try { res = window.groupStoreVerify(rec.ref); } catch (err) { try { show('Verification failed'); } catch (e) { /* ignore */ } try { if (btn) btn.disabled = false; } catch (e) { /* ignore */ } return; }
+
+                try {
+                  if (res && typeof res.then === 'function') {
+                    res.then(function (order) { handleOrder(order); }, function () { try { show('Verification failed'); } catch (e) { /* ignore */ } try { if (btn) btn.disabled = false; } catch (e) { /* ignore */ } });
+                  } else {
+                    handleOrder(res);
+                  }
+                } catch (e) {
+                  try { show('Verification failed'); } catch (err) { /* ignore */ }
+                  try { if (btn) btn.disabled = false; } catch (e) { /* ignore */ }
+                }
+
+              } catch (e) { try { if (SS && typeof SS.toast === 'function') SS.toast('Verification failed'); } catch (err) { /* ignore */ } }
+            });
+          } catch (e) { /* ignore listener */ }
+          try { container.appendChild(revBtn); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore re-verify */ }
 
       return container;
     } catch (e) { return null; }
@@ -629,128 +621,4 @@
           // reuse the same node across re-renders.
           try {
             var statusSelector = '[data-bought-summary-status]';
-            var statusNode = null;
-            try { statusNode = host.querySelector(statusSelector); } catch (e) { statusNode = null; }
-
-            if (any) {
-              // Compose a short message based on the items we collected.
-              try {
-                var labels = [];
-                var latest = 0;
-                var anyDownload = false;
-                var anyReceipt = false;
-                for (var j = 0; j < items.length; j++) {
-                  try { labels.push(items[j].label || ''); } catch (e) { /* ignore */ }
-                  try { if (Number(items[j].t) > latest) latest = Number(items[j].t) || latest; } catch (e) { /* ignore */ }
-                  try { if (items[j].hasDownload) anyDownload = true; } catch (e) { /* ignore */ }
-                  try { if (items[j].hasReceipt) anyReceipt = true; } catch (e) { /* ignore */ }
-                }
-
-                var labelText = '';
-                try {
-                  if (labels.length === 1) labelText = labels[0];
-                  else if (labels.length === 2) labelText = labels[0] + ' and ' + labels[1];
-                  else if (labels.length > 2) {
-                    labelText = labels.slice(0, -1).join(', ') + ' and ' + labels[labels.length - 1];
-                  }
-                } catch (e) { labelText = labels.join(', '); }
-
-                var dateText = '';
-                try {
-                  if (latest > 0) {
-                    var d = new Date(Number(latest));
-                    var day = d.getUTCDate();
-                    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                    var mon = months[d.getUTCMonth()] || '';
-                    var year = d.getUTCFullYear();
-                    dateText = day + ' ' + mon + ' ' + year;
-                  }
-                } catch (e) { dateText = ''; }
-
-                var avail = '';
-                try {
-                  if (anyDownload) avail = 'Download available.';
-                  else if (anyReceipt) avail = 'View receipt available.';
-                  else avail = 'Contact support to get the product.';
-                } catch (e) { avail = ''; }
-
-                var message = '';
-                try {
-                  if (labelText) {
-                    if (dateText) message = labelText + ' bought on this device on ' + dateText + '. ' + avail;
-                    else message = labelText + ' bought on this device. ' + avail;
-                  } else {
-                    message = 'Purchase remembered on this device. ' + avail;
-                  }
-                } catch (e) { message = 'Purchase remembered on this device.'; }
-
-                // Create the status node if missing
-                if (!statusNode) {
-                  try {
-                    statusNode = document.createElement('p');
-                    statusNode.setAttribute('data-bought-summary-status', 'on');
-                    try { statusNode.setAttribute('role', 'status'); } catch (e) { /* ignore */ }
-                    try { statusNode.setAttribute('aria-live', 'polite'); } catch (e) { /* ignore */ }
-                    // Keep visually out of the way but available to assistive tech.
-                    try { statusNode.style.cssText = 'position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;'; } catch (e) { /* ignore */ }
-                    try { host.appendChild(statusNode); } catch (e) { /* ignore */ }
-                  } catch (e) { statusNode = null; }
-                }
-
-                if (statusNode) {
-                  try { statusNode.textContent = message || ''; } catch (e) { /* ignore */ }
-                }
-
-              } catch (e) { /* ignore compose */ }
-            } else {
-              // No purchases: remove any existing status node
-              try {
-                if (statusNode && statusNode.parentNode) statusNode.parentNode.removeChild(statusNode);
-              } catch (e) { /* ignore */ }
-            }
-          } catch (e) { /* ignore status node */ }
-
-          // Unhide the host only when we actually rendered something
-          try {
-            if (any) {
-              try { host.removeAttribute('hidden'); } catch (e) { host.hidden = false; }
-            }
-          } catch (e) { /* ignore */ }
-        } catch (e) { /* ignore render */ }
-      }
-
-      // Listen for purchases/verified events so the list refreshes
-      try {
-        document.addEventListener('group-store:paid', function () { try { render(); } catch (e) { /* ignore */ } });
-        // Some codepaths emit 'soundshop:verified-order' — reference it here
-        // so tools can statically detect support and consumers get refreshed.
-        document.addEventListener('soundshop:verified-order', function () { try { render(); } catch (e) { /* ignore */ } });
-      } catch (e) { /* ignore */ }
-
-      // Initial render
-      try { render(); } catch (e) { /* ignore */ }
-    } catch (e) { /* ignore */ }
-  }
-
-  // Export the helpers so tools/check-plugin-exports.js and consumers can find them
-  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
-  P.initUrlOrderAutoVerify = initUrlOrderAutoVerify;
-  P.initBoughtSummary = initBoughtSummary;
-  P.initBoughtNote = initBoughtNote;
-  P.createBoughtCta = createBoughtCta;
-  P.maskRef = maskRef;
-  P.maskEmail = maskEmail;
-
-  // Run the conservative auto-verify on DOM ready so it operates after any
-  // initial UI rendering. This mirrors other init semantics and is safe to
-  // call multiple times.
-  try {
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initUrlOrderAutoVerify);
-    } else {
-      // DOM already ready
-      try { initUrlOrderAutoVerify(); } catch (e) { /* ignore */ }
-    }
-  } catch (e) { /* ignore */ }
-
-})(window, document);
+            var statu
