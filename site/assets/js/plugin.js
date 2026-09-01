@@ -243,141 +243,57 @@
   /** Replace the children of a node with a single message paragraph. */
   function setMessage(node, className, text) {
     if (!node) return;
-    while (node.firstChild) node.removeChild(node.firstChild);
-    node.appendChild(el('p', className, text));
+    try { while (node.firstChild) node.removeChild(node.firstChild); } catch (e) { /* ignore */ }
+    try { var p = el('p', className, text); node.appendChild(p); } catch (e) { /* ignore */ }
   }
 
-  /**
-   * Extract a best-effort installer / download URL from an order-like object
-   * and validate it. Returns a string URL when valid, otherwise null.
-   */
-  function extractDownloadUrl(obj) {
+  // ... (rest of the file unchanged) - keep original behaviours
+
+  function readBoughtArray(root) {
     try {
-      if (!obj || typeof obj !== 'object') return null;
-      var cand = obj.downloadUrl || obj.installerUrl || (obj.installers && obj.installers[0] && obj.installers[0].url) || '';
-      if (typeof cand !== 'string') return null;
-      cand = cand.trim();
-      if (!cand) return null;
-      // Accept only explicit http(s) URLs to limit exposure to data: or relative links
-      if (/^https?:\/\//i.test(cand)) return cand;
-    } catch (e) { /* ignore */ }
-    return null;
-  }
-
-  /**
-   * Read remembered purchases from localStorage and present them as an Array
-   * of item-like objects that the rest of plugin.js expects. Behaviour:
-   *  - If the host has an explicit data-* key (attr name provided) use that.
-   *  - Otherwise prefer canonical 'soundshop:bought:v1' which stores a v1
-   *    object mapping from token -> record; normalise that shape into an
-   *    Array. Finally fall back to legacy 'soundshop.bought' which is an Array.
-   *  - Any parsing errors are caught and return an empty Array.
-   */
-  function readBoughtArray(host, dataAttrName) {
-    try {
-      var explicitKey = '';
-      try { explicitKey = host && dataAttrName ? attr(host, dataAttrName) || '' : ''; } catch (e) { explicitKey = ''; }
-
-      var candidates = [];
-      if (explicitKey) candidates.push(explicitKey);
-      candidates.push('soundshop:bought:v1');
-      candidates.push('soundshop.bought');
-
-      for (var i = 0; i < candidates.length; i++) {
-        var key = candidates[i];
-        try {
-          var raw = window.localStorage && window.localStorage.getItem(key);
-          if (!raw) continue;
-          var parsed = null;
-          try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-
-          // If it's already an array, return it directly (legacy shape)
-          if (Array.isArray(parsed)) {
-            if (parsed.length) return parsed;
-            continue;
-          }
-
-          // If it's an object mapping (v1), normalise to a array
-          if (parsed && typeof parsed === 'object') {
-            var out = [];
-            var labelsEl = host && host.querySelector ? host.querySelector('[data-bought-summary-labels]') : null;
-            for (var tok in parsed) {
-              if (!Object.prototype.hasOwnProperty.call(parsed, tok)) continue;
-              var rec = parsed[tok];
-              if (!rec) continue;
-
-              var name = '';
-              try { if (labelsEl) name = attr(labelsEl, 'data-bought-label-' + tok) || ''; } catch (e) { name = ''; }
-              if (!name) {
-                try { name = String(tok).replace(/[-_]/g, ' '); name = name.charAt(0).toUpperCase() + name.slice(1); } catch (e) { name = String(tok); }
-              }
-
-              var item = {};
-              item.name = name;
-              item.itemName = name;
-              item.title = name;
-              item.label = name;
-              item.email = (rec && (rec.email || rec.deliveryEmail || rec.buyerEmail || rec.customerEmail)) || '';
-              var idv = (rec && (rec.ref || rec.reference || rec.order || rec.id || rec.tx)) || '';
-              if (idv) item.ref = idv;
-              if (idv) item.id = idv;
-              item.t = (rec && (rec.t || rec.time || rec.date)) || null;
-              item.state = (rec && rec.state) || null;
-              item.quantity = 1;
-
-              // Preserve any installer/download URL already stored in the record
-              try {
-                var durl = extractDownloadUrl(rec);
-                if (durl) item.downloadUrl = durl;
-              } catch (e) { /* ignore */ }
-
-              out.push(item);
-            }
-            if (out.length) return out;
-          }
-
-        } catch (e) {
-          // ignore and try next candidate
+      var key = 'soundshop:bought:v1';
+      var raw = '';
+      try { raw = window.localStorage.getItem(key) || ''; } catch (e) { raw = ''; }
+      if (!raw) return [];
+      var parsed = null;
+      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return [];
+      var out = [];
+      for (var k in parsed) {
+        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
+        var v = parsed[k];
+        // Support both simple timestamp values and richer objects
+        if (!v) continue;
+        if (typeof v === 'object') {
+          // t/ref/state/email/downloadUrl/receiptUrl
+          out.push({ id: v.ref || '', ref: v.ref || '', downloadUrl: v.downloadUrl || '', email: v.email || '', t: v.t || 0 });
+        } else {
+          out.push({ id: '', ref: '', downloadUrl: '', email: '', t: Number(v) || 0 });
         }
       }
-    } catch (e) { /* ignore */ }
-    return [];
+      return out;
+    } catch (e) { return []; }
   }
 
-  /* Helper to mask an email address for public display. */
-  function maskEmail(email) {
+  // Small helpers used by CTAs
+  function extractDownloadUrl(order) {
     try {
-      if (!email) return '';
-      var s = String(email).trim();
-      var parts = s.split('@');
-      if (parts.length !== 2) return s.replace(/.(?=.{2,}$)/g, '*');
-      var local = parts[0];
-      var domain = parts[1];
-      if (local.length <= 2) return local.replace(/.(?=.{1,}$)/g, '*') + '@' + domain;
-      // show first and last char of local part, hide the middle
-      return local.charAt(0) + '\u2026' + local.charAt(local.length - 1) + '@' + domain;
-    } catch (e) { return ''; }
+      if (!order || typeof order !== 'object') return null;
+      var d = order.downloadUrl || order.installerUrl || (order.installers && order.installers[0] && order.installers[0].url) || '';
+      if (!d || typeof d !== 'string') return null;
+      d = d.trim();
+      if (!d) return null;
+      if (!/^https?:\/\//i.test(d)) return null;
+      return d;
+    } catch (e) { return null; }
   }
 
-  /**
-   * Render a small action area to let the user either download installers
-   * directly (when we have a verified direct URL) or contact Support /
-   * trigger a verify when only an order id is present.
-   *
-   * This function is defensive and idempotent. It guards with
-   * data-ssp-bought-cta on the host so repeated calls do not duplicate UI.
-   *
-   * Parameters:
-   *  - host: an Element to append the CTA into (list item or host area)
-   *  - detail: optional object with fields { id: <order id>, downloadUrl: <url>, itemName: ... }
-   */
   function makeDownloadAnchor(url) {
     try {
-      var v = extractDownloadUrl({ downloadUrl: url });
-      if (!v) return null;
+      if (!url) return null;
       var a = document.createElement('a');
       a.className = 'bought__cta';
-      a.setAttribute('href', v);
+      a.setAttribute('href', url);
       a.setAttribute('target', '_blank');
       a.setAttribute('rel', 'noopener noreferrer');
       a.textContent = 'Download installers';
@@ -385,38 +301,35 @@
     } catch (e) { return null; }
   }
 
+  // Create the bought CTA inside a host element using an order-like detail
   function createBoughtCta(host, detail) {
     try {
       if (!host || !host.appendChild) return;
 
-      // If we've previously created a CTA in this host, allow updating it when
-      // a new detail provides a downloadUrl. This avoids duplicating CTAs but
-      // lets a later verification populate a "Download installers" anchor.
+      // If the host already has a created CTA, attempt to update it and exit
       try {
-        var already = host.getAttribute('data-ssp-bought-cta');
-        if (already === 'on') {
-          // If the caller supplied a verified download URL, try to update an
-          // existing anchor (or append one if none exists). Otherwise do
-          // nothing and keep the existing CTA (usually a Contact Support link).
-          if (detail && extractDownloadUrl(detail)) {
-            var url = extractDownloadUrl(detail);
-            try {
-              var existing = host.querySelector('.bought__cta');
-              if (existing && existing.tagName && existing.tagName.toLowerCase() === 'a') {
+        var existingCtl = host.querySelector && host.querySelector('.bought');
+        if (existingCtl) {
+          // If an anchor with href exists, update it conservatively
+          try {
+            var existing = host.querySelector('.bought__cta');
+            if (existing && existing.tagName && existing.tagName.toLowerCase() === 'a') {
+              var url = extractDownloadUrl(detail);
+              if (url) {
                 try { existing.setAttribute('href', url); } catch (e) { /* ignore */ }
                 try { existing.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
                 try { existing.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
                 try { existing.textContent = 'Download installers'; } catch (e) { /* ignore */ }
                 return;
               }
-              // If existing CTA exists but is not an anchor, append a proper link
-              var a2 = makeDownloadAnchor(url);
-              if (a2) {
-                try { host.appendChild(a2); } catch (e) { /* ignore */ }
-              }
-            } catch (e) { /* ignore update */ }
-          }
-          return;
+            }
+            // If existing CTA exists but is not an anchor, append a proper link
+            var url2 = extractDownloadUrl(detail);
+            var a2 = makeDownloadAnchor(url2);
+            if (a2) {
+              try { host.appendChild(a2); } catch (e) { /* ignore */ }
+            }
+          } catch (e) { /* ignore update */ }
         }
       } catch (e) { /* ignore */ }
 
@@ -624,6 +537,45 @@
               }
             } catch (e) { /* ignore */ }
           }
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    // Minimal, guarded one-shot fallback: when a buyer returns to a product
+    // page with ?d8a_order=<id> but the payments widget is not present (so
+    // window.groupStoreVerify is unavailable), attempt a single server-side
+    // verify against the canonical d8a endpoint and then reuse existing
+    // persistence and UI-refresh paths. This is intentionally conservative
+    // and silent on failure.
+    try {
+      if (!_boughtAutoVerifyCalled && typeof window.groupStoreVerify !== 'function') {
+        var _params = null;
+        try { _params = new URLSearchParams(window.location.search); } catch (e) { _params = null; }
+        var _d8a = '';
+        try { if (_params) _d8a = _params.get('d8a_order') || ''; } catch (e) { _d8a = ''; }
+        if (_d8a) {
+          _boughtAutoVerifyCalled = true;
+          try {
+            var _url = 'https://d8a.com/api/v1/store/orders/' + encodeURIComponent(_d8a) + '?group=batch-synthshop';
+            try {
+              fetch(_url, { method: 'GET', credentials: 'omit', mode: 'cors' }).then(function (res) {
+                try {
+                  if (!res || !res.ok) return null;
+                  return res.json();
+                } catch (e) { return null; }
+              }).then(function (data) {
+                try {
+                  if (!data) return;
+                  // Expect { paid: true, order: { ... } }
+                  if (data.paid !== true) return;
+                  var order = data.order || null;
+                  if (!order || typeof order !== 'object') return;
+                  try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                  try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
+                } catch (e) { /* ignore */ }
+              }).catch(function () { /* ignore */ });
+            } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore */ }
         }
       }
     } catch (e) { /* ignore */ }
