@@ -307,6 +307,23 @@
         }
       } catch (e) { /* ignore */ }
 
+      // If a provider receipt URL is present, expose it as a simple Receipt CTA.
+      // Conservative guard: string, trimmed, length limit and https? scheme only.
+      try {
+        var rurl = '';
+        if (record && typeof record === 'object') rurl = record.receiptUrl || '';
+        if (typeof rurl === 'string') {
+          rurl = rurl.trim();
+          if (rurl && rurl.length <= 2000 && /^https?:\/\//i.test(rurl)) {
+            var receiptA = el('a', 'button', 'Receipt');
+            receiptA.href = rurl;
+            receiptA.target = '_blank';
+            receiptA.rel = 'noopener noreferrer';
+            wrapper.appendChild(receiptA);
+          }
+        }
+      } catch (e) { /* ignore */ }
+
       // Show a Verify & reveal button when we have a reference but no URL
       try {
         var hasRef = !!record.ref;
@@ -361,82 +378,71 @@
 
   function initBoughtSummary(root) {
     try {
-      var host = $("[data-bought-summary]", root || document);
-      if (!host) return;
-      if (bound(host, 'bought-summary')) return;
-      // Find the list element
-      var list = $("[data-bought-summary-list]", host) || host.querySelector('ul') || null;
+      var list = $("[data-bought-summary]", root || document);
       if (!list) return;
+      if (bound(list, 'bought-summary')) return;
 
-      // Labels
-      var labContainer = $("[data-bought-summary-labels]", host) || $("[data-bought-summary-labels]", document) || null;
-      var labels = {};
-      if (labContainer) {
-        var attrs = labContainer.attributes || [];
-        for (var i = 0; i < attrs.length; i++) {
-          var name = attrs[i].name;
-          var m = name.match(/^data-bought-label-(.+)$/);
-          if (m) labels[m[1]] = attrs[i].value;
-        }
-      }
+      var labels = {
+        vanta: 'VANTA',
+        drift: 'DRIFT',
+        prism: 'PRISM',
+        anvil: 'ANVIL',
+        bundle: 'FULL SHOP'
+      };
 
-      var prefixDate = attr(host, 'data-bought-summary-date-prefix') || '';
-      var prefixRef = attr(host, 'data-bought-summary-ref-prefix') || '';
-      var suffixRef = attr(host, 'data-bought-summary-ref-suffix') || '';
-      var norefText = attr(host, 'data-bought-summary-noref') || '';
+      var prefixDate = attr(list, 'data-bought-prefix-date') || '';
+      var prefixRef = attr(list, 'data-bought-prefix-ref') || '';
+      var suffixRef = attr(list, 'data-bought-suffix-ref') || '';
+      var norefText = attr(list, 'data-bought-noref-text') || '';
 
-      // Clear existing items (idempotent)
-      try { while (list.firstChild) list.removeChild(list.firstChild); } catch (e) { }
+      try {
+        var buys = readBoughtArray();
+        Object.keys(buys).forEach(function (token) {
+          try {
+            var d = buys[token];
+            if (!d) return;
+            var li = el('li', 'bought-summary__item');
 
-      var bought = readBoughtArray();
-      var keys = Object.keys(bought);
-      if (!keys.length) return;
+            // Label for the product
+            var labelText = (labels && labels[token]) ? labels[token] : token.toUpperCase();
+            var labelEl = el('div', 'bought-summary__label', labelText);
+            li.appendChild(labelEl);
 
-      keys.forEach(function (token) {
-        try {
-          var d = bought[token];
-          if (!d) return;
-          var li = el('li', 'bought-summary__item');
-
-          // Label for the product
-          var labelText = (labels && labels[token]) ? labels[token] : token.toUpperCase();
-          var labelEl = el('div', 'bought-summary__label', labelText);
-          li.appendChild(labelEl);
-
-          // Date
-          if (d.t) {
-            var when = new Date(Number(d.t));
-            var dateEl = el('div', 'bought-summary__date', (prefixDate || '') + when.toLocaleString());
-            li.appendChild(dateEl);
-          }
-
-          // Reference or fallback
-          if (d.ref) {
-            var refEl = el('div', 'bought-summary__ref', (prefixRef || '') + d.ref + (suffixRef || ''));
-            li.appendChild(refEl);
-          } else if (norefText) {
-            var norefEl = el('div', 'bought-summary__noref', norefText);
-            li.appendChild(norefEl);
-          }
-
-          // Masked email if present
-          if (d.email) {
-            var e = maskEmail(d.email);
-            if (e) {
-              var em = el('div', 'bought-summary__email', e);
-              li.appendChild(em);
+            // Date
+            if (d.t) {
+              var when = new Date(Number(d.t));
+              var dateEl = el('div', 'bought-summary__date', (prefixDate || '') + when.toLocaleString());
+              li.appendChild(dateEl);
             }
-          }
 
-          // CTAs
-          var ctnHost = el('div', 'bought-summary__ctas');
-          createBoughtCta(ctnHost, d);
-          li.appendChild(ctnHost);
+            // Reference or fallback
+            if (d.ref) {
+              var refEl = el('div', 'bought-summary__ref', (prefixRef || '') + d.ref + (suffixRef || ''));
+              li.appendChild(refEl);
+            } else if (norefText) {
+              var norefEl = el('div', 'bought-summary__noref', norefText);
+              li.appendChild(norefEl);
+            }
 
-          list.appendChild(li);
-        } catch (e) { /* ignore per-record */ }
-      });
+            // Masked email if present
+            if (d.email) {
+              var e = maskEmail(d.email);
+              if (e) {
+                var em = el('div', 'bought-summary__email', e);
+                li.appendChild(em);
+              }
+            }
 
+            // CTAs
+            var ctnHost = el('div', 'bought-summary__ctas');
+            createBoughtCta(ctnHost, d);
+            li.appendChild(ctnHost);
+
+            list.appendChild(li);
+          } catch (e) { /* ignore per-record */ }
+        });
+
+      } catch (e) { /* ignore */ }
     } catch (e) { /* ignore */ }
   }
 
