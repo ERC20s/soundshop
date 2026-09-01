@@ -309,6 +309,24 @@
     } catch (e) { return ''; }
   }
 
+  // Conservatively extract a provider-supplied receipt URL. Mirrors the
+  // checks used when soundshopPersistBought accepts and stores receiptUrl so
+  // the UI only exposes links that look like HTTP(S) URLs and are bounded in
+  // length to avoid accidental exposure of arbitrary data.
+  function extractReceiptUrl(o) {
+    try {
+      var MAX_RECEIPT_LEN = 2000;
+      if (!o || typeof o !== 'object') return '';
+      var r = o.receiptUrl || o.receipt || '';
+      if (typeof r !== 'string') return '';
+      r = r.trim();
+      if (!r) return '';
+      if (r.length > MAX_RECEIPT_LEN) return '';
+      if (!/^https?:\/\//i.test(r)) return '';
+      return r;
+    } catch (e) { return ''; }
+  }
+
   function createBoughtCta(hostEl, record) {
     try {
       if (!hostEl || !record || typeof record !== 'object') return null;
@@ -320,15 +338,32 @@
       var wrapper = el('div', 'bought-summary__ctas__wrap');
       var hasCta = false;
 
-      // If we have a download URL already, expose it
+      // If we have a validated download URL already, expose it
       try {
-        if (record.downloadUrl) {
+        var d = extractDownloadUrl(record);
+        if (d) {
           var a = el('a', 'button button--primary', 'Download');
-          a.href = String(record.downloadUrl);
+          a.href = d;
           a.target = '_blank';
           a.rel = 'noopener noreferrer';
           wrapper.appendChild(a);
           hasCta = true;
+        }
+      } catch (e) { /* ignore */ }
+
+      // If no download CTA was added, consider exposing a provider receipt
+      // link only when it passes conservative validation via extractReceiptUrl.
+      try {
+        if (!hasCta) {
+          var r = extractReceiptUrl(record);
+          if (r) {
+            var ra = el('a', 'button', 'Receipt');
+            ra.href = r;
+            ra.target = '_blank';
+            ra.rel = 'noopener noreferrer';
+            wrapper.appendChild(ra);
+            hasCta = true;
+          }
         }
       } catch (e) { /* ignore */ }
 
@@ -392,6 +427,19 @@
             // Insert after the button if present, else append
             if (btn && btn.parentNode) btn.parentNode.insertBefore(a, btn.nextSibling);
             else banner.appendChild(a);
+          } else {
+            // No download: consider exposing a validated receipt link next to the Verified button
+            try {
+              var r = extractReceiptUrl(order);
+              if (r) {
+                var ra = el('a', 'button', 'Receipt');
+                ra.href = r;
+                ra.target = '_blank';
+                ra.rel = 'noopener noreferrer';
+                if (btn && btn.parentNode) btn.parentNode.insertBefore(ra, btn.nextSibling);
+                else banner.appendChild(ra);
+              }
+            } catch (e) { /* ignore */ }
           }
         }
       } catch (e) { /* ignore banner update errors */ }
