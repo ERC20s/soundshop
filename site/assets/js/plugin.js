@@ -636,138 +636,34 @@
           }
           p.then(function (order) {
             try {
-              if (!order) {
-                failRestore('No order found — Contact Support');
-                return;
-              }
-
-              // Persist the discovered order into localStorage using the
-              // defensive soundshopPersistBought helper if present.
+              // On any successful verify we persist and broadcast the order —
+              // do not gate these side-effects on the presence of a download URL.
               try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-
-              // Dispatch an in-page event so existing UI refresh logic runs.
               try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
 
-              // Attempt to update the nearby CTA: prefer calling createBoughtCta
-              // on a sensible host (note element, list item, or nearest parent)
+              // Remove banner if present (some callers use the banner UI)
               try {
-                var host = btn.closest('[data-bought-note]') || btn.closest('li.bought__item') || btn.closest('[data-bought-summary]') || btn.parentNode || document;
-                if (host && typeof createBoughtCta === 'function') {
-                  try { createBoughtCta(host, order); } catch (e) { /* ignore */ }
-
-                  // After creating/updating the CTA, reveal and focus the Download anchor if present
-                  try {
-                    var durl = extractDownloadUrl(order);
-                    if (durl) {
-                      var candidate = null;
-                      try { candidate = host.querySelector('.bought__cta[href]'); } catch (e) { candidate = null; }
-                      if (!candidate) {
-                        try { candidate = document.querySelector('.bought__cta[href]'); } catch (e) { candidate = null; }
-                      }
-                      if (candidate && candidate.getAttribute && String(candidate.getAttribute('href')).trim() === durl) {
-                        try { focusAndReveal(candidate); } catch (e) { /* ignore */ }
-                      }
-                    }
-                  } catch (e) { /* ignore */ }
-                }
+                var banner = e && e.target ? e.target.closest('.ssp-url-order-verify') : null;
+                if (banner && banner.parentNode) banner.parentNode.removeChild(banner);
               } catch (e) { /* ignore */ }
 
-              // Final button state: if we can detect a download URL, prefer to
-              // leave the CTA area to show a Download anchor; still update text.
+              // Reveal and focus the Download CTA if present for this order
               try {
                 var d = extractDownloadUrl(order);
                 if (d) {
-                  try { btn.textContent = 'Verified'; } catch (e) { /* ignore */ }
-                  try { btn.disabled = false; } catch (e) { /* ignore */ }
-                  try { btn.removeAttribute('data-ssp-verifying'); } catch (e) { /* ignore */ }
-                  return;
+                  var cand = null;
+                  try { cand = document.querySelector('.bought__cta[href]'); } catch (e) { cand = null; }
+                  if (cand && cand.getAttribute && String(cand.getAttribute('href')).trim() === d) {
+                    try { focusAndReveal(cand); } catch (e) { /* ignore */ }
+                  }
                 }
               } catch (e) { /* ignore */ }
-
-              try { btn.textContent = 'Verified'; } catch (e) { /* ignore */ }
-              try { btn.disabled = false; } catch (e) { /* ignore */ }
-              try { btn.removeAttribute('data-ssp-verifying'); } catch (e) { /* ignore */ }
 
             } catch (e) {
               failRestore('Verify failed — Contact Support');
             }
           }).catch(function () { failRestore('Verify failed — Contact Support'); });
-        } catch (e) {
-          failRestore('Verify failed — Contact Support');
-        }
-
-      } catch (e) { /* ignore handler errors */ }
-    });
-  } catch (e) { /* ignore binding */ }
-
-  // Add delegated handler for Copy reference buttons [data-ssp-bought-copy]
-  try {
-    document.addEventListener('click', function (e) {
-      try {
-        var btn = e.target && e.target.closest ? e.target.closest('[data-ssp-bought-copy]') : null;
-        if (!btn) return;
-        var tag = (btn.tagName || '').toLowerCase();
-        if (tag !== 'button' && tag !== 'a' && tag !== 'input') return;
-
-        e.preventDefault && e.preventDefault();
-
-        var ref = attr(btn, 'data-ssp-bought-copy') || '';
-        if (!ref) return;
-
-        // Provide immediate disabled/feedback state while copying
-        var orig = btn.textContent || '';
-        try { btn.disabled = true; } catch (e) { /* ignore */ }
-        try { btn.textContent = 'Copying…'; } catch (e) { /* ignore */ }
-
-        copyToClipboard(ref).then(function () {
-          try { btn.textContent = 'Copied'; } catch (e) { /* ignore */ }
-          // transient hint node for additional feedback
-          try {
-            var hint = el('div', 'bought__copy-hint', 'Reference copied to clipboard');
-            hint.style.cssText = 'display:inline-block;margin-left:8px;font-size:13px;color:#6b7280';
-            try { btn.parentNode && btn.parentNode.insertBefore(hint, btn.nextSibling); } catch (e) { /* ignore */ }
-            setTimeout(function () { try { if (hint && hint.parentNode) hint.parentNode.removeChild(hint); } catch (e) { /* ignore */ } }, 4000);
-          } catch (e) { /* ignore */ }
-        }).catch(function () {
-          try { btn.textContent = 'Copy failed'; } catch (e) { /* ignore */ }
-          // leave a short hint suggesting manual copy
-          try {
-            var hint2 = el('div', 'bought__copy-hint', 'Select and copy the reference manually');
-            hint2.style.cssText = 'display:inline-block;margin-left:8px;font-size:13px;color:#6b7280';
-            try { btn.parentNode && btn.parentNode.insertBefore(hint2, btn.nextSibling); } catch (e) { /* ignore */ }
-            setTimeout(function () { try { if (hint2 && hint2.parentNode) hint2.parentNode.removeChild(hint2); } catch (e) { /* ignore */ } }, 6000);
-          } catch (e) { /* ignore */ }
-        }).finally(function () {
-          try { setTimeout(function () { try { btn.textContent = orig; } catch (e) { /* ignore */ } try { btn.disabled = false; } catch (e) { /* ignore */ } }, 800); } catch (e) { /* ignore */ }
-        });
-
-      } catch (e) { /* ignore */ }
-    });
-  } catch (e) { /* ignore binding */ }
-
-  // Listen for in-page verification events so a later discovery of a
-  // verified download URL can update CTAs and summaries without a full page reload.
-  try {
-    document.addEventListener('soundshop:verified-order', function (evt) {
-      try {
-        // evt.detail is expected to be an order-like object stored or discovered
-        // by the in-page verifier. Persisting is the responsibility of the
-        // code that discovered it; here we re-run init functions to refresh UI.
-        P.initBoughtSummary();
-        P.initBoughtNote();
-
-        // If an order was supplied, reveal and focus a matching Download CTA
-        try {
-          var ord = evt && evt.detail ? evt.detail : null;
-          var url = extractDownloadUrl(ord);
-          if (url) {
-            var cand = null;
-            try { cand = document.querySelector('.bought__cta[href]'); } catch (e) { cand = null; }
-            if (cand && cand.getAttribute && String(cand.getAttribute('href')).trim() === url) {
-              try { focusAndReveal(cand); } catch (e) { /* ignore */ }
-            }
-          }
-        } catch (e) { /* ignore */ }
+        } catch (e) { failRestore('Verify failed — Contact Support'); }
 
       } catch (e) { /* ignore */ }
     });
@@ -804,6 +700,9 @@
         banner.appendChild(text);
 
         var controls = el('div', 'ssp-url-order-verify__controls');
+
+        // We'll replace the simple Verify button with a richer UI after a
+        // successful verify: a small summary and action controls.
         var btn = el('button', 'btn btn-ghost', 'Verify purchase');
         try { btn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
         controls.appendChild(btn);
@@ -835,11 +734,92 @@
                 else if (json && typeof json === 'object' && json.order && typeof json.order === 'object' && json.order.paid === true) order = json.order;
                 if (!order) throw new Error('not-paid-or-no-order');
 
+                // Persist and dispatch regardless of download URL presence
                 try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
                 try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
 
-                // Remove banner on success
-                try { if (banner && banner.parentNode) banner.parentNode.removeChild(banner); } catch (e) { /* ignore */ }
+                // Replace banner contents with a minimal verified-order summary
+                try {
+                  // Clear existing children
+                  try { banner.innerHTML = ''; } catch (e) { /* ignore */ }
+
+                  var summ = el('div', 'ssp-url-order-verify__summary');
+                  summ.style.flex = '1';
+
+                  // Item name
+                  try {
+                    var name = order.itemName || order.name || order.item || '';
+                    var nm = el('div', 'ssp-url-order-verify__item', String(name || 'Purchased item'));
+                    nm.style.fontWeight = '600';
+                    summ.appendChild(nm);
+                  } catch (e) { /* ignore */ }
+
+                  // Purchase date when provided (try common fields)
+                  try {
+                    var dateStr = order.paidAt || order.purchasedAt || order.createdAt || order.date || '';
+                    if (dateStr) {
+                      var d = String(dateStr);
+                      var pd = el('div', 'ssp-url-order-verify__date', d);
+                      pd.style.fontSize = '13px'; pd.style.color = '#6b7280';
+                      summ.appendChild(pd);
+                    }
+                  } catch (e) { /* ignore */ }
+
+                  // Payment reference or masked email
+                  try {
+                    var ref = order.ref || order.reference || order.id || '';
+                    var label = ref;
+                    if (!label) {
+                      var em = order.email || order.buyerEmail || order.customerEmail || '';
+                      label = em ? maskEmail(em) : '';
+                    }
+                    if (label) {
+                      var r = el('div', 'ssp-url-order-verify__ref', String(label));
+                      r.style.fontSize = '13px'; r.style.color = '#374151';
+                      summ.appendChild(r);
+                    }
+                  } catch (e) { /* ignore */ }
+
+                  banner.appendChild(summ);
+
+                  // Controls area: conservative Download anchor (https only) and Copy button
+                  var act = el('div', 'ssp-url-order-verify__actions');
+                  act.style.display = 'flex'; act.style.gap = '8px'; act.style.alignItems = 'center';
+
+                  // Download only when a conservative https URL is present
+                  try {
+                    var durl = extractDownloadUrl(order);
+                    if (durl) {
+                      var da = makeDownloadAnchor(durl);
+                      if (da) act.appendChild(da);
+                    }
+                  } catch (e) { /* ignore */ }
+
+                  // Copy reference button
+                  try {
+                    var copyRef = order.ref || order.reference || order.id || '';
+                    if (copyRef) {
+                      var cb = el('button', 'btn btn-ghost', 'Copy reference');
+                      try { cb.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+                      // Behaviour: copy, show transient feedback
+                      cb.addEventListener('click', function () {
+                        var orig = cb.textContent || 'Copy reference';
+                        cb.disabled = true;
+                        copyToClipboard(String(copyRef)).then(function () {
+                          try { cb.textContent = 'Copied!'; } catch (e) { /* ignore */ }
+                          setTimeout(function () { try { cb.textContent = orig; cb.disabled = false; } catch (e) { /* ignore */ } }, 2000);
+                        }).catch(function () {
+                          try { cb.textContent = 'Copy failed'; } catch (e) { /* ignore */ }
+                          setTimeout(function () { try { cb.textContent = orig; cb.disabled = false; } catch (e) { /* ignore */ } }, 2000);
+                        });
+                      });
+                      act.appendChild(cb);
+                    }
+                  } catch (e) { /* ignore */ }
+
+                  banner.appendChild(act);
+
+                } catch (e) { /* ignore */ }
 
                 // Reveal and focus the Download CTA if present for this order
                 try {
@@ -943,5 +923,6 @@
   P.maskEmail = maskEmail;
   P.createBoughtCta = createBoughtCta;
   P.copyToClipboard = copyToClipboard;
+  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
 
 }(window, document));
