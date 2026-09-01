@@ -292,208 +292,102 @@ html[data-standalone] .demo [data-frameless] { display: inline-flex; }
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  color: var(--accent-text);
-  background:
-    radial-gradient(circle at 34% 28%, var(--hi-1), transparent 58%),
-    var(--knob-metal);
-  box-shadow: 0 2px 0 var(--sh-1), inset 0 1px 0 var(--hi-1);
-  animation: demo-standby 2.6s var(--ease-inout) infinite;
-}
-.power__glyph svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-@keyframes demo-standby {
-  0%, 100% { box-shadow: 0 2px 0 var(--sh-1), inset 0 1px 0 var(--hi-1), 0 0 0 0 var(--accent-a35); }
-  50%      { box-shadow: 0 2px 0 var(--sh-1), inset 0 1px 0 var(--hi-1), 0 0 26px -6px var(--accent-a35); }
-}
-
-/* --- footer strip ----------------------------------------------------- */
-.demo-foot {
-  border-block-start: 1px solid var(--line);
-  background: var(--bg-elev);
-  padding: 12px var(--gutter);
-}
-.demo-foot p {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--fs-micro);
-  letter-spacing: 0.06em;
-  color: var(--text-mute);
-}
-.demo-foot .demo-bar__sep { height: 10px; }
-
-/* --- short viewports (the 360px-tall iframe on the flagship page) ------ */
-@media (max-height: 620px) {
-  .demo-main { gap: 12px; padding-block: 12px; }
-  .scope { aspect-ratio: 16 / 5; }
-  .demo-keys .keybed { height: 92px; }
-}
-@media (max-height: 460px) {
-  .power__sub, .power__note { display: none; }
-  .power__inner { gap: var(--sp-2); padding: 18px; }
-}
 </style>
 </head>
-<body>
+<body data-demo>
 
-<a class="skip-link" href="#main">Skip to content</a>
+<header class="demo-bar" role="banner">
+  <h1 class="demo-bar__name">VANTA</h1>
+  <span class="demo-bar__sep" aria-hidden="true"></span>
+  <div class="demo-bar__state">
+    <span class="badge badge--version">v1.4.0</span>
+    <div class="theme-toggle" aria-hidden="true"></div>
+  </div>
+</header>
 
-<div class="demo" data-demo>
+<main class="demo-main">
 
-  <header class="demo-bar">
-    <span class="brand-mark" aria-hidden="true"></span>
-    <h1 class="demo-bar__name">VANTA<span class="sr-only"> — playable browser demo</span></h1>
-    <span class="badge badge--version num">v1.4.0</span>
+  <section class="panel demo-presets" id="presets" data-presets
+           data-presets-src="../presets/flagship-presets.json" aria-label="Presets">
+    <div class="panel__body demo-presets__body">
+      <span class="rack__group-label">Presets</span>
+      <label class="sr-only" for="preset-select">Preset</label>
+      <select class="select demo-presets__select" id="preset-select" data-preset-select></select>
+      <button class="btn btn--sm btn--mono" type="button" data-preset-prev aria-label="Previous preset">Prev</button>
+      <button class="btn btn--sm btn--mono" type="button" data-preset-next aria-label="Next preset">Next</button>
+      <button class="btn btn--sm btn--mono" type="button" data-preset-random>Random</button>
+      <button class="btn btn--sm btn--mono" type="button" data-preset-init>Init</button>
+      <p class="demo-presets__meta" aria-live="polite">
+        <span class="label label--micro" data-preset-source>Loading patch bank</span>
+        <span data-preset-desc></span>
+      </p>
+    </div>
+  </section>
+
+  <!-- keyboard (moved above the rack to make the primary playable control first) -->
+  <section class="panel demo-keys" id="keys">
+    <div class="panel__head demo-keys__head">
+      <span class="rack__group-label">Keyboard</span>
+      <span class="demo-oct push">
+        <button class="btn btn--sm btn--mono" type="button" data-oct-down aria-label="Octave down">Oct −</button>
+        <span class="num demo-oct__range" data-oct-display>C4–F6</span>
+        <button class="btn btn--sm btn--mono" type="button" data-oct-up aria-label="Octave up">Oct +</button>
+      </span>
+    </div>
+    <div class="panel__body demo-keys__body">
+      <div class="keybed" data-keybed role="group"
+           aria-label="Two and a half octave keybed. Play it with the pointer, or with the computer keys listed below.">
+        <div class="keybed__keys" data-keys></div>
+      </div>
+      <p class="demo-hint">
+        Play with the computer keyboard —
+        <kbd>A</kbd><kbd>W</kbd><kbd>S</kbd><kbd>E</kbd><kbd>D</kbd><kbd>F</kbd><kbd>T</kbd><kbd>G</kbd><kbd>Y</kbd><kbd>H</kbd><kbd>U</kbd><kbd>J</kbd><kbd>K</kbd><kbd>O</kbd><kbd>L</kbd><kbd>P</kbd><kbd>;</kbd>
+        run chromatically up from the leftmost C. <kbd>Z</kbd> and <kbd>X</kbd> shift the octave.
+        Drag any knob, or scroll it, or focus it and use the arrow keys; hold
+        <kbd>Shift</kbd> for fine adjustment and double-click to reset a control to its default.
+      </p>
+    </div>
+  </section>
+
+  <!-- the rack itself, rendered from SSSynth.PARAM_SPEC -->
+  <div class="demo-rack" id="rack" data-rack></div>
+
+</main>
+
+<footer class="demo-foot">
+  <p>
+    <span>Browser demo — audio quality and voice count are limited by the browser; the plugin is not.</span>
     <span class="demo-bar__sep" aria-hidden="true"></span>
-    <span class="label demo-bar__tag">8-voice virtual-analog polysynth</span>
-    <span class="demo-bar__state push">
-      <span class="led" data-power-led aria-hidden="true"></span>
-      <span class="label" data-power-state>Standby</span>
-    </span>
-    <a class="btn btn-ghost btn--sm btn--mono" href="../index.html" data-frameless>Soundshop</a>
-    <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false"
-            aria-label="Switch colour theme" data-frameless><span data-theme-label>Dark</span></button>
-  </header>
+    <span>VANTA 1.4.0 · VST3 · AU · AAX · CLAP</span>
+  </p>
+</footer>
 
-  <main class="demo-main" id="main">
-
-    <noscript>
-      <div class="note note--warn">
-        <p class="note__title">JavaScript required</p>
-        <p>VANTA's browser build is a live audio engine, so this page needs JavaScript to run.
-          Everything else on the site — the reference documentation, the preset library and the
-          changelog — reads fine without it.</p>
-      </div>
-    </noscript>
-
-    <!-- screen: scope + spectrum, master, metering, transport -->
-    <section class="panel demo-screen" aria-label="Oscilloscope and transport">
-      <div class="panel__body demo-screen__body">
-
-        <div class="scope" data-scope>
-          <canvas data-layer="grid" aria-hidden="true"></canvas>
-          <canvas data-layer="spectrum" aria-hidden="true"></canvas>
-          <canvas data-layer="trace" role="img"
-                  aria-label="Oscilloscope and spectrum analyser for the VANTA output bus"></canvas>
-          <div class="scope__readout num" aria-hidden="true">
-            <span data-read-level>-inf dB</span>
-            <span data-read-voices>0/8 voices</span>
-            <span data-read-note>—</span>
-            <span data-read-rate>standby</span>
-          </div>
-        </div>
-
-        <div class="demo-side">
-          <div class="demo-side__block">
-            <div data-master-slot></div>
-            <div class="demo-metering">
-              <span class="label label--micro">Output</span>
-              <span class="meter meter--vu">
-                <span class="meter__bar" data-meter-bar></span>
-                <span class="meter__scale"></span>
-                <span class="meter__peak" data-meter-peak></span>
-                <span class="meter__clip" data-meter-clip></span>
-              </span>
-              <span class="label label--micro">Voices</span>
-              <span class="demo-voices" data-voices aria-hidden="true"></span>
-            </div>
-          </div>
-
-          <div class="demo-transport">
-            <button class="btn btn--sm btn--mono" type="button" data-standby aria-pressed="false">Power on</button>
-            <button class="btn btn--sm btn--mono" type="button" data-panic>Panic</button>
-            <button class="btn btn--sm btn--mono" type="button" data-copy-patch>Copy patch</button>
-            <button class="btn btn--sm btn--mono" type="button" data-scope-motion aria-pressed="false" hidden>Animate scope</button>
-          </div>
-        </div>
-
-      </div>
-    </section>
-
-    <!-- presets -->
-    <section class="panel demo-presets" id="presets" data-presets
-             data-presets-src="../presets/flagship-presets.json" aria-label="Presets">
-      <div class="panel__body demo-presets__body">
-        <span class="rack__group-label">Presets</span>
-        <label class="sr-only" for="preset-select">Preset</label>
-        <select class="select demo-presets__select" id="preset-select" data-preset-select></select>
-        <button class="btn btn--sm btn--mono" type="button" data-preset-prev aria-label="Previous preset">Prev</button>
-        <button class="btn btn--sm btn--mono" type="button" data-preset-next aria-label="Next preset">Next</button>
-        <button class="btn btn--sm btn--mono" type="button" data-preset-random>Random</button>
-        <button class="btn btn--sm btn--mono" type="button" data-preset-init>Init</button>
-        <p class="demo-presets__meta" aria-live="polite">
-          <span class="label label--micro" data-preset-source>Loading patch bank</span>
-          <span data-preset-desc></span>
-        </p>
-      </div>
-    </section>
-
-    <!-- the rack itself, rendered from SSSynth.PARAM_SPEC -->
-    <div class="demo-rack" id="rack" data-rack></div>
-
-    <!-- keyboard -->
-    <section class="panel demo-keys" id="keys">
-      <div class="panel__head demo-keys__head">
-        <span class="rack__group-label">Keyboard</span>
-        <span class="demo-oct push">
-          <button class="btn btn--sm btn--mono" type="button" data-oct-down aria-label="Octave down">Oct −</button>
-          <span class="num demo-oct__range" data-oct-display>C4–F6</span>
-          <button class="btn btn--sm btn--mono" type="button" data-oct-up aria-label="Octave up">Oct +</button>
+<!-- power overlay: the AudioContext needs a gesture before it will make sound -->
+<div class="power" data-overlay role="dialog" aria-modal="true" aria-labelledby="power-title">
+  <div class="panel panel--chamfer power__card">
+    <div class="power__inner">
+      <p class="eyebrow">VANTA / 1.4.0 / browser build</p>
+      <h2 class="power__title" id="power-title" data-power-title>Click to power on</h2>
+      <p class="power__sub" data-power-sub>
+        Browsers keep audio silent until someone asks for it. One click builds the eight-voice
+        engine in this tab — two oscillators and a sub per voice, a resonant filter, two
+        envelopes, an LFO, delay, reverb and an arpeggiator.
+      </p>
+      <button class="power__btn" type="button" data-power-btn>
+        <span class="power__glyph" aria-hidden="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 3.5v8.5"></path>
+            <path d="M6.6 7.1a7.6 7.6 0 1 0 10.8 0"></path>
+          </svg>
         </span>
-      </div>
-      <div class="panel__body demo-keys__body">
-        <div class="keybed" data-keybed role="group"
-             aria-label="Two and a half octave keybed. Play it with the pointer, or with the computer keys listed below.">
-          <div class="keybed__keys" data-keys></div>
-        </div>
-        <p class="demo-hint">
-          Play with the computer keyboard —
-          <kbd>A</kbd><kbd>W</kbd><kbd>S</kbd><kbd>E</kbd><kbd>D</kbd><kbd>F</kbd><kbd>T</kbd><kbd>G</kbd><kbd>Y</kbd><kbd>H</kbd><kbd>U</kbd><kbd>J</kbd><kbd>K</kbd><kbd>O</kbd><kbd>L</kbd><kbd>P</kbd><kbd>;</kbd>
-          run chromatically up from the leftmost C. <kbd>Z</kbd> and <kbd>X</kbd> shift the octave.
-          Drag any knob, or scroll it, or focus it and use the arrow keys; hold
-          <kbd>Shift</kbd> for fine adjustment and double-click to reset a control to its default.
-        </p>
-      </div>
-    </section>
-
-  </main>
-
-  <footer class="demo-foot">
-    <p>
-      <span>Browser demo — audio quality and voice count are limited by the browser; the plugin is not.</span>
-      <span class="demo-bar__sep" aria-hidden="true"></span>
-      <span>VANTA 1.4.0 · VST3 · AU · AAX · CLAP</span>
-    </p>
-  </footer>
-
-  <!-- power overlay: the AudioContext needs a gesture before it will make sound -->
-  <div class="power" data-overlay role="dialog" aria-modal="true" aria-labelledby="power-title">
-    <div class="panel panel--chamfer power__card">
-      <div class="power__inner">
-        <p class="eyebrow">VANTA / 1.4.0 / browser build</p>
-        <h2 class="power__title" id="power-title" data-power-title>Click to power on</h2>
-        <p class="power__sub" data-power-sub>
-          Browsers keep audio silent until someone asks for it. One click builds the eight-voice
-          engine in this tab — two oscillators and a sub per voice, a resonant filter, two
-          envelopes, an LFO, delay, reverb and an arpeggiator.
-        </p>
-        <button class="power__btn" type="button" data-power-btn>
-          <span class="power__glyph" aria-hidden="true">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M12 3.5v8.5"></path>
-              <path d="M6.6 7.1a7.6 7.6 0 1 0 10.8 0"></path>
-            </svg>
-          </span>
-          <span>Power on VANTA</span>
-        </button>
-        <p class="power__note" data-power-note>
-          Nothing is downloaded, nothing is installed, and no account is required.
-        </p>
-      </div>
+        <span>Power on VANTA</span>
+      </button>
+      <p class="power__note" data-power-note>
+        Nothing is downloaded, nothing is installed, and no account is required.
+      </p>
     </div>
   </div>
+</div>
 
 </div>
 
