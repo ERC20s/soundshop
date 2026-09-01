@@ -82,7 +82,7 @@ payments:
   })();
   </script>
 
-# url: https://example.com   — where it runs live; shown as a globe once set.
+url: https://verkl.com
 # run: — how to run it. Yours to edit; VS Code's ▶ (the VSD8A extension) launches each entry.
 run:
   {
