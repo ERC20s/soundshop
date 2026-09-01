@@ -292,120 +292,53 @@ html[data-standalone] .demo [data-frameless] { display: inline-flex; }
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  color: var(--accent-text);
-  background:
-    radial-gradient(circle at 34% 28%, var(--hi-1), transparent 58%),
-    var(--knob-metal);
-  box-shadow: 0 2px 0 var(--sh-1), inset 0 1px 0 var(--hi-1);
-  animation: demo-standby 2.6s var(--ease-inout) infinite;
-}
-.power__glyph svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-@keyframes demo-standby {
-  0%, 100% { box-shadow: 0 2px 0 var(--sh-1), inset 0 1px 0 var(--hi-1), 0 0 0 0 var(--accent-a35); }
-  50%      { box-shadow: 0 2px 0 var(--sh-1), inset 0 1px 0 var(--hi-1), 0 0 26px -6px var(--accent-a35); }
-}
-
-/* --- footer strip ----------------------------------------------------- */
-.demo-foot {
-  border-block-start: 1px solid var(--line);
-  background: var(--bg-elev);
-  padding: 12px var(--gutter);
-}
-.demo-foot p {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--fs-micro);
-  letter-spacing: 0.06em;
-  color: var(--text-mute);
-}
-.demo-foot .demo-bar__sep { height: 10px; }
-
-/* --- short viewports (the 360px-tall iframe on the flagship page) ------ */
-@media (max-height: 620px) {
-  .demo-main { gap: 12px; padding-block: 12px; }
-  .scope { aspect-ratio: 16 / 5; }
-  .demo-keys .keybed { height: 92px; }
-}
-@media (max-height: 460px) {
-  .power__sub, .power__note { display: none; }
-  .power__inner { gap: var(--sp-2); padding: 18px; }
-}
+ }
 </style>
 </head>
-<body>
 
-<a class="skip-link" href="#main">Skip to content</a>
+<body class="bg-2" data-demo>
 
-<div class="demo" data-demo>
-
-  <header class="demo-bar">
-    <span class="brand-mark" aria-hidden="true"></span>
-    <h1 class="demo-bar__name">VANTA<span class="sr-only"> — playable browser demo</span></h1>
-    <span class="badge badge--version num">v1.4.0</span>
+  <header class="demo-bar" role="banner" aria-hidden="false">
+    <h1 class="demo-bar__name">VANTA</h1>
     <span class="demo-bar__sep" aria-hidden="true"></span>
-    <span class="label demo-bar__tag">8-voice virtual-analog polysynth</span>
-    <span class="demo-bar__state push">
-      <span class="led" data-power-led aria-hidden="true"></span>
-      <span class="label" data-power-state>Standby</span>
-    </span>
-    <a class="btn btn-ghost btn--sm btn--mono" href="../index.html" data-frameless>Soundshop</a>
-    <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false"
-            aria-label="Switch colour theme" data-frameless><span data-theme-label>Dark</span></button>
+    <span class="demo-bar__tag">Flagship demo</span>
+
+    <div style="flex:1 1 auto"></div>
+
+    <div class="demo-bar__state">
+      <button class="btn btn--sm btn--mono" type="button" data-copy-patch>Copy patch</button>
+      <button class="btn btn--sm btn--mono" type="button" data-download>Download</button>
+      <button class="btn btn--sm btn--mono" type="button" data-buy>Buy</button>
+    </div>
   </header>
 
-  <main class="demo-main" id="main">
+  <main class="demo-main">
 
-    <noscript>
-      <div class="note note--warn">
-        <p class="note__title">JavaScript required</p>
-        <p>VANTA's browser build is a live audio engine, so this page needs JavaScript to run.
-          Everything else on the site — the reference documentation, the preset library and the
-          changelog — reads fine without it.</p>
-      </div>
-    </noscript>
-
-    <!-- screen: scope + spectrum, master, metering, transport -->
-    <section class="panel demo-screen" aria-label="Oscilloscope and transport">
+    <section class="panel demo-screen" aria-label="Demo screen">
       <div class="panel__body demo-screen__body">
-
-        <div class="scope" data-scope>
-          <canvas data-layer="grid" aria-hidden="true"></canvas>
-          <canvas data-layer="spectrum" aria-hidden="true"></canvas>
-          <canvas data-layer="trace" role="img"
-                  aria-label="Oscilloscope and spectrum analyser for the VANTA output bus"></canvas>
-          <div class="scope__readout num" aria-hidden="true">
-            <span data-read-level>-inf dB</span>
-            <span data-read-voices>0/8 voices</span>
-            <span data-read-note>—</span>
-            <span data-read-rate>standby</span>
-          </div>
-        </div>
-
-        <div class="demo-side">
-          <div class="demo-side__block">
-            <div data-master-slot></div>
-            <div class="demo-metering">
-              <span class="label label--micro">Output</span>
-              <span class="meter meter--vu">
-                <span class="meter__bar" data-meter-bar></span>
-                <span class="meter__scale"></span>
-                <span class="meter__peak" data-meter-peak></span>
-                <span class="meter__clip" data-meter-clip></span>
-              </span>
-              <span class="label label--micro">Voices</span>
-              <span class="demo-voices" data-voices aria-hidden="true"></span>
+        <div>
+          <div class="panel panel--chamfer scope" aria-label="Oscilloscope">
+            <div class="panel__body scope__view" style="min-height: 120px; position: relative">
+              <canvas width="800" height="240" role="img" aria-label="Oscilloscope"></canvas>
             </div>
-          </div>
+            <div class="panel__foot scope__readout">
+              <div class="demo-metering">
+                <span class="label">Output</span>
+                <div class="meter" data-meter></div>
+              </div>
+              <div>
+                <span class="label">Voices</span>
+                <span class="demo-voices" data-voices aria-hidden="true"></span>
+              </div>
 
-          <div class="demo-transport">
-            <button class="btn btn--sm btn--mono" type="button" data-standby aria-pressed="false">Power on</button>
-            <button class="btn btn--sm btn--mono" type="button" data-panic>Panic</button>
-            <button class="btn btn--sm btn--mono" type="button" data-copy-patch>Copy patch</button>
-            <button class="btn btn--sm btn--mono" type="button" data-scope-motion aria-pressed="false" hidden>Animate scope</button>
+              <div class="demo-transport">
+                <button class="btn btn--sm btn--mono" type="button" data-standby aria-pressed="false">Power on</button>
+                <button class="btn btn--sm btn--mono" type="button" data-panic>Panic</button>
+                <button class="btn btn--sm btn--mono" type="button" data-copy-patch>Copy patch</button>
+                <button class="btn btn--sm btn--mono" type="button" data-scope-motion aria-pressed="false" hidden>Animate scope</button>
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -429,9 +362,6 @@ html[data-standalone] .demo [data-frameless] { display: inline-flex; }
         </p>
       </div>
     </section>
-
-    <!-- the rack itself, rendered from SSSynth.PARAM_SPEC -->
-    <div class="demo-rack" id="rack" data-rack></div>
 
     <!-- keyboard -->
     <section class="panel demo-keys" id="keys">
@@ -457,6 +387,9 @@ html[data-standalone] .demo [data-frameless] { display: inline-flex; }
         </p>
       </div>
     </section>
+
+    <!-- the rack itself, rendered from SSSynth.PARAM_SPEC -->
+    <div class="demo-rack" id="rack" data-rack></div>
 
   </main>
 
