@@ -240,8 +240,6 @@
     } catch (e) { return false; }
   }
 
-  var BOUGHT_MAX_AGE = (60 * 24 * 60 * 60 * 1000); // 60 days (ms)
-
   function readBoughtArray() {
     try {
       var raw = window.localStorage.getItem('soundshop:bought:v1');
@@ -249,6 +247,7 @@
       var parsed = null;
       try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+
       // Prune expired records (best-effort)
       try {
         var now = Date.now();
@@ -294,6 +293,11 @@
   function createBoughtCta(hostEl, record) {
     try {
       if (!hostEl || !record || typeof record !== 'object') return null;
+
+      // One-shot guard: avoid appending duplicate CTA markup when callers
+      // may invoke createBoughtCta multiple times against the same hostEl.
+      if (bound(hostEl, 'bought-cta')) return null;
+
       var wrapper = el('div', 'bought-summary__ctas__wrap');
 
       // If we have a download URL already, expose it
