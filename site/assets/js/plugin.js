@@ -244,6 +244,83 @@
   // (many functions omitted here in edits — preserved in original)
   // -----------------------------------------------------------------------
 
+  // Create CTAs for a bought-summary list item. Returns a container element
+  // or null. This helper is idempotent and guarded by data-ssp-bought-cta so
+  // re-runs of initBoughtSummary do not duplicate elements.
+  function createBoughtCta(host, rec, token) {
+    try {
+      if (!host || !host.setAttribute) return null;
+      // Guard to be idempotent
+      try {
+        if (host.getAttribute('data-ssp-bought-cta') === 'on') return null;
+        host.setAttribute('data-ssp-bought-cta', 'on');
+      } catch (e) { /* ignore */ }
+
+      // Prefer using a validated download URL helper when present
+      var hasDownload = false;
+      try {
+        if (typeof extractDownloadUrl === 'function') {
+          try { hasDownload = !!extractDownloadUrl(rec); } catch (e) { hasDownload = false; }
+        } else {
+          hasDownload = !!(rec && rec.downloadUrl);
+        }
+      } catch (e) { hasDownload = false; }
+
+      var container = el('div', 'bought-summary__ctas');
+
+      // If we have a download, the normal page may already offer a Download
+      // CTA; only add a Contact support CTA when no download is present.
+      if (!hasDownload) {
+        // Find the summary host to read configuration
+        var summaryHost = (host && typeof host.closest === 'function') ? host.closest('[data-bought-summary]') : document.querySelector('[data-bought-summary]');
+        var base = '';
+        try { base = attr(summaryHost, 'data-bought-summary-support-href') || ''; } catch (e) { base = ''; }
+        if (!base) base = '../docs.html#support';
+
+        // Mask the reference and build query parameters. Use maskRef when
+        // available to avoid leaking full payment refs.
+        var masked = '';
+        try { if (rec && rec.ref && typeof maskRef === 'function') masked = maskRef(String(rec.ref)); else if (rec && rec.ref) masked = String(rec.ref); } catch (e) { masked = String(rec && rec.ref ? rec.ref : ''); }
+        var prod = token || '';
+
+        // Insert query parameters before any hash fragment
+        var hash = '';
+        var qbase = base;
+        try {
+          var idx = base.indexOf('#');
+          if (idx !== -1) {
+            qbase = base.slice(0, idx);
+            hash = base.slice(idx);
+          }
+        } catch (e) { qbase = base; hash = ''; }
+
+        var sep = qbase.indexOf('?') !== -1 ? '&' : '?';
+        var params = [];
+        if (masked) params.push('ref=' + encodeURIComponent(masked));
+        if (prod) params.push('product=' + encodeURIComponent(prod));
+        var href = qbase + (params.length ? (sep + params.join('&')) : '') + (hash || '');
+
+        // Build link
+        var a = el('a', 'button', 'Contact support');
+        try { a.setAttribute('href', href); } catch (e) { /* ignore */ }
+        try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+        try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+
+        // Build an accessible label referencing the product when available
+        var prodLabel = prod || '';
+        try {
+          var lblEl = host.querySelector('.bought-summary__label');
+          if (lblEl && lblEl.textContent) prodLabel = (lblEl.textContent || '').trim();
+        } catch (e) { /* ignore */ }
+        try { a.setAttribute('aria-label', 'Contact support about ' + (prodLabel || 'your') + ' purchase'); } catch (e) { /* ignore */ }
+
+        container.appendChild(a);
+      }
+
+      return container;
+    } catch (e) { return null; }
+  }
+
   function initBoughtSummary(root) {
     try {
       var host = root || document.querySelector('[data-bought-summary]');
@@ -404,7 +481,7 @@
 
             // CTAs
             try {
-              var ctas = createBoughtCta(li, rec);
+              var ctas = createBoughtCta(li, rec, token);
               if (ctas) li.appendChild(ctas);
             } catch (e) { /* ignore */ }
 
@@ -439,6 +516,7 @@
   P.initUrlOrderAutoVerify = initUrlOrderAutoVerify;
   P.initBoughtSummary = initBoughtSummary;
   P.initBoughtNote = initBoughtNote;
+  P.createBoughtCta = createBoughtCta;
 
   // Run the conservative auto-verify on DOM ready so it operates after any
   // initial UI rendering. This mirrors other init semantics and is safe to
