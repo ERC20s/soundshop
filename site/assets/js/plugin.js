@@ -378,6 +378,77 @@
       }
     } catch (e) { /* ignore guard */ }
 
+    // Add a guarded per-item "Copy reference" CTA when a reference is present.
+    // Each button captures its own reference string in a local variable so the
+    // click handler always copies the correct value even when createBoughtCta
+    // is invoked multiple times.
+    try {
+      try {
+        var perRef = String(record.ref || '').trim();
+        if (perRef) {
+          var copyBtn = el('button', 'button button--muted', 'Copy reference');
+          copyBtn.type = 'button';
+
+          (function (localRef, btn) {
+            try { btn.addEventListener('click', function () {
+              try {
+                if (btn.disabled) return;
+                btn.disabled = true;
+                var original = btn.textContent;
+
+                // Utility to show transient feedback and restore state
+                function _showFeedback(msg) {
+                  try { btn.textContent = msg; } catch (e) { }
+                  setTimeout(function () { try { btn.textContent = original; btn.disabled = false; } catch (e) { } }, 2000);
+                }
+
+                // Prefer the Clipboard API when available
+                if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                  try {
+                    navigator.clipboard.writeText(localRef).then(function () { _showFeedback('Copied!'); }).catch(function () {
+                      // Fallback to textarea method on failure
+                      try {
+                        var ta = document.createElement('textarea');
+                        ta.value = localRef;
+                        ta.style.position = 'fixed';
+                        ta.style.left = '-9999px';
+                        document.body.appendChild(ta);
+                        ta.select();
+                        var ok = false;
+                        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+                        try { document.body.removeChild(ta); } catch (e) { }
+                        _showFeedback(ok ? 'Copied!' : 'Copy failed');
+                      } catch (e) { _showFeedback('Copy failed'); }
+                    });
+                  } catch (e) { _showFeedback('Copy failed'); }
+                } else {
+                  // Synchronous textarea fallback when Clipboard API is not present
+                  try {
+                    var ta2 = document.createElement('textarea');
+                    ta2.value = localRef;
+                    ta2.style.position = 'fixed';
+                    ta2.style.left = '-9999px';
+                    document.body.appendChild(ta2);
+                    ta2.select();
+                    var ok2 = false;
+                    try { ok2 = document.execCommand('copy'); } catch (e) { ok2 = false; }
+                    try { document.body.removeChild(ta2); } catch (e) { }
+                    _showFeedback(ok2 ? 'Copied!' : 'Copy failed');
+                  } catch (e) { _showFeedback('Copy failed'); }
+                }
+
+              } catch (e) {
+                try { btn.disabled = false; btn.textContent = original; } catch (er) { }
+              }
+            }); } catch (e) { }
+          })(perRef, copyBtn);
+
+          wrapper.appendChild(copyBtn);
+          hasCta = true;
+        }
+      } catch (e) { /* ignore per-item copy */ }
+    } catch (e) { /* ignore */ }
+
     // Fallback: when no other CTA was added, look for a support URL on the
     // nearest [data-bought-summary] ancestor and show a muted "Get help" link.
     try {
