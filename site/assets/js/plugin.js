@@ -447,6 +447,23 @@
             // Insert after the button if present, else append
             if (btn && btn.parentNode) btn.parentNode.insertBefore(a, btn.nextSibling);
             else banner.appendChild(a);
+
+            // Announce availability to assistive tech politely by appending a
+            // short sentence to the banner text. Guard against duplicates.
+            try {
+              if (textEl) {
+                var sentence = 'Download available.';
+                if (String(textEl.textContent || '').indexOf(sentence) === -1) {
+                  // Ensure spacing
+                  try {
+                    var t = String(textEl.textContent || '');
+                    if (t && !/\s$/.test(t)) t = t + ' ';
+                    textEl.textContent = t + sentence;
+                  } catch (e) { /* ignore */ }
+                }
+              }
+            } catch (e) { /* ignore */ }
+
           } else {
             // No download: consider exposing a validated receipt link next to the Verified button
             try {
@@ -500,8 +517,8 @@
       // Need server-side verify helper to exist.
       if (typeof window.groupStoreVerify !== 'function') return;
 
-      // If there's already a Download CTA inside the bought-summary, the
-      // banner is unnecessary.
+      // If there's already a Download CTA inside the bought-summa
+      //ry, the banner is unnecessary.
       try {
         if (document.querySelector('[data-bought-summary] a.button.button--primary')) return;
       } catch (e) { /* ignore */ }
@@ -516,6 +533,9 @@
       banner.style.cssText = 'font:13px system-ui,sans-serif;color:#065f46;margin:8px 0;padding:10px;border:1px solid #d1fae5;background:#ecfdf5;border-radius:6px;';
       var masked = maskRef(orderId);
       var text = el('span', '', 'We detected a returned order on the URL' + (masked ? ' (ref ' + masked + '). ' : '. '));
+      // Ensure assistive technologies receive a short, non-disruptive announcement
+      // when this text changes.
+      try { text.setAttribute('aria-live', 'polite'); text.setAttribute('role', 'status'); } catch (e) { /* ignore */ }
       var btn = el('button', 'button', 'Verify returned purchase');
       btn.type = 'button';
 
