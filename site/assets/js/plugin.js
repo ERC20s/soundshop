@@ -242,27 +242,24 @@
 
   function readBoughtArray() {
     try {
+      var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
       var raw = window.localStorage.getItem('soundshop:bought:v1');
       if (!raw) return {};
       var parsed = null;
       try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-
-      // Prune expired records (best-effort)
-      try {
-        var now = Date.now();
-        var changed = false;
-        for (var k in parsed) {
-          if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
-          var r = parsed[k];
-          var isObj = !!r && typeof r === 'object' && !Array.isArray(r);
-          var when = Number(isObj ? r.t : r);
-          if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) { delete parsed[k]; changed = true; }
-        }
-        if (changed) {
-          try { window.localStorage.setItem('soundshop:bought:v1', JSON.stringify(parsed)); } catch (e) { /* ignore */ }
-        }
-      } catch (e) { /* ignore prune */ }
+      var now = Date.now();
+      var changed = false;
+      for (var k in parsed) {
+        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
+        var r = parsed[k];
+        var isObj = !!r && typeof r === 'object' && !Array.isArray(r);
+        var when = Number(isObj ? r.t : r);
+        if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) { delete parsed[k]; changed = true; }
+      }
+      if (changed) {
+        try { window.localStorage.setItem('soundshop:bought:v1', JSON.stringify(parsed)); } catch (e) { }
+      }
       return parsed;
     } catch (e) { return {}; }
   }
@@ -308,6 +305,21 @@
           a.target = '_blank';
           a.rel = 'noopener noreferrer';
           wrapper.appendChild(a);
+        }
+      } catch (e) { /* ignore */ }
+
+      // If we have a provider receipt URL, expose it as a muted CTA
+      try {
+        var r = record.receiptUrl || record.receipt || '';
+        if (typeof r === 'string') {
+          r = r.trim();
+          if (r && /^https?:\/\//i.test(r)) {
+            var receiptA = el('a', 'button button--muted', 'Receipt');
+            receiptA.href = String(r);
+            receiptA.target = '_blank';
+            receiptA.rel = 'noopener noreferrer';
+            wrapper.appendChild(receiptA);
+          }
         }
       } catch (e) { /* ignore */ }
 
