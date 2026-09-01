@@ -240,6 +240,31 @@
     } catch (e) { return false; }
   }
 
+  // BOUGHT_MAX_AGE: how long we keep the local note (ms)
+  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
+
+  function readBoughtArray() {
+    try {
+      var raw = window.localStorage.getItem('soundshop:bought:v1');
+      if (!raw) return {};
+      var parsed = null;
+      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      // Prune expired entries (best effort)
+      var now = Date.now();
+      for (var k in parsed) {
+        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
+        var r = parsed[k];
+        var isObj = !!r && typeof r === 'object' && !Array.isArray(r);
+        var when = Number(isObj ? r.t : r);
+        if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
+          delete parsed[k];
+        }
+      }
+      return parsed;
+    } catch (e) { return {}; }
+  }
+
   // -----------------------------------------------------------------------
   // (many functions omitted here in edits — preserved in original)
   // -----------------------------------------------------------------------
@@ -267,6 +292,30 @@
       } catch (e) { hasDownload = false; }
 
       var container = el('div', 'bought-summary__ctas');
+
+      // If a provider receipt URL is present, surface a 'View receipt' button
+      // before adding the Contact support CTA so users can quickly open the
+      // payment provider's receipt page. Use extractReceiptUrl when available
+      // for validation; otherwise fall back to rec.receiptUrl.
+      try {
+        var receiptUrl = '';
+        try {
+          if (typeof extractReceiptUrl === 'function') {
+            try { receiptUrl = extractReceiptUrl(rec) || ''; } catch (e) { receiptUrl = ''; }
+          } else {
+            receiptUrl = (rec && rec.receiptUrl) ? String(rec.receiptUrl) : '';
+          }
+        } catch (e) { receiptUrl = ''; }
+
+        if (receiptUrl) {
+          var ra = el('a', 'button', 'View receipt');
+          try { ra.setAttribute('href', receiptUrl); } catch (e) { /* ignore */ }
+          try { ra.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+          try { ra.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+          try { ra.setAttribute('aria-label', 'View payment receipt'); } catch (e) { /* ignore */ }
+          container.appendChild(ra);
+        }
+      } catch (e) { /* ignore receipt anchor */ }
 
       // If we have a download, the normal page may already offer a Download
       // CTA; only add a Contact support CTA when no download is present.
@@ -357,127 +406,99 @@
               if (labelsEl) {
                 var attr = 'data-bought-label-' + token;
                 var v = labelsEl.getAttribute(attr);
-                if (v) label = v;
-              }
-            } catch (e) { /* ignore */ }
-            var lbl = el('span', 'bought-summary__label', label);
-            li.appendChild(lbl);
-
-            // Date
-            try {
-              var prefix = attr(host, 'data-bought-summary-date-prefix') || '';
-              var when = Number(rec.t || 0) || 0;
-              var dateText = '';
-              if (when) {
-                try { dateText = new Date(when).toLocaleDateString(); } catch (e) { dateText = String(when); }
-                var dateSpan = el('span', 'bought-summary__date', prefix + dateText);
-                li.appendChild(dateSpan);
+                if (v) label = v; 
               }
             } catch (e) { /* ignore */ }
 
-            // Reference / masked ref
+            try { var span = el('span', 'bought-summary__label', label); if (span) li.appendChild(span); } catch (e) { /* ignore */ }
+
+            // Reference
             try {
-              var refElText = '';
-              var ref = String(rec.ref || '').trim();
+              var refSpan = el('span', 'bought-summary__ref', String(rec.ref || ''));
+              try { li.appendChild(refSpan); } catch (e) { /* ignore */ }
+            } catch (e) { /* ignore */ }
+
+            // Copy button
+            try {
+              var ref = String(rec.ref || '');
               if (ref) {
-                var pre = attr(host, 'data-bought-summary-ref-prefix') || '';
-                var suf = attr(host, 'data-bought-summary-ref-suffix') || '';
-                refElText = pre + maskRef(ref) + suf;
-              } else {
-                refElText = attr(host, 'data-bought-summary-noref') || '';
-              }
-              if (refElText) {
-                var refSpan = el('span', 'bought-summary__ref', refElText);
-                li.appendChild(refSpan);
+                var copyBtn = el('button', 'button button--mono', 'Copy');
+                try { copyBtn.type = 'button'; } catch (e) { /* ignore */ }
+                try { copyBtn.setAttribute('aria-label', 'Copy payment reference'); } catch (e) { /* ignore */ }
 
-                // Add per-item "Copy reference" button when a stored ref exists.
-                try {
-                  if (ref) {
-                    // Guard attribute so re-runs don't double-bind. We set a
-                    // simple flag on the element; bound() is a helper but here
-                    // we act directly to keep the guard local to this element.
-                    try { refSpan.setAttribute('data-ssp-bought-ref-copy', 'on'); } catch (e) { /* ignore */ }
-
-                    var copyBtn = el('button', 'button button--mono', 'Copy');
-                    try { copyBtn.type = 'button'; } catch (e) { /* ignore */ }
-                    try { copyBtn.setAttribute('aria-label', 'Copy payment reference'); } catch (e) { /* ignore */ }
-
-                    copyBtn.addEventListener('click', function () {
+                copyBtn.addEventListener('click', function () {
+                  try {
+                    if (copyBtn.disabled) return;
+                    copyBtn.disabled = true;
+                    var prev = copyBtn.textContent;
+                    // Local helper to show success feedback
+                    function showSuccess() {
                       try {
-                        if (copyBtn.disabled) return;
-                        copyBtn.disabled = true;
-                        var prev = copyBtn.textContent;
-                        // Local helper to show success feedback
-                        function showSuccess() {
-                          try {
-                            if (SS && typeof SS.toast === 'function') {
-                              try { SS.toast('Reference copied'); } catch (e) { /* ignore */ }
-                            } else {
-                              try { copyBtn.textContent = 'Copied'; } catch (e) { /* ignore */ }
-                              try { setTimeout(function () { try { copyBtn.textContent = prev; } catch (e) { /* ignore */ } }, 1500); } catch (e) { /* ignore */ }
-                            }
-                          } catch (e) { /* ignore */ }
+                        if (SS && typeof SS.toast === 'function') {
+                          try { SS.toast('Reference copied'); } catch (e) { /* ignore */ }
+                        } else {
+                          try { copyBtn.textContent = 'Copied'; } catch (e) { /* ignore */ }
+                          try { setTimeout(function () { try { copyBtn.textContent = prev; } catch (e) { /* ignore */ } }, 1500); } catch (e) { /* ignore */ }
                         }
+                      } catch (e) { /* ignore */ }
+                    }
 
-                        // Try SS.copyText when available
+                    // Try SS.copyText when available
+                    try {
+                      if (SS && typeof SS.copyText === 'function') {
                         try {
-                          if (SS && typeof SS.copyText === 'function') {
-                            try {
-                              SS.copyText(ref);
-                              try { showSuccess(); } catch (e) { /* ignore */ }
-                              try { copyBtn.disabled = false; } catch (e) { /* ignore */ }
-                              return;
-                            } catch (e) { /* fall through to fallback */ }
+                          SS.copyText(ref);
+                          try { showSuccess(); } catch (e) { /* ignore */ }
+                          try { copyBtn.disabled = false; } catch (e) { /* ignore */ }
+                          return;
+                        } catch (e) { /* fall through to fallback */ }
+                      }
+                    } catch (e) { /* ignore */ }
+
+                    // Fallback: create a temporary textarea and use execCommand
+                    try {
+                      var ta = document.createElement('textarea');
+                      ta.value = ref;
+                      // Keep it out of view
+                      ta.style.position = 'absolute';
+                      ta.style.left = '-9999px';
+                      ta.style.top = '0';
+                      ta.setAttribute('aria-hidden', 'true');
+                      document.body.appendChild(ta);
+                      ta.focus();
+                      ta.select();
+                      var ok = false;
+                      try { ok = document.execCommand && document.execCommand('copy'); } catch (e) { ok = false; }
+                      try { document.body.removeChild(ta); } catch (e) { /* ignore */ }
+                      if (ok) {
+                        try { showSuccess(); } catch (e) { /* ignore */ }
+                      } else {
+                        try {
+                          if (SS && typeof SS.toast === 'function') {
+                            try { SS.toast('Copy failed'); } catch (e) { /* ignore */ }
                           }
                         } catch (e) { /* ignore */ }
-
-                        // Fallback: create a temporary textarea and use execCommand
-                        try {
-                          var ta = document.createElement('textarea');
-                          ta.value = ref;
-                          // Keep it out of view
-                          ta.style.position = 'absolute';
-                          ta.style.left = '-9999px';
-                          ta.style.top = '0';
-                          ta.setAttribute('aria-hidden', 'true');
-                          document.body.appendChild(ta);
-                          ta.focus();
-                          ta.select();
-                          var ok = false;
-                          try { ok = document.execCommand && document.execCommand('copy'); } catch (e) { ok = false; }
-                          try { document.body.removeChild(ta); } catch (e) { /* ignore */ }
-                          if (ok) {
-                            try { showSuccess(); } catch (e) { /* ignore */ }
-                          } else {
-                            try {
-                              if (SS && typeof SS.toast === 'function') {
-                                try { SS.toast('Copy failed'); } catch (e) { /* ignore */ }
-                              }
-                            } catch (e) { /* ignore */ }
-                          }
-                        } catch (e) {
-                          try {
-                            if (SS && typeof SS.toast === 'function') {
-                              try { SS.toast('Copy failed'); } catch (e) { /* ignore */ }
-                            }
-                          } catch (e) { /* ignore */ }
+                      }
+                    } catch (e) {
+                      try {
+                        if (SS && typeof SS.toast === 'function') {
+                          try { SS.toast('Copy failed'); } catch (e) { /* ignore */ }
                         }
+                      } catch (e) { /* ignore */ }
+                    }
 
-                        try { copyBtn.disabled = false; } catch (e) { /* ignore */ }
+                    try { copyBtn.disabled = false; } catch (e) { /* ignore */ }
 
-                      } catch (e) { try { if (SS && typeof SS.toast === 'function') SS.toast('Copy failed'); } catch (err) { /* ignore */ } }
-                    });
+                  } catch (e) { try { if (SS && typeof SS.toast === 'function') SS.toast('Copy failed'); } catch (err) { /* ignore */ } }
+                });
 
-                    // Append button after the ref span
-                    try {
-                      if (refSpan.parentNode) refSpan.parentNode.insertBefore(copyBtn, refSpan.nextSibling);
-                      else li.appendChild(copyBtn);
-                    } catch (e) { /* ignore */ }
-                  }
-                } catch (e) { /* ignore copy button */ }
-
+                // Append button after the ref span
+                try {
+                  if (refSpan.parentNode) refSpan.parentNode.insertBefore(copyBtn, refSpan.nextSibling);
+                  else li.appendChild(copyBtn);
+                } catch (e) { /* ignore */ }
               }
-            } catch (e) { /* ignore */ }
+            } catch (e) { /* ignore copy button */ }
 
             // CTAs
             try {
