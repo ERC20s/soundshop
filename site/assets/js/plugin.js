@@ -240,7 +240,8 @@
     } catch (e) { return false; }
   }
 
-  var BOUGHT_MAX_AGE = (60 * 24 * 60 * 60 * 1000); // 60 days (ms)
+  // Shared constant used by read and write paths
+  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 1000; // 60 days
 
   function readBoughtArray() {
     try {
@@ -249,7 +250,7 @@
       var parsed = null;
       try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-      // Prune expired records (best-effort)
+
       try {
         var now = Date.now();
         var changed = false;
@@ -354,6 +355,26 @@
       }
     } catch (e) { /* ignore guard */ }
 
+    // Expose a Receipt link when the persisted record contains a receipt URL.
+    // The persistence path already validates length and a https? scheme; be
+    // defensive here as well so we never render arbitrary strings.
+    try {
+      if (record.receiptUrl && typeof record.receiptUrl === 'string') {
+        try {
+          var r = String(record.receiptUrl).trim();
+          if (r && /^https?:\/\//i.test(r)) {
+            var receiptLink = el('a', 'button', 'Receipt');
+            receiptLink.href = r;
+            receiptLink.target = '_blank';
+            receiptLink.rel = 'noopener noreferrer';
+            // Append alongside other CTAs so both Download and Receipt can show
+            // when available.
+            wrapper.appendChild(receiptLink);
+          }
+        } catch (e) { /* ignore receipt render */ }
+      }
+    } catch (e) { /* ignore */ }
+
     hostEl.appendChild(wrapper);
     return wrapper;
   } catch (e) { return null; }
@@ -361,82 +382,56 @@
 
   function initBoughtSummary(root) {
     try {
-      var host = $("[data-bought-summary]", root || document);
+      var host = $('[data-bought-summary]', root || document);
       if (!host) return;
       if (bound(host, 'bought-summary')) return;
-      // Find the list element
-      var list = $("[data-bought-summary-list]", host) || host.querySelector('ul') || null;
-      if (!list) return;
 
-      // Labels
-      var labContainer = $("[data-bought-summary-labels]", host) || $("[data-bought-summary-labels]", document) || null;
-      var labels = {};
-      if (labContainer) {
-        var attrs = labContainer.attributes || [];
-        for (var i = 0; i < attrs.length; i++) {
-          var name = attrs[i].name;
-          var m = name.match(/^data-bought-label-(.+)$/);
-          if (m) labels[m[1]] = attrs[i].value;
-        }
-      }
+      // read the persisted buys and render one row per entry
+      var list = el('div', 'bought-summary__list');
+      try {
+        var buys = readBoughtArray();
+        Object.keys(buys).forEach(function (k) {
+          try {
+            var d = buys[k];
+            if (!d || typeof d !== 'object') return;
+            var li = el('div', 'bought-summary__row');
 
-      var prefixDate = attr(host, 'data-bought-summary-date-prefix') || '';
-      var prefixRef = attr(host, 'data-bought-summary-ref-prefix') || '';
-      var suffixRef = attr(host, 'data-bought-summary-ref-suffix') || '';
-      var norefText = attr(host, 'data-bought-summary-noref') || '';
+            // Product name
+            var name = el('div', 'bought-summary__name', k.toUpperCase());
+            li.appendChild(name);
 
-      // Clear existing items (idempotent)
-      try { while (list.firstChild) list.removeChild(list.firstChild); } catch (e) { }
-
-      var bought = readBoughtArray();
-      var keys = Object.keys(bought);
-      if (!keys.length) return;
-
-      keys.forEach(function (token) {
-        try {
-          var d = bought[token];
-          if (!d) return;
-          var li = el('li', 'bought-summary__item');
-
-          // Label for the product
-          var labelText = (labels && labels[token]) ? labels[token] : token.toUpperCase();
-          var labelEl = el('div', 'bought-summary__label', labelText);
-          li.appendChild(labelEl);
-
-          // Date
-          if (d.t) {
-            var when = new Date(Number(d.t));
-            var dateEl = el('div', 'bought-summary__date', (prefixDate || '') + when.toLocaleString());
-            li.appendChild(dateEl);
-          }
-
-          // Reference or fallback
-          if (d.ref) {
-            var refEl = el('div', 'bought-summary__ref', (prefixRef || '') + d.ref + (suffixRef || ''));
-            li.appendChild(refEl);
-          } else if (norefText) {
-            var norefEl = el('div', 'bought-summary__noref', norefText);
-            li.appendChild(norefEl);
-          }
-
-          // Masked email if present
-          if (d.email) {
-            var e = maskEmail(d.email);
-            if (e) {
-              var em = el('div', 'bought-summary__email', e);
-              li.appendChild(em);
+            // Date if present
+            if (d.t) {
+              try {
+                var dt = new Date(Number(d.t));
+                if (isFinite(dt.getTime())) {
+                  var dspan = el('div', 'bought-summary__date', dt.toLocaleDateString());
+                  li.appendChild(dspan);
+                }
+              } catch (e) { /* ignore date */ }
             }
-          }
 
-          // CTAs
-          var ctnHost = el('div', 'bought-summary__ctas');
-          createBoughtCta(ctnHost, d);
-          li.appendChild(ctnHost);
+            // Masked email if present
+            if (d.email) {
+              var e = maskEmail(d.email);
+              if (e) {
+                var em = el('div', 'bought-summary__email', e);
+                li.appendChild(em);
+              }
+            }
 
-          list.appendChild(li);
-        } catch (e) { /* ignore per-record */ }
-      });
+            // CTAs
+            var ctnHost = el('div', 'bought-summary__ctas');
+            createBoughtCta(ctnHost, d);
+            li.appendChild(ctnHost);
 
+            list.appendChild(li);
+          } catch (e) { /* ignore per-record */ }
+        });
+
+      } catch (e) { /* ignore */ }
+
+      host.appendChild(list);
     } catch (e) { /* ignore */ }
   }
 
