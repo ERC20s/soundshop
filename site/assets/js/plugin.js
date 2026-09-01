@@ -327,95 +327,6 @@
     } catch (e) { return ''; }
   }
 
-  function createBoughtCta(hostEl, record) {
-    try {
-      if (!hostEl || !record || typeof record !== 'object') return null;
-
-      // One-shot guard: avoid appending duplicate CTA markup when callers
-      // may invoke createBoughtCta multiple times against the same hostEl.
-      if (bound(hostEl, 'bought-cta')) return null;
-
-      var wrapper = el('div', 'bought-summary__ctas__wrap');
-      var hasCta = false;
-
-      // If we have a validated download URL already, expose it
-      try {
-        var d = extractDownloadUrl(record);
-        if (d) {
-          var a = el('a', 'button button--primary', 'Download');
-          a.href = d;
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-          wrapper.appendChild(a);
-          hasCta = true;
-        }
-      } catch (e) { /* ignore */ }
-
-      // If no download CTA was added, consider exposing a provider receipt
-      // link only when it passes conservative validation via extractReceiptUrl.
-      try {
-        if (!hasCta) {
-          var r = extractReceiptUrl(record);
-          if (r) {
-            var ra = el('a', 'button', 'Receipt');
-            ra.href = r;
-            ra.target = '_blank';
-            ra.rel = 'noopener noreferrer';
-            wrapper.appendChild(ra);
-            hasCta = true;
-          }
-        }
-      } catch (e) { /* ignore */ }
-
-      // Add a per-item Verify button when the record carries a provider ref
-      try {
-        var ref = String(record.ref || '').trim();
-        if (ref) {
-          var verifyBtn = el('button', 'button', 'Verify');
-          verifyBtn.type = 'button';
-          // Capture the original label immediately so we can restore it later
-          var originalLabel = verifyBtn.textContent;
-
-          try {
-            verifyBtn.addEventListener('click', function () {
-              try {
-                if (!ref) return;
-                if (verifyBtn.disabled) return;
-                verifyBtn.disabled = true;
-                verifyBtn.textContent = 'Checking…';
-
-                // Attempt server-side verify; persist and notify on success.
-                // Restore the button state and label when the request settles.
-                try {
-                  window.groupStoreVerify(ref).then(function (o) {
-                    try {
-                      if (!o) return;
-                      if (typeof window.soundshopPersistBought === 'function') {
-                        try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
-                      }
-
-                      // Notify other codepaths
-                      try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
-                    } catch (e) { /* ignore */ }
-                  }).catch(function () { /* ignore */ }).finally(function () {
-                    try { verifyBtn.disabled = false; verifyBtn.textContent = originalLabel; } catch (e) { /* ignore */ }
-                  });
-                } catch (e) { try { verifyBtn.disabled = false; verifyBtn.textContent = originalLabel; } catch (err) { /* ignore */ } }
-
-              } catch (e) { /* ignore */ }
-            });
-          } catch (e) { /* ignore */ }
-
-          wrapper.appendChild(verifyBtn);
-          hasCta = true;
-        }
-      } catch (e) { /* ignore */ }
-
-      if (hasCta) return wrapper;
-      return null;
-    } catch (e) { return null; }
-  }
-
   // Shared helper: update the small URL-order banner when a verification
   // succeeds so users immediately see the verified item and a Download CTA.
   function updateUrlOrderBanner(banner, order) {
@@ -447,6 +358,7 @@
             // Insert after the button if present, else append
             if (btn && btn.parentNode) btn.parentNode.insertBefore(a, btn.nextSibling);
             else banner.appendChild(a);
+            try { if (textEl) textEl.textContent = (textEl.textContent || '') + ' Download available.'; } catch (e) { /* ignore */ }
           } else {
             // No download: consider exposing a validated receipt link next to the Verified button
             try {
@@ -516,6 +428,9 @@
       banner.style.cssText = 'font:13px system-ui,sans-serif;color:#065f46;margin:8px 0;padding:10px;border:1px solid #d1fae5;background:#ecfdf5;border-radius:6px;';
       var masked = maskRef(orderId);
       var text = el('span', '', 'We detected a returned order on the URL' + (masked ? ' (ref ' + masked + '). ' : '. '));
+      // Keep the brief announcement polite and non-disruptive for assistive tech
+      try { text.setAttribute('aria-live', 'polite'); } catch (e) { /* ignore */ }
+      try { text.setAttribute('role', 'status'); } catch (e) { /* ignore */ }
       var btn = el('button', 'button', 'Verify returned purchase');
       btn.type = 'button';
 
@@ -637,106 +552,82 @@
   // 'group-store:paid' and 'soundshop:verified-order' so the UI refreshes when
   // purchases change.
   // -----------------------------------------------------------------------
-  function initBoughtSummary(root) {
+  function initBoughtSummary() {
     try {
-      var host = root || document.querySelector('[data-bought-summary]');
+      var host = document.querySelector('[data-bought-summary]');
       if (!host) return;
       if (bound(host, 'bought-summary')) return;
 
+      // If a purchaser summary is present, we render a list and attach a
+      // small summary line that points at the list. The host markup can
+      // include a data-bought-summary-list selector or we create one.
       var list = host.querySelector('[data-bought-summary-list]');
-      if (!list) return;
+      if (!list) {
+        list = el('div', 'bought-summary-list', '');
+        list.setAttribute('data-bought-summary-list', '');
+        host.appendChild(list);
+      }
 
-      var labelsEl = host.querySelector('[data-bought-summary-labels]') || document.querySelector('[data-bought-summary-labels]');
+      // The host may already have an inline Download CTA. In that case we do
+      // not attempt to render a per-product CTA.
+      var bought = readBoughtArray() || {};
 
       function render() {
         try {
-          // Clear existing list children
-          try {
-            while (list.firstChild) list.removeChild(list.firstChild);
-          } catch (e) { /* ignore */ }
+          // Clear
+          while (list.firstChild) list.removeChild(list.firstChild);
 
-          var bought = readBoughtArray() || {};
-          var order = ['vanta','drift','prism','anvil','bundle'];
-          var any = false;
-
-          for (var i = 0; i < order.length; i++) {
-            var token = order[i];
-            if (!Object.prototype.hasOwnProperty.call(bought, token)) continue;
-            var rec = bought[token];
-            if (!rec || typeof rec !== 'object') continue;
-
-            var li = el('li', 'bought-summary__item');
-
-            // Product label
-            var label = token;
-            try {
-              if (labelsEl) {
-                var attr = 'data-bought-label-' + token;
-                var v = labelsEl.getAttribute(attr);
-                if (v) label = v;
-              }
-            } catch (e) { /* ignore */ }
-            var lbl = el('span', 'bought-summary__label', label);
-            li.appendChild(lbl);
-
-            // Date
-            try {
-              var prefix = attr(host, 'data-bought-summary-date-prefix') || '';
-              var when = Number(rec.t || 0) || 0;
-              var dateText = '';
-              if (when) {
-                try { dateText = new Date(when).toLocaleDateString(); } catch (e) { dateText = String(when); }
-                var dateSpan = el('span', 'bought-summary__date', prefix + dateText);
-                li.appendChild(dateSpan);
-              }
-            } catch (e) { /* ignore */ }
-
-            // Reference / masked ref
-            try {
-              var refElText = '';
-              var ref = String(rec.ref || '').trim();
-              if (ref) {
-                var pre = attr(host, 'data-bought-summary-ref-prefix') || '';
-                var suf = attr(host, 'data-bought-summary-ref-suffix') || '';
-                refElText = pre + maskRef(ref) + suf;
-              } else {
-                refElText = attr(host, 'data-bought-summary-noref') || '';
-              }
-              if (refElText) {
-                var refSpan = el('span', 'bought-summary__ref', refElText);
-                li.appendChild(refSpan);
-              }
-            } catch (e) { /* ignore */ }
-
-            // CTAs
-            try {
-              var ctas = createBoughtCta(li, rec);
-              if (ctas) li.appendChild(ctas);
-            } catch (e) { /* ignore */ }
-
-            list.appendChild(li);
-            any = true;
+          var keys = Object.keys(bought || {});
+          if (!keys || keys.length === 0) {
+            // No purchases to summarise
+            return;
           }
 
-          // Unhide the host only when we actually rendered something
-          try {
-            if (any) {
-              try { host.removeAttribute('hidden'); } catch (e) { host.hidden = false; }
-            }
-          } catch (e) { /* ignore */ }
-        } catch (e) { /* ignore render */ }
+          for (var i = 0; i < keys.length; i++) {
+            try {
+              var k = keys[i];
+              var r = bought[k];
+              if (!r || typeof r !== 'object') continue;
+              var row = el('div', 'bought-summary-row', '');
+              var title = el('div', 'bought-summary-title', String(k).toUpperCase());
+              row.appendChild(title);
+              var meta = el('div', 'bought-summary-meta', '');
+              if (r.email) meta.textContent = maskEmail(r.email);
+              row.appendChild(meta);
+
+              // Download CTA if available
+              var d = extractDownloadUrl(r);
+              if (d) {
+                var a = el('a', 'button button--primary', 'Download');
+                a.href = d;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                row.appendChild(a);
+              }
+
+              list.appendChild(row);
+            } catch (e) { /* ignore row errors */ }
+          }
+        } catch (e) { /* ignore render errors */ }
       }
 
-      // Listen for purchases/verified events so the list refreshes
-      try {
-        document.addEventListener('group-store:paid', function () { try { render(); } catch (e) { /* ignore */ } });
-        // Some codepaths emit 'soundshop:verified-order' — reference it here
-        // so tools can statically detect support and consumers get refreshed.
-        document.addEventListener('soundshop:verified-order', function () { try { render(); } catch (e) { /* ignore */ } });
-      } catch (e) { /* ignore */ }
+      render();
 
-      // Initial render
-      try { render(); } catch (e) { /* ignore */ }
+      // Re-run when a purchase/verify event fires
+      try {
+        document.addEventListener('group-store:paid', function () {
+          try {
+            bought = readBoughtArray() || {};
+            render();
+          } catch (e) { /* ignore */ }
+        });
+        document.addEventListener('soundshop:verified-order', function () {
+          try {
+            bought = readBoughtArray() || {};
+            render();
+          } catch (e) { /* ignore */ }
+        });
+      } catch (e) { /* ignore */ }
 
     } catch (e) { /* ignore */ }
   }
@@ -744,68 +635,38 @@
   // -----------------------------------------------------------------------
   // initBoughtNote
   //
-  // For product pages: reveal [data-bought-note] elements whose
-  // data-bought-item token matches a remembered purchase. Populate the
-  // internal spans and append CTAs. Guarded via bound(noteEl, 'bought-note').
+  // Unhide a small note on the page when this browser has a recorded buy for
+  // the product. The host element should have [data-bought-note] and this
+  // routine will fill in a masked email when available.
   // -----------------------------------------------------------------------
-  function initBoughtNote(root) {
+  function initBoughtNote() {
     try {
-      var scope = root || document;
-      var notes = Array.prototype.slice.call(scope.querySelectorAll('[data-bought-note]')) || [];
-      if (!notes || !notes.length) return;
+      var notes = Array.prototype.slice.call(document.querySelectorAll('[data-bought-note]')) || [];
+      if (!notes || notes.length === 0) return;
 
       var bought = readBoughtArray() || {};
 
-      function handleNote(noteEl) {
+      function handleNote(el) {
         try {
-          if (!noteEl) return;
-          var token = attr(noteEl, 'data-bought-item') || '';
-          if (!token) return;
-          if (bound(noteEl, 'bought-note')) return;
-
-          var rec = bought[token] || null;
-          if (!rec) return;
-
-          // Unhide note
-          try { noteEl.removeAttribute('hidden'); } catch (e) { noteEl.hidden = false; }
-
-          // Cover span
+          var want = attr(el, 'data-bought-note');
+          if (!want) return;
+          var rec = (bought && bought[want]) || null;
+          if (!rec) {
+            el.style.display = 'none';
+            return;
+          }
+          el.style.display = '';
           try {
-            var cover = noteEl.querySelector('[data-bought-cover]');
-            if (cover) {
-              var email = String(rec.email || '');
-              cover.textContent = email ? maskEmail(email) : (attr(noteEl, 'data-bought-cover-default') || '');
-            }
+            var emailEl = el.querySelector('[data-bought-note-email]');
+            if (emailEl && rec.email) emailEl.textContent = maskEmail(rec.email);
           } catch (e) { /* ignore */ }
-
-          // Date span
-          try {
-            var dateEl = noteEl.querySelector('[data-bought-date]');
-            if (dateEl) {
-              var prefix = attr(noteEl, 'data-bought-date-prefix') || '';
-              var when = Number(rec.t || 0) || 0;
-              var dtext = '';
-              if (when) {
-                try { dtext = new Date(when).toLocaleDateString(); } catch (e) { dtext = String(when); }
-                dateEl.textContent = prefix + dtext;
-              }
-            }
-          } catch (e) { /* ignore */ }
-
-          // CTAs
-          try {
-            var c = createBoughtCta(noteEl, rec);
-            if (c) noteEl.appendChild(c);
-          } catch (e) { /* ignore */ }
-        } catch (e) { /* ignore note */ }
+        } catch (e) { /* ignore */ }
       }
 
-      // Initial pass for existing notes
       for (var i = 0; i < notes.length; i++) {
         try { handleNote(notes[i]); } catch (e) { /* ignore */ }
       }
 
-      // Re-run when a purchase/verify event fires
       try {
         document.addEventListener('group-store:paid', function () {
           try {
@@ -825,7 +686,7 @@
         });
       } catch (e) { /* ignore */ }
 
-    } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore note */ }
   }
 
   // Export the helpers so tools/check-plugin-exports.js and consumers can find them
