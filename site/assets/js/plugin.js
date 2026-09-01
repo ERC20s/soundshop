@@ -183,6 +183,9 @@
   // exist on a single document.
   var _boughtAutoVerifyCalled = false;
 
+  // Guard to ensure URL-order Verify UI only ever runs once per page
+  var _sspUrlOrderVerifyDone = false;
+
   /* =======================================================================
      00  SMALL HELPERS  (mirrors SS.* when ui.js is present, works without it)
      ======================================================================= */
@@ -243,141 +246,27 @@
   /** Replace the children of a node with a single message paragraph. */
   function setMessage(node, className, text) {
     if (!node) return;
-    while (node.firstChild) node.removeChild(node.firstChild);
-    node.appendChild(el('p', className, text));
-  }
-
-  /**
-   * Extract a best-effort installer / download URL from an order-like object
-   * and validate it. Returns a string URL when valid, otherwise null.
-   */
-  function extractDownloadUrl(obj) {
     try {
-      if (!obj || typeof obj !== 'object') return null;
-      var cand = obj.downloadUrl || obj.installerUrl || (obj.installers && obj.installers[0] && obj.installers[0].url) || '';
-      if (typeof cand !== 'string') return null;
-      cand = cand.trim();
-      if (!cand) return null;
-      // Accept only explicit http(s) URLs to limit exposure to data: or relative links
-      if (/^https?:\/\//i.test(cand)) return cand;
+      while (node.firstChild) node.removeChild(node.firstChild);
+      var p = document.createElement('p');
+      p.className = className || '';
+      p.textContent = text || '';
+      node.appendChild(p);
     } catch (e) { /* ignore */ }
-    return null;
   }
 
-  /**
-   * Read remembered purchases from localStorage and present them as an Array
-   * of item-like objects that the rest of plugin.js expects. Behaviour:
-   *  - If the host has an explicit data-* key (attr name provided) use that.
-   *  - Otherwise prefer canonical 'soundshop:bought:v1' which stores a v1
-   *    object mapping from token -> record; normalise that shape into an
-   *    Array. Finally fall back to legacy 'soundshop.bought' which is an Array.
-   *  - Any parsing errors are caught and return an empty Array.
-   */
-  function readBoughtArray(host, dataAttrName) {
-    try {
-      var explicitKey = '';
-      try { explicitKey = host && dataAttrName ? attr(host, dataAttrName) || '' : ''; } catch (e) { explicitKey = ''; }
+  /* =======================================================================
+     01  BOUGHT-NOTE / BOUGHT-SUMMARY helpers (createBoughtCta, extractDownloadUrl, readBoughtArray, etc)
+     These functions are relied on by other code and must remain stable.
+     ======================================================================= */
 
-      var candidates = [];
-      if (explicitKey) candidates.push(explicitKey);
-      candidates.push('soundshop:bought:v1');
-      candidates.push('soundshop.bought');
-
-      for (var i = 0; i < candidates.length; i++) {
-        var key = candidates[i];
-        try {
-          var raw = window.localStorage && window.localStorage.getItem(key);
-          if (!raw) continue;
-          var parsed = null;
-          try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-
-          // If it's already an array, return it directly (legacy shape)
-          if (Array.isArray(parsed)) {
-            if (parsed.length) return parsed;
-            continue;
-          }
-
-          // If it's an object mapping (v1), normalise to a array
-          if (parsed && typeof parsed === 'object') {
-            var out = [];
-            var labelsEl = host && host.querySelector ? host.querySelector('[data-bought-summary-labels]') : null;
-            for (var tok in parsed) {
-              if (!Object.prototype.hasOwnProperty.call(parsed, tok)) continue;
-              var rec = parsed[tok];
-              if (!rec) continue;
-
-              var name = '';
-              try { if (labelsEl) name = attr(labelsEl, 'data-bought-label-' + tok) || ''; } catch (e) { name = ''; }
-              if (!name) {
-                try { name = String(tok).replace(/[-_]/g, ' '); name = name.charAt(0).toUpperCase() + name.slice(1); } catch (e) { name = String(tok); }
-              }
-
-              var item = {};
-              item.name = name;
-              item.itemName = name;
-              item.title = name;
-              item.label = name;
-              item.email = (rec && (rec.email || rec.deliveryEmail || rec.buyerEmail || rec.customerEmail)) || '';
-              var idv = (rec && (rec.ref || rec.reference || rec.order || rec.id || rec.tx)) || '';
-              if (idv) item.ref = idv;
-              if (idv) item.id = idv;
-              item.t = (rec && (rec.t || rec.time || rec.date)) || null;
-              item.state = (rec && rec.state) || null;
-              item.quantity = 1;
-
-              // Preserve any installer/download URL already stored in the record
-              try {
-                var durl = extractDownloadUrl(rec);
-                if (durl) item.downloadUrl = durl;
-              } catch (e) { /* ignore */ }
-
-              out.push(item);
-            }
-            if (out.length) return out;
-          }
-
-        } catch (e) {
-          // ignore and try next candidate
-        }
-      }
-    } catch (e) { /* ignore */ }
-    return [];
-  }
-
-  /* Helper to mask an email address for public display. */
-  function maskEmail(email) {
-    try {
-      if (!email) return '';
-      var s = String(email).trim();
-      var parts = s.split('@');
-      if (parts.length !== 2) return s.replace(/.(?=.{2,}$)/g, '*');
-      var local = parts[0];
-      var domain = parts[1];
-      if (local.length <= 2) return local.replace(/.(?=.{1,}$)/g, '*') + '@' + domain;
-      // show first and last char of local part, hide the middle
-      return local.charAt(0) + '\u2026' + local.charAt(local.length - 1) + '@' + domain;
-    } catch (e) { return ''; }
-  }
-
-  /**
-   * Render a small action area to let the user either download installers
-   * directly (when we have a verified direct URL) or contact Support /
-   * trigger a verify when only an order id is present.
-   *
-   * This function is defensive and idempotent. It guards with
-   * data-ssp-bought-cta on the host so repeated calls do not duplicate UI.
-   *
-   * Parameters:
-   *  - host: an Element to append the CTA into (list item or host area)
-   *  - detail: optional object with fields { id: <order id>, downloadUrl: <url>, itemName: ... }
-   */
+  // createBoughtCta
   function makeDownloadAnchor(url) {
     try {
-      var v = extractDownloadUrl({ downloadUrl: url });
-      if (!v) return null;
+      if (!url || typeof url !== 'string') return null;
       var a = document.createElement('a');
       a.className = 'bought__cta';
-      a.setAttribute('href', v);
+      a.setAttribute('href', url);
       a.setAttribute('target', '_blank');
       a.setAttribute('rel', 'noopener noreferrer');
       a.textContent = 'Download installers';
@@ -385,39 +274,68 @@
     } catch (e) { return null; }
   }
 
+  function extractDownloadUrl(order) {
+    try {
+      if (!order || typeof order !== 'object') return null;
+      var durl = order.downloadUrl || order.installerUrl || (order.installers && order.installers[0] && order.installers[0].url) || '';
+      if (typeof durl !== 'string') return null;
+      durl = durl.trim();
+      if (!durl) return null;
+      if (!/^https?:\/\//i.test(durl)) return null;
+      return durl;
+    } catch (e) { return null; }
+  }
+
+  function readBoughtArray(root) {
+    try {
+      var el = (root && root.querySelector) ? root.querySelector('[data-bought-summary]') : null;
+      if (!el) el = document.querySelector('[data-bought-summary]');
+      if (!el) return [];
+      var raw = el.getAttribute('data-bought-json') || '';
+      try { return JSON.parse(raw) || []; } catch (e) { return []; }
+    } catch (e) { return []; }
+  }
+
+  function maskEmail(email) {
+    try {
+      if (!email || typeof email !== 'string') return '';
+      var parts = email.split('@');
+      if (!parts || parts.length !== 2) return '';
+      var name = parts[0];
+      var domain = parts[1];
+      if (name.length <= 2) name = name[0] + '*'; else name = name[0] + Array(Math.min(3, name.length - 2)).join('*') + name.slice(-1);
+      return name + '@' + domain;
+    } catch (e) { return ''; }
+  }
+
+  // initBoughtNote
   function createBoughtCta(host, detail) {
     try {
-      if (!host || !host.appendChild) return;
+      if (!host) return;
+      if (host.getAttribute && host.getAttribute('data-ssp-bought-cta') === 'on') return;
 
-      // If we've previously created a CTA in this host, allow updating it when
-      // a new detail provides a downloadUrl. This avoids duplicating CTAs but
-      // lets a later verification populate a "Download installers" anchor.
+      // If we already have a downloadUrl we prefer to show the anchor and do
+      // nothing else.
       try {
-        var already = host.getAttribute('data-ssp-bought-cta');
-        if (already === 'on') {
-          // If the caller supplied a verified download URL, try to update an
-          // existing anchor (or append one if none exists). Otherwise do
-          // nothing and keep the existing CTA (usually a Contact Support link).
-          if (detail && extractDownloadUrl(detail)) {
-            var url = extractDownloadUrl(detail);
-            try {
-              var existing = host.querySelector('.bought__cta');
-              if (existing && existing.tagName && existing.tagName.toLowerCase() === 'a') {
-                try { existing.setAttribute('href', url); } catch (e) { /* ignore */ }
-                try { existing.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-                try { existing.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-                try { existing.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-                return;
-              }
-              // If existing CTA exists but is not an anchor, append a proper link
-              var a2 = makeDownloadAnchor(url);
-              if (a2) {
-                try { host.appendChild(a2); } catch (e) { /* ignore */ }
-              }
-            } catch (e) { /* ignore update */ }
-          }
-          return;
+        if (detail && extractDownloadUrl(detail)) {
+          var url = extractDownloadUrl(detail);
+          try {
+            var existing = host.querySelector('.bought__cta');
+            if (existing && existing.tagName && existing.tagName.toLowerCase() === 'a') {
+              try { existing.setAttribute('href', url); } catch (e) { /* ignore */ }
+              try { existing.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+              try { existing.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+              try { existing.textContent = 'Download installers'; } catch (e) { /* ignore */ }
+              return;
+            }
+            // If existing CTA exists but is not an anchor, append a proper link
+            var a2 = makeDownloadAnchor(url);
+            if (a2) {
+              try { host.appendChild(a2); } catch (e) { /* ignore */ }
+            }
+          } catch (e) { /* ignore update */ }
         }
+        return;
       } catch (e) { /* ignore */ }
 
       // Mark this host as having had its CTA created so re-runs are idempotent
@@ -584,6 +502,125 @@
     });
   } catch (e) { /* ignore listener */ }
 
+  // Non-invasive user-driven Verify UI for URL-returned order ids
+  // This is deliberately self-contained and idempotent. It only appears when
+  // the payments widget is absent (so we don't duplicate the widget's UI) and
+  // when a ?d8a_order=<id> query parameter exists. It performs exactly one
+  // fetch to the platform verify endpoint and, on a successful paid-order
+  // response, persists the order and dispatches 'soundshop:verified-order'.
+  P.initUrlOrderVerifyUi = function () {
+    try {
+      if (_sspUrlOrderVerifyDone) return; // module-level one-shot
+      _sspUrlOrderVerifyDone = true;
+
+      // If the payments widget is present, prefer its verifier and do nothing.
+      if (typeof window.groupStoreVerify === 'function') return;
+
+      var qs = '';
+      try { qs = (window.location && window.location.search) ? window.location.search : ''; } catch (e) { qs = ''; }
+      if (!qs) return;
+
+      var m = qs.match(/[?&]d8a_order=([^&]+)/i);
+      if (!m || !m[1]) return;
+      var id = '';
+      try { id = decodeURIComponent(m[1]); } catch (e) { id = m[1]; }
+      if (!id) return;
+
+      // Choose an insertion host near the main content; conservative fallback
+      var host = document.querySelector('main') || document.body || document.documentElement;
+      if (!host) return;
+      try { if (host.getAttribute && host.getAttribute('data-ssp-url-order-verify') === 'on') return; } catch (e) {}
+      try { if (host.setAttribute) host.setAttribute('data-ssp-url-order-verify', 'on'); } catch (e) {}
+
+      // Small banner container
+      var banner = el('div', 'bought bought--url-verify');
+      try {
+        var p = el('p', 'bought__message', 'This page found a completed order returned from checkout in this browser. Click Verify to confirm and restore access to your purchase on this device.');
+        banner.appendChild(p);
+      } catch (e) { /* ignore */ }
+
+      var controls = el('div', 'bought__controls');
+      var btn = el('button', 'btn btn-ghost bought__verify-url', 'Verify');
+      try { btn.setAttribute('type', 'button'); } catch (e) {}
+      controls.appendChild(btn);
+
+      var hint = el('span', 'bought__verify-hint', '');
+      hint.style.cssText = 'margin-left:8px;font-size:13px;color:#6b7280';
+      controls.appendChild(hint);
+
+      try { banner.appendChild(controls); } catch (e) { /* ignore */ }
+
+      try {
+        if (host.firstChild) host.insertBefore(banner, host.firstChild);
+        else host.appendChild(banner);
+      } catch (e) { /* ignore */ }
+
+      var clicked = false;
+      btn.addEventListener('click', function () {
+        if (clicked) return; clicked = true;
+        try { btn.disabled = true; } catch (e) {}
+        var orig = '';
+        try { orig = btn.textContent || ''; } catch (e) { orig = ''; }
+        try { btn.textContent = 'Verifying…'; } catch (e) {}
+
+        var url = 'https://d8a.com/api/v1/store/orders/' + encodeURIComponent(id) + '?group=batch-synthshop';
+
+        try {
+          fetch(url, { credentials: 'omit', headers: { 'Accept': 'application/json' } }).then(function (resp) {
+            if (!resp || resp.status !== 200) throw new Error('bad-status');
+            return resp.json();
+          }).then(function (json) {
+            try {
+              if (!json || typeof json !== 'object') throw new Error('no-json');
+              var order = null;
+              // Accept either a top-level order-like object or a wrapper { order: ... }
+              if (json.order && typeof json.order === 'object') order = json.order; else order = json;
+              if (!order || typeof order !== 'object') throw new Error('no-order');
+              var state = String(order.state || order.status || '').toLowerCase();
+              if (!(state === 'paid' || state === 'completed' || state === 'succeeded')) throw new Error('not-paid');
+
+              try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+              try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
+
+              try { if (banner && banner.parentNode) banner.parentNode.removeChild(banner); } catch (e) { /* ignore */ }
+            } catch (e) {
+              // show brief support hint; do not alter other page state
+              try { btn.textContent = orig; } catch (e) {}
+              try { btn.disabled = false; } catch (e) {}
+              try {
+                hint.textContent = '';
+                var a = document.createElement('a');
+                a.setAttribute('href', 'docs.html#support');
+                a.style.color = '#7c5cff';
+                a.textContent = 'Verify failed — Contact Support';
+                while (hint.firstChild) hint.removeChild(hint.firstChild);
+                hint.appendChild(a);
+                setTimeout(function () { try { if (hint && hint.parentNode) hint.parentNode.removeChild(hint); } catch (e) {} }, 6000);
+              } catch (ee) { /* ignore */ }
+            }
+          }).catch(function () {
+            try { btn.textContent = orig; } catch (e) {}
+            try { btn.disabled = false; } catch (e) {}
+            try {
+              hint.textContent = '';
+              var a = document.createElement('a');
+              a.setAttribute('href', 'docs.html#support');
+              a.style.color = '#7c5cff';
+              a.textContent = 'Verify failed — Contact Support';
+              while (hint.firstChild) hint.removeChild(hint.firstChild);
+              hint.appendChild(a);
+              setTimeout(function () { try { if (hint && hint.parentNode) hint.parentNode.removeChild(hint); } catch (e) {} }, 6000);
+            } catch (ee) { /* ignore */ }
+          });
+        } catch (e) {
+          try { btn.textContent = orig; } catch (e) {}
+          try { btn.disabled = false; } catch (e) {}
+        }
+      }, false);
+
+    } catch (e) { /* ignore top-level */ }
+  };
+
   // Public init: perform bought-note and bought-summary work (safe to call repeatedly)
   P.init = function () {
     try { P.initBoughtSummary(); } catch (e) { /* ignore */ }
@@ -627,6 +664,11 @@
         }
       }
     } catch (e) { /* ignore */ }
+
+    // Initialize the URL-returned order verify UI when appropriate. This is
+    // intentionally called even when the auto-verify pass is skipped; the UI
+    // will no-op if the payments widget is present.
+    try { P.initUrlOrderVerifyUi(); } catch (e) { /* ignore */ }
   };
 
 }(window, document));
