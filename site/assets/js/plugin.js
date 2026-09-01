@@ -309,6 +309,22 @@
     } catch (e) { return ''; }
   }
 
+  // Conservative extractor for provider receipt URLs. Mirrors extractDownloadUrl
+  // but uses a larger length cap and accepts common receipt fields.
+  function extractReceiptUrl(o) {
+    try {
+      if (!o || typeof o !== 'object') return '';
+      var u = o.receiptUrl || o.receipt || '';
+      if (typeof u !== 'string') return '';
+      u = u.trim();
+      if (!u) return '';
+      // Keep the same conservative scheme check and a generous length cap.
+      if (!/^https?:\/\//i.test(u)) return '';
+      if (u.length > 2000) return '';
+      return u;
+    } catch (e) { return ''; }
+  }
+
   function createBoughtCta(hostEl, record) {
     try {
       if (!hostEl || !record || typeof record !== 'object') return null;
@@ -329,6 +345,22 @@
           a.rel = 'noopener noreferrer';
           wrapper.appendChild(a);
           hasCta = true;
+        }
+      } catch (e) { /* ignore */ }
+
+      // If we don't have a Download CTA, expose a Receipt link when available
+      try {
+        if (!hasCta) {
+          var r = '';
+          try { r = extractReceiptUrl(record) || (record.receiptUrl || record.receipt || ''); } catch (e) { r = ''; }
+          if (r) {
+            var rlink = el('a', 'button', 'Receipt');
+            rlink.href = String(r);
+            rlink.target = '_blank';
+            rlink.rel = 'noopener noreferrer';
+            wrapper.appendChild(rlink);
+            hasCta = true;
+          }
         }
       } catch (e) { /* ignore */ }
 
@@ -392,6 +424,19 @@
             // Insert after the button if present, else append
             if (btn && btn.parentNode) btn.parentNode.insertBefore(a, btn.nextSibling);
             else banner.appendChild(a);
+          } else {
+            // No download available; expose a Receipt link when present
+            try {
+              var r = extractReceiptUrl(order);
+              if (r) {
+                var ra = el('a', 'button', 'Receipt');
+                ra.href = r;
+                ra.target = '_blank';
+                ra.rel = 'noopener noreferrer';
+                if (btn && btn.parentNode) btn.parentNode.insertBefore(ra, btn.nextSibling);
+                else banner.appendChild(ra);
+              }
+            } catch (e) { /* ignore receipt insertion */ }
           }
         }
       } catch (e) { /* ignore banner update errors */ }
