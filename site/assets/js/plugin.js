@@ -240,193 +240,7 @@
     } catch (e) { return false; }
   }
 
-  // BOUGHT_MAX_AGE: how long we keep the local note (ms)
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
-
-  function readBoughtArray() {
-    try {
-      var raw = window.localStorage.getItem('soundshop:bought:v1');
-      if (!raw) return {};
-      var parsed = null;
-      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-      // Prune expired entries (best effort)
-      var now = Date.now();
-      for (var k in parsed) {
-        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
-        var r = parsed[k];
-        var isObj = !!r && typeof r === 'object' && !Array.isArray(r);
-        var when = Number(isObj ? r.t : r);
-        if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
-          delete parsed[k];
-        }
-      }
-      return parsed;
-    } catch (e) { return {}; }
-  }
-
-  // Mask a payment reference for use in support links and UI. Returns a
-  // short, human-meaningful representation: keep the last 6 characters and
-  // replace the preceding characters with an ellipsis. Fail closed: return
-  // the empty string for missing/invalid input.
-  function maskRef(ref) {
-    try {
-      if (!ref && ref !== 0) return '';
-      var s = String(ref).trim();
-      if (!s) return '';
-      var keep = 6;
-      if (s.length <= keep) return s;
-      var tail = s.slice(-keep);
-      return '…' + tail;
-    } catch (e) { return ''; }
-  }
-
-  // Mask an email address for display/query use: preserve the domain and show
-  // only a small hint of the local part. Return empty string for invalid
-  // inputs. This is intentionally conservative and does not attempt perfect
-  // RFC compliance; it mirrors the conservative validation above.
-  function maskEmail(email) {
-    try {
-      if (!email || typeof email !== 'string') return '';
-      var s = email.trim();
-      var EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-      if (!s || !EMAIL_RE.test(s)) return '';
-      var parts = s.split('@');
-      var local = parts[0] || '';
-      var domain = parts[1] || '';
-      if (!domain) return '';
-      if (!local) return '•••@' + domain;
-      var first = local.charAt(0) || '';
-      if (local.length === 1) return first + '•••@' + domain;
-      return first + '•••@' + domain;
-    } catch (e) { return ''; }
-  }
-
-  // -----------------------------------------------------------------------
-  // (many functions omitted here in edits — preserved in original)
-  // -----------------------------------------------------------------------
-
-  // Create CTAs for a bought-summary list item. Returns a container element
-  // or null. This helper is idempotent and guarded by data-ssp-bought-cta so
-  // re-runs of initBoughtSummary do not duplicate elements.
-  function createBoughtCta(host, rec, token) {
-    try {
-      if (!host || !host.setAttribute) return null;
-      // Guard to be idempotent
-      try {
-        if (host.getAttribute('data-ssp-bought-cta') === 'on') return null;
-        host.setAttribute('data-ssp-bought-cta', 'on');
-      } catch (e) { /* ignore */ }
-
-      // Prefer using a validated download URL helper when present. Compute the
-      // actual validated URL (not just a boolean) so we can create a safe link.
-      var downloadUrl = '';
-      try {
-        if (typeof extractDownloadUrl === 'function') {
-          try { downloadUrl = extractDownloadUrl(rec) || ''; } catch (e) { downloadUrl = ''; }
-        } else {
-          downloadUrl = (rec && rec.downloadUrl) ? String(rec.downloadUrl).trim() : '';
-          if (downloadUrl && !/^https?:\/\//i.test(downloadUrl)) downloadUrl = '';
-        }
-      } catch (e) { downloadUrl = ''; }
-      var hasDownload = !!downloadUrl;
-
-      var container = el('div', 'bought-summary__ctas');
-
-      // If a download URL is present, surface a 'Download' button first so the
-      // buyer can open the installer directly. Use an accessible label that
-      // references the product when available.
-      try {
-        if (hasDownload) {
-          var da = el('a', 'button', 'Download');
-          try { da.setAttribute('href', downloadUrl); } catch (e) { /* ignore */ }
-          try { da.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-          try { da.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-          try {
-            var prodLabel = token || '';
-            try {
-              var lblEl = host.querySelector('.bought-summary__label');
-              if (lblEl && lblEl.textContent) prodLabel = (lblEl.textContent || '').trim();
-            } catch (e) { /* ignore */ }
-            try { da.setAttribute('aria-label', 'Download your ' + (prodLabel || 'purchase') + ' installer'); } catch (e) { /* ignore */ }
-          } catch (e) { /* ignore */ }
-          container.appendChild(da);
-        }
-      } catch (e) { /* ignore download anchor */ }
-
-      // If a provider receipt URL is present, surface a 'View receipt' button
-      // before adding the Contact support CTA so users can quickly open the
-      // payment provider's receipt page. Use extractReceiptUrl when available
-      // for validation; otherwise fall back to rec.receiptUrl. 
-      try {
-        var receiptUrl = '';
-        try {
-          if (typeof extractReceiptUrl === 'function') {
-            try { receiptUrl = extractReceiptUrl(rec) || ''; } catch (e) { receiptUrl = ''; }
-          } else {
-            receiptUrl = (rec && rec.receiptUrl) ? String(rec.receiptUrl).trim() : '';
-            if (receiptUrl && !/^https?:\/\//i.test(receiptUrl)) receiptUrl = '';
-          }
-        } catch (e) { receiptUrl = ''; }
-        if (receiptUrl) {
-          var ra = el('a', 'button', 'View receipt');
-          try { ra.setAttribute('href', receiptUrl); } catch (e) { /* ignore */ }
-          try { ra.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-          try { ra.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-          try {
-            var prodLabel2 = token || '';
-            try {
-              var lblEl2 = host.querySelector('.bought-summary__label');
-              if (lblEl2 && lblEl2.textContent) prodLabel2 = (lblEl2.textContent || '').trim();
-            } catch (e) { /* ignore */ }
-            try { ra.setAttribute('aria-label', 'View receipt for ' + (prodLabel2 || 'your') + ' purchase'); } catch (e) { /* ignore */ }
-          } catch (e) { /* ignore */ }
-          container.appendChild(ra);
-        }
-      } catch (e) { /* ignore receipt anchor */ }
-
-      // Contact support CTA (always available)
-      try {
-        var masked = '';
-        try { masked = maskRef(rec.ref); } catch (e) { masked = ''; }
-        var prod = token || '';
-        try {
-          var a = el('a', 'button', 'Contact support');
-          var base = attr(document.querySelector('[data-bought-support-url]') || document.body, 'data-bought-support-url') || '';
-          var qbase = base;
-          var hash = '';
-          try {
-            var idx = base.indexOf('#');
-            if (idx !== -1) {
-              qbase = base.slice(0, idx);
-              hash = base.slice(idx);
-            }
-          } catch (e) { qbase = base; hash = ''; }
-
-          var sep = qbase.indexOf('?') !== -1 ? '&' : '?';
-          var params = [];
-          if (masked) params.push('ref=' + encodeURIComponent(masked));
-          if (prod) params.push('product=' + encodeURIComponent(prod));
-          var href = qbase + (params.length ? (sep + params.join('&')) : '') + (hash || '');
-
-          try { a.setAttribute('href', href); } catch (e) { /* ignore */ }
-          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-
-          var prodLabel = prod || '';
-          try {
-            var lblEl = host.querySelector('.bought-summary__label');
-            if (lblEl && lblEl.textContent) prodLabel = (lblEl.textContent || '').trim();
-          } catch (e) { /* ignore */ }
-          try { a.setAttribute('aria-label', 'Contact support about ' + (prodLabel || 'your') + ' purchase'); } catch (e) { /* ignore */ }
-
-          container.appendChild(a);
-        } catch (e) { /* ignore */ }
-      } catch (e) { /* ignore */ }
-
-      return container;
-    } catch (e) { return null; }
-  }
+  /* ======================================================================= */
 
   function initBoughtSummary(root) {
     try {
@@ -710,6 +524,129 @@
             }
           } catch (e) { /* ignore status node */ }
 
+          // Add a single guarded "Re-verify purchases" button when appropriate.
+          try {
+            // Find refs that have a reference string but lack a validated
+            // download or receipt URL. This mirrors the conservative checks
+            // already used above.
+            var toReverify = [];
+            try {
+              for (var kk in bought) {
+                if (!Object.prototype.hasOwnProperty.call(bought, kk)) continue;
+                try {
+                  var r = bought[kk];
+                  if (!r || typeof r !== 'object') continue;
+                  var ref = '';
+                  try { ref = String(r.ref || '').trim(); } catch (e) { ref = ''; }
+                  if (!ref) continue;
+
+                  // Determine presence of download or receipt conservatively
+                  var durl = '';
+                  try {
+                    if (typeof extractDownloadUrl === 'function') {
+                      try { durl = extractDownloadUrl(r) || ''; } catch (e) { durl = ''; }
+                    } else {
+                      durl = (r && r.downloadUrl) ? String(r.downloadUrl).trim() : '';
+                      if (durl && !/^https?:\/\//i.test(durl)) durl = '';
+                    }
+                  } catch (e) { durl = ''; }
+
+                  var rurl = '';
+                  try {
+                    if (typeof extractReceiptUrl === 'function') {
+                      try { rurl = extractReceiptUrl(r) || ''; } catch (e) { rurl = ''; }
+                    } else {
+                      rurl = (r && r.receiptUrl) ? String(r.receiptUrl).trim() : '';
+                      if (rurl && !/^https?:\/\//i.test(rurl)) rurl = '';
+                    }
+                  } catch (e) { rurl = ''; }
+
+                  if (!durl && !rurl) {
+                    // Avoid duplicates
+                    if (toReverify.indexOf(ref) === -1) toReverify.push(ref);
+                  }
+                } catch (e) { /* ignore per-record */ }
+              }
+            } catch (e) { toReverify = []; }
+
+            // Only render the button if we have refs and the host does not
+            // already contain one, and the platform verify function exists.
+            try {
+              var existing = host.querySelector('[data-ssp-bought-reverify]');
+              if (toReverify.length && !existing && typeof window.groupStoreVerify === 'function') {
+                var btn = el('button', 'bought-summary__reverify', 'Re-verify purchases');
+                try { btn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+                try { btn.setAttribute('data-ssp-bought-reverify', 'on'); } catch (e) { /* ignore */ }
+                try { btn.setAttribute('aria-label', 'Re-verify remembered purchases'); } catch (e) { /* ignore */ }
+
+                btn.addEventListener('click', function () {
+                  try {
+                    // Disable while working
+                    try { btn.disabled = true; } catch (e) { /* ignore */ }
+                    try { if (SS && typeof SS.toast === 'function') SS.toast('Re-verifying purchases202'); } catch (e) { /* ignore */ }
+
+                    var refs = toReverify.slice(0);
+                    var promises = refs.map(function (ref) {
+                      return new Promise(function (resolve) {
+                        try {
+                          var out = null;
+                          try { out = window.groupStoreVerify(ref); } catch (e) { out = null; }
+                          // Accept either a Promise or a synchronous return
+                          if (out && typeof out.then === 'function') {
+                            out.then(function (res) { resolve(res); }).catch(function () { resolve(null); });
+                          } else {
+                            resolve(out || null);
+                          }
+                        } catch (e) { resolve(null); }
+                      });
+                    });
+
+                    Promise.all(promises).then(function (results) {
+                      try {
+                        var ok = 0, failed = 0, saved = 0;
+                        for (var i = 0; i < results.length; i++) {
+                          try {
+                            var res = results[i];
+                            if (!res) { failed++; continue; }
+                            ok++;
+                            try {
+                              if (typeof window.soundshopPersistBought === 'function') {
+                                try { window.soundshopPersistBought(res); saved++; } catch (e) { /* ignore persist */ }
+                              }
+                            } catch (e) { /* ignore */ }
+                          } catch (e) { failed++; }
+                        }
+
+                        try {
+                          if (SS && typeof SS.toast === 'function') {
+                            try {
+                              if (ok > 0) SS.toast('Re-verified ' + ok + ' order' + (ok !== 1 ? 's' : '') + (failed ? (', ' + failed + ' failed') : ''));
+                              else if (failed) SS.toast('No orders verified');
+                              else SS.toast('No orders found to verify');
+                            } catch (e) { /* ignore */ }
+                          }
+                        } catch (e) { /* ignore */ }
+
+                        try { btn.disabled = false; } catch (e) { /* ignore */ }
+                      } catch (e) { try { btn.disabled = false; } catch (err) { /* ignore */ } }
+                    }).catch(function () { try { btn.disabled = false; } catch (e) { /* ignore */ } });
+
+                  } catch (e) { try { btn.disabled = false; } catch (err) { /* ignore */ } }
+                });
+
+                // Append the button to the host after the list if possible
+                try {
+                  if (list && list.parentNode) list.parentNode.insertBefore(btn, list.nextSibling);
+                  else host.appendChild(btn);
+                } catch (e) { try { host.appendChild(btn); } catch (err) { /* ignore */ } }
+              } else if (!toReverify.length && existing) {
+                // No longer needed: remove existing button
+                try { if (existing && existing.parentNode) existing.parentNode.removeChild(existing); } catch (e) { /* ignore */ }
+              }
+            } catch (e) { /* ignore render of button */ }
+
+          } catch (e) { /* ignore reverify */ }
+
           // Unhide the host only when we actually rendered something
           try {
             if (any) {
@@ -738,19 +675,5 @@
   P.initBoughtSummary = initBoughtSummary;
   P.initBoughtNote = initBoughtNote;
   P.createBoughtCta = createBoughtCta;
-  P.maskRef = maskRef;
-  P.maskEmail = maskEmail;
-
-  // Run the conservative auto-verify on DOM ready so it operates after any
-  // initial UI rendering. This mirrors other init semantics and is safe to
-  // call multiple times.
-  try {
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initUrlOrderAutoVerify);
-    } else {
-      // DOM already ready
-      try { initUrlOrderAutoVerify(); } catch (e) { /* ignore */ }
-    }
-  } catch (e) { /* ignore */ }
 
 })(window, document);
