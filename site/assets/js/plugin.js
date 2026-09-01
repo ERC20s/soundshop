@@ -283,6 +283,20 @@
     } catch (err) { return ''; }
   }
 
+  // Mask a payment/reference id conservatively so the banner can show a short
+  // fragment without exposing the whole token. Example: abcdef123456 -> abcdef…3456
+  function maskRef(r) {
+    try {
+      if (!r || typeof r !== 'string') return '';
+      var s = String(r).trim();
+      if (!s) return '';
+      if (s.length <= 10) return s.slice(0, 3) + '…' + s.slice(-2);
+      var front = s.slice(0, 6);
+      var back = s.slice(-4);
+      return front + '…' + back;
+    } catch (e) { return ''; }
+  }
+
   function extractDownloadUrl(o) {
     try {
       if (!o || typeof o !== 'object') return '';
@@ -347,6 +361,43 @@
     } catch (e) { return null; }
   }
 
+  // Shared helper: update the small URL-order banner when a verification
+  // succeeds so users immediately see the verified item and a Download CTA.
+  function updateUrlOrderBanner(banner, order) {
+    try {
+      if (!banner || !order || typeof order !== 'object') return;
+      try {
+        // Update text to mention the verified item name when available
+        var name = String(order.itemName || order.name || order.item || order.itemId || '').trim();
+        var textEl = banner.querySelector('span');
+        if (textEl) {
+          if (name) textEl.textContent = 'Verified purchase: ' + name + '. ';
+          else textEl.textContent = 'Verified purchase.';
+        }
+        // Flip the button to Verified
+        var btn = banner.querySelector('button');
+        if (btn) {
+          btn.textContent = 'Verified';
+          btn.disabled = true;
+        }
+        // Append a Download CTA when the verified order provides a download URL
+        var existing = banner.querySelector('a.button.button--primary');
+        if (!existing) {
+          var d = extractDownloadUrl(order);
+          if (d) {
+            var a = el('a', 'button button--primary', 'Download');
+            a.href = d;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            // Insert after the button if present, else append
+            if (btn && btn.parentNode) btn.parentNode.insertBefore(a, btn.nextSibling);
+            else banner.appendChild(a);
+          }
+        }
+      } catch (e) { /* ignore banner update errors */ }
+    } catch (e) { /* ignore */ }
+  }
+
   // -----------------------------------------------------------------------
   // initUrlOrderVerifyBanner
   //
@@ -395,7 +446,8 @@
       // Build the banner
       var banner = el('div', 'ssp-url-order-verify-banner');
       banner.style.cssText = 'font:13px system-ui,sans-serif;color:#065f46;margin:8px 0;padding:10px;border:1px solid #d1fae5;background:#ecfdf5;border-radius:6px;';
-      var text = el('span', '', 'We detected a returned order on the URL. ');
+      var masked = maskRef(orderId);
+      var text = el('span', '', 'We detected a returned order on the URL' + (masked ? ' (ref ' + masked + '). ' : '. '));
       var btn = el('button', 'button', 'Verify returned purchase');
       btn.type = 'button';
 
@@ -417,6 +469,10 @@
                 try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
               }
               try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+
+              // Update the banner to reflect the verified order (name + download CTA)
+              try { updateUrlOrderBanner(banner, o); } catch (e) { /* ignore */ }
+
               btn.textContent = 'Verified';
             } catch (e) {
               btn.disabled = false;
@@ -489,6 +545,14 @@
               try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
             }
             try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+
+            // If a banner is present on the page, update it to show the
+            // verified item and provide a Download CTA when available.
+            try {
+              var banner = document.querySelector('.ssp-url-order-verify-banner');
+              if (banner) updateUrlOrderBanner(banner, o);
+            } catch (e) { /* ignore */ }
+
           } catch (e) { /* ignore success handling */ }
         }).catch(function () { /* ignore network/verify errors */ });
       } catch (e) { /* ignore */ }
