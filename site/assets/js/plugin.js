@@ -341,6 +341,49 @@
     } catch (e) { return null; }
   }
 
+  // Conservative helper to create a receipt view anchor when a safe URL exists
+  function makeReceiptAnchor(url) {
+    try {
+      if (!url || typeof url !== 'string') return null;
+      var u = url.trim();
+      if (!u || !/^https?:\/\//i.test(u)) return null;
+      var a = document.createElement('a');
+      a.className = 'bought__receipt';
+      try { a.setAttribute('href', u); } catch (e) { /* ignore */ }
+      try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+      try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+      a.textContent = 'View receipt';
+      return a;
+    } catch (e) { return null; }
+  }
+
+  // Defensive copy-to-clipboard helper with a textarea fallback
+  function copyToClipboard(text) {
+    try {
+      if (!text && text !== 0) return Promise.reject(new Error('no-text'));
+      var s = String(text);
+      if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try { return navigator.clipboard.writeText(s); } catch (e) { /* fall through to fallback */ }
+      }
+      return new Promise(function (resolve, reject) {
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = s;
+          // ensure it's not visible and not disruptive
+          ta.style.position = 'fixed'; ta.style.left = '-9999px'; ta.style.top = '0';
+          ta.setAttribute('aria-hidden', 'true');
+          document.body.appendChild(ta);
+          ta.focus(); ta.select();
+          var ok = false;
+          try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+          try { document.body.removeChild(ta); } catch (e) { /* ignore */ }
+          if (ok) return resolve();
+          return reject(new Error('copy-failed'));
+        } catch (e) { return reject(e); }
+      });
+    } catch (e) { return Promise.reject(e); }
+  }
+
   /* =======================================================================
      02  BOUGHT NOTE / SUMMARY UI
      ======================================================================= */
@@ -427,15 +470,48 @@
                 try { existing.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
                 try { existing.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
                 try { existing.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-                return;
-              }
-              // If existing CTA exists but is not an anchor, append a proper link
-              var a2 = makeDownloadAnchor(url);
-              if (a2) {
-                try { host.appendChild(a2); } catch (e) { /* ignore */ }
+              } else {
+                // If existing CTA exists but is not an anchor, append a proper link
+                var a2 = makeDownloadAnchor(url);
+                if (a2) {
+                  try { host.appendChild(a2); } catch (e) { /* ignore */ }
+                }
               }
             } catch (e) { /* ignore update */ }
           }
+
+          // Update or append copy button if a reference is available
+          try {
+            var ref = (detail && (detail.ref || detail.reference || detail.id)) ? String(detail.ref || detail.reference || detail.id) : '';
+            if (ref) {
+              var existingCopy = host.querySelector('[data-ssp-bought-copy]');
+              if (existingCopy) {
+                try { existingCopy.setAttribute('data-ssp-bought-copy', ref); } catch (e) { /* ignore */ }
+              } else {
+                var cb = document.createElement('button');
+                cb.className = 'btn btn-ghost bought__copy';
+                try { cb.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+                try { cb.setAttribute('data-ssp-bought-copy', ref); } catch (e) { /* ignore */ }
+                cb.textContent = 'Copy reference';
+                try { host.appendChild(cb); } catch (e) { /* ignore */ }
+              }
+            }
+          } catch (e) { /* ignore */ }
+
+          // Update or append receipt link conservatively
+          try {
+            var rurl = (detail && (detail.receiptUrl || detail.receipt)) ? String(detail.receiptUrl || detail.receipt) : '';
+            var ra = makeReceiptAnchor(rurl);
+            if (ra) {
+              var existingReceipt = host.querySelector('.bought__receipt');
+              if (existingReceipt && existingReceipt.tagName && existingReceipt.tagName.toLowerCase() === 'a') {
+                try { existingReceipt.setAttribute('href', rurl); } catch (e) { /* ignore */ }
+              } else {
+                try { host.appendChild(ra); } catch (e) { /* ignore */ }
+              }
+            }
+          } catch (e) { /* ignore */ }
+
           return;
         }
       } catch (e) { /* ignore */ }
@@ -471,6 +547,27 @@
             wrapper.appendChild(vb);
           }
         }
+
+        // If we have a copyable reference, append a small Copy button
+        try {
+          var refv = (detail && (detail.ref || detail.reference || detail.id)) ? String(detail.ref || detail.reference || detail.id) : '';
+          if (refv) {
+            var cb2 = el('button', 'btn btn-ghost bought__copy', 'Copy reference');
+            try { cb2.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+            try { cb2.setAttribute('data-ssp-bought-copy', refv); } catch (e) { /* ignore */ }
+            try { wrapper.appendChild(cb2); } catch (e) { /* ignore */ }
+          }
+        } catch (e) { /* ignore */ }
+
+        // Append a conservative receipt anchor when present
+        try {
+          var rurl2 = (detail && (detail.receiptUrl || detail.receipt)) ? String(detail.receiptUrl || detail.receipt) : '';
+          var ra2 = makeReceiptAnchor(rurl2);
+          if (ra2) {
+            try { wrapper.appendChild(ra2); } catch (e) { /* ignore */ }
+          }
+        } catch (e) { /* ignore */ }
+
         try { host.appendChild(wrapper); } catch (e) { /* ignore */ }
       } catch (e) { /* ignore create */ }
 
@@ -502,24 +599,22 @@
         var id = attr(btn, 'data-bought-verify') || '';
 
         function failRestore(msg) {
-          try { btn.textContent = origText; } catch (e) { /* ignore */ }
-          try { btn.disabled = false; } catch (e) { /* ignore */ }
-          try { btn.removeAttribute('data-ssp-verifying'); } catch (e) { /* ignore */ }
           try {
-            // brief inline support hint adjacent to the button
-            var hint = document.createElement('span');
-            hint.className = 'bought__verify-hint';
-            hint.style.cssText = 'margin-left:8px;font-size:13px;color:#6b7280';
-            var a = document.createElement('a');
-            a.setAttribute('href', 'docs.html#support');
-            a.style.color = '#7c5cff';
-            a.textContent = msg || 'Need help? Contact Support';
-            hint.appendChild(a);
-            // insert after button
-            if (btn.parentNode) {
-              try { btn.parentNode.insertBefore(hint, btn.nextSibling); } catch (e) { /* ignore */ }
-              // remove hint after a short timeout
-              setTimeout(function () { try { if (hint && hint.parentNode) hint.parentNode.removeChild(hint); } catch (e) { /* ignore */ } }, 6000);
+            try { btn.textContent = origText; } catch (e) { /* ignore */ }
+            try { btn.disabled = false; } catch (e) { /* ignore */ }
+            try { btn.removeAttribute('data-ssp-verifying'); } catch (e) { /* ignore */ }
+            if (msg) {
+              try {
+                var hint = el('div', 'ssp-verify-hint');
+                hint.style.cssText = 'margin-top:8px;font-size:13px;color:#6b7280';
+                var a = document.createElement('a');
+                a.setAttribute('href', 'docs.html#support');
+                a.style.color = '#7c5cff';
+                a.textContent = msg;
+                hint.appendChild(a);
+                try { btn.parentNode.insertBefore(hint, btn.nextSibling); } catch (e) { /* ignore */ }
+                setTimeout(function () { try { if (hint && hint.parentNode) hint.parentNode.removeChild(hint); } catch (e) { /* ignore */ } }, 6000);
+              } catch (e) { /* ignore */ }
             }
           } catch (e) { /* ignore */ }
         }
@@ -602,6 +697,51 @@
         }
 
       } catch (e) { /* ignore handler errors */ }
+    });
+  } catch (e) { /* ignore binding */ }
+
+  // Add delegated handler for Copy reference buttons [data-ssp-bought-copy]
+  try {
+    document.addEventListener('click', function (e) {
+      try {
+        var btn = e.target && e.target.closest ? e.target.closest('[data-ssp-bought-copy]') : null;
+        if (!btn) return;
+        var tag = (btn.tagName || '').toLowerCase();
+        if (tag !== 'button' && tag !== 'a' && tag !== 'input') return;
+
+        e.preventDefault && e.preventDefault();
+
+        var ref = attr(btn, 'data-ssp-bought-copy') || '';
+        if (!ref) return;
+
+        // Provide immediate disabled/feedback state while copying
+        var orig = btn.textContent || '';
+        try { btn.disabled = true; } catch (e) { /* ignore */ }
+        try { btn.textContent = 'Copying…'; } catch (e) { /* ignore */ }
+
+        copyToClipboard(ref).then(function () {
+          try { btn.textContent = 'Copied'; } catch (e) { /* ignore */ }
+          // transient hint node for additional feedback
+          try {
+            var hint = el('div', 'bought__copy-hint', 'Reference copied to clipboard');
+            hint.style.cssText = 'display:inline-block;margin-left:8px;font-size:13px;color:#6b7280';
+            try { btn.parentNode && btn.parentNode.insertBefore(hint, btn.nextSibling); } catch (e) { /* ignore */ }
+            setTimeout(function () { try { if (hint && hint.parentNode) hint.parentNode.removeChild(hint); } catch (e) { /* ignore */ } }, 4000);
+          } catch (e) { /* ignore */ }
+        }).catch(function () {
+          try { btn.textContent = 'Copy failed'; } catch (e) { /* ignore */ }
+          // leave a short hint suggesting manual copy
+          try {
+            var hint2 = el('div', 'bought__copy-hint', 'Select and copy the reference manually');
+            hint2.style.cssText = 'display:inline-block;margin-left:8px;font-size:13px;color:#6b7280';
+            try { btn.parentNode && btn.parentNode.insertBefore(hint2, btn.nextSibling); } catch (e) { /* ignore */ }
+            setTimeout(function () { try { if (hint2 && hint2.parentNode) hint2.parentNode.removeChild(hint2); } catch (e) { /* ignore */ } }, 6000);
+          } catch (e) { /* ignore */ }
+        }).finally(function () {
+          try { setTimeout(function () { try { btn.textContent = orig; } catch (e) { /* ignore */ } try { btn.disabled = false; } catch (e) { /* ignore */ } }, 800); } catch (e) { /* ignore */ }
+        });
+
+      } catch (e) { /* ignore */ }
     });
   } catch (e) { /* ignore binding */ }
 
@@ -742,75 +882,66 @@
               try { btn.textContent = 'Verify purchase'; } catch (e) { /* ignore */ }
               try { btn.disabled = false; } catch (e) { /* ignore */ }
             });
+          } catch (e) { /* ignore */ }
+        });
 
-          } catch (e) { try { btn.textContent = 'Verify purchase'; } catch (e) { /* ignore */ } try { btn.disabled = false; } catch (e) { /* ignore */ } }
-        }, false);
-
-      } catch (e) { /* ignore banner build */ }
-
-    } catch (e) { /* swallow */ }
+      } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
   }
-  // Expose internally for tests or manual invocation
-  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
 
-  // Public init: perform bought-note and bought-summary work (safe to call repeatedly)
-  P.init = function () {
-    try { P.initBoughtSummary(); } catch (e) { /* ignore */ }
-    try { P.initBoughtNote(); } catch (e) { /* ignore */ }
-
-    // Conservative, one-shot auto-verify pass for remembered purchases that
-    // have an order id but no verified downloadUrl. This only runs when the
-    // platform verifier (window.groupStoreVerify) is available and only once
-    // per page load to keep privacy and server load minimal.
-    try {
-      if (!_boughtAutoVerifyCalled && typeof window.groupStoreVerify === 'function') {
-        var arr = [];
-        try { arr = readBoughtArray(document); } catch (e) { arr = []; }
-        if (arr && arr.length) {
-          var toVerify = null;
-          for (var i = 0; i < arr.length; i++) {
-            var it = arr[i];
-            if (!it) continue;
-            if ((it.id || it.ref) && !it.downloadUrl) { toVerify = it; break; }
-          }
-          if (toVerify) {
-            _boughtAutoVerifyCalled = true;
-            try {
-              var vid = toVerify.id || toVerify.ref || '';
-              var p = null;
-              try { p = window.groupStoreVerify(vid); } catch (e) { p = null; }
-              if (p && typeof p.then === 'function') {
-                p.then(function (order) {
-                  try {
-                    if (!order) return;
-                    // Only persist and broadcast when a conservative https download URL exists
-                    var d = extractDownloadUrl(order);
-                    if (!d) return;
-                    try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-                    try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
-                  } catch (e) { /* ignore */ }
-                }).catch(function () { /* ignore */ });
-              }
-            } catch (e) { /* ignore */ }
-          }
+  // Conservative, one-shot auto-verify pass for remembered purchases that
+  // have an order id but no verified downloadUrl. This only runs when the
+  // platform verifier (window.groupStoreVerify) is available and only once
+  // per page load to keep privacy and server load minimal.
+  try {
+    if (!_boughtAutoVerifyCalled && typeof window.groupStoreVerify === 'function') {
+      var arrAuto = [];
+      try { arrAuto = readBoughtArray(document); } catch (e) { arrAuto = []; }
+      if (arrAuto && arrAuto.length) {
+        var toVerify = null;
+        for (var i = 0; i < arrAuto.length; i++) {
+          var it = arrAuto[i];
+          if (!it) continue;
+          if ((it.id || it.ref) && !it.downloadUrl) { toVerify = it; break; }
+        }
+        if (toVerify) {
+          _boughtAutoVerifyCalled = true;
+          try {
+            var vid = toVerify.id || toVerify.ref || '';
+            var p = null;
+            try { p = window.groupStoreVerify(vid); } catch (e) { p = null; }
+            if (p && typeof p.then === 'function') {
+              p.then(function (order) {
+                try {
+                  if (!order) return;
+                  // Only persist and broadcast when a conservative https download URL exists
+                  var d = extractDownloadUrl(order);
+                  if (!d) return;
+                  try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                  try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
+                } catch (e) { /* ignore */ }
+              }).catch(function () { /* ignore */ });
+            }
+          } catch (e) { /* ignore */ }
         }
       }
-    } catch (e) { /* ignore */ }
+    }
+  } catch (e) { /* ignore */ }
 
-    // If the payments widget is absent, offer a conservative, user-initiated
-    // verification UI when the URL contains ?d8a_order=<id>. This is a one-shot
-    // per page load to keep traffic and privacy impact minimal.
-    try {
-      if (typeof window.groupStoreVerify !== 'function' && !_sspUrlOrderVerifyDone) {
-        try { initUrlOrderVerifyBanner(); } catch (e) { /* ignore */ }
-      }
-    } catch (e) { /* ignore */ }
-  };
+  // If the payments widget is absent, offer a conservative, user-initiated
+  // verification UI when the URL contains ?d8a_order=<id>. This is a one-shot
+  // per page load to keep traffic and privacy impact minimal.
+  try {
+    if (typeof window.groupStoreVerify !== 'function' && !_sspUrlOrderVerifyDone) {
+      try { initUrlOrderVerifyBanner(); } catch (e) { /* ignore */ }
+    }
+  } catch (e) { /* ignore */ }
 
   // Export public helpers that may be used externally
   P.extractDownloadUrl = extractDownloadUrl;
   P.readBoughtArray = readBoughtArray;
   P.maskEmail = maskEmail;
   P.createBoughtCta = createBoughtCta;
+  P.copyToClipboard = copyToClipboard;
 
 }(window, document));
