@@ -290,105 +290,48 @@
             .catch(function () { location.href = a.href; });
         });
       });
-  })();
-  </script>
 
-  <!-- Handle group-store:paid event to record purchase in browser memory -->
-  <script>
-  (function () {
+    // Persist a returned paid order into canonical localStorage so the page's
+    // bought summary / note can show it. This is defensive: localStorage may
+    // be full or unavailable and we must not throw.
     var BOUGHT_KEY = 'soundshop:bought:v1';
-    var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;  // 60 days
-
-    // Map product names/IDs to internal tokens
-    function getProductToken(itemName, itemId) {
-      var name = String(itemName || itemId || '').trim().toLowerCase();
-
-      // Handle bundle names
-      if (name === 'the full shop' || name === 'bundle' || name === 'full shop') {
-        return 'bundle';
-      }
-
-      // Handle individual plugin names
-      if (name === 'vanta' || name === 'vanta - wavetable synth') {
-        return 'vanta';
-      }
-      if (name === 'drift' || name === 'drift - spectral delay') {
-        return 'drift';
-      }
-      if (name === 'prism' || name === 'prism - reverb') {
-        return 'prism';
-      }
-      if (name === 'anvil' || name === 'anvil - punch compressor') {
-        return 'anvil';
-      }
-
-      // Try to extract token from name if it contains one
-      var tokens = ['bundle', 'vanta', 'drift', 'prism', 'anvil'];
-      for (var i = 0; i < tokens.length; i++) {
-        if (name.indexOf(tokens[i]) !== -1) {
-          return tokens[i];
-        }
-      }
-
-      // Unknown product, log and return null
-      return null;
-    }
-
-    // Prune expired records from localStorage
     function pruneExpiredRecords() {
       try {
-        var raw = window.localStorage.getItem(BOUGHT_KEY);
+        var raw = window.localStorage && window.localStorage.getItem(BOUGHT_KEY);
         if (!raw) return;
         var parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
-
+        if (!parsed || typeof parsed !== 'object') return;
         var now = Date.now();
         var changed = false;
-        for (var key in parsed) {
-          if (!Object.prototype.hasOwnProperty.call(parsed, key)) continue;
-          var rec = parsed[key];
-          var isObj = !!rec && typeof rec === 'object' && !Array.isArray(rec);
-          var when = Number(isObj ? rec.t : rec);
-          if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
-            delete parsed[key];
+        for (var k in parsed) {
+          if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
+          var r = parsed[k];
+          if (!r) continue;
+          if (r.t && typeof r.t === 'number' && r.t < now - (1000 * 60 * 60 * 24 * 365 * 2)) {
+            // prune items older than 2 years
+            delete parsed[k];
             changed = true;
           }
         }
-        if (changed) {
-          window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(parsed));
-        }
-      } catch (e) {
-        // localStorage unavailable or corrupt, silently ignore
-      }
+        if (changed) try { window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(parsed)); } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
     }
 
-    // Persist a returned checkout into the canonical BOUGHT_KEY and refresh the
-    // page-level bought-summary display. This is exported as a safe global so
-    // other scripts (plugin.js) can trigger the same behaviour without owning
-    // the storage logic.
     function persistBought(order) {
-      if (!order) return;
-      var token = getProductToken(order.itemName, order.itemId);
-      if (!token) return;
-
       try {
-        var now = Date.now();
+        if (!order || typeof order !== 'object') return;
+        var token = '';
+        try { token = String(order.item || order.itemId || order.product || order.id || order.ref || order.reference || '').toLowerCase().replace(/[^a-z0-9_-]/g, '-'); } catch (e) { token = ''; }
+        if (!token) return;
+
         var bought = {};
+        try {
+          var raw = window.localStorage && window.localStorage.getItem(BOUGHT_KEY);
+          if (raw) bought = JSON.parse(raw) || {};
+        } catch (e) { bought = {}; }
 
-        // Read existing records
-        var raw = window.localStorage.getItem(BOUGHT_KEY);
-        if (raw) {
-          try {
-            var parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-              bought = parsed;
-            }
-          } catch (e) {
-            // Corrupt data, start fresh
-          }
-        }
+        var now = Date.now();
 
-        // Attempt to capture a delivery email from the platform, if present.
         // Try several common fields and validate conservatively.
         var email = '';
         try {
@@ -424,6 +367,20 @@
               durl = durl.trim();
               if (durl && /^https?:\/\//i.test(durl)) {
                 rec.downloadUrl = durl;
+              }
+            }
+          }
+        } catch (e) { /* ignore */ }
+
+        // Conservative extraction of a provider receipt URL as a safe fallback
+        try {
+          var rurl = '';
+          if (order && typeof order === 'object') {
+            rurl = order.receiptUrl || order.receipt_url || order.receipt || '';
+            if (typeof rurl === 'string') {
+              rurl = rurl.trim();
+              if (rurl && /^https?:\/\//i.test(rurl)) {
+                rec.receiptUrl = rurl;
               }
             }
           }
