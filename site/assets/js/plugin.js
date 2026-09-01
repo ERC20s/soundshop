@@ -450,6 +450,9 @@
           var order = ['vanta','drift','prism','anvil','bundle'];
           var any = false;
 
+          // Collect summary details for aria-live message
+          var items = [];
+
           for (var i = 0; i < order.length; i++) {
             var token = order[i];
             if (!Object.prototype.hasOwnProperty.call(bought, token)) continue;
@@ -472,117 +475,139 @@
 
             // Reference
             try {
-              var rawRef = String(rec.ref || '');
-              var maskedRef = '';
-              try { maskedRef = maskRef(rec.ref); } catch (e) { maskedRef = ''; }
-              var refText = maskedRef || rawRef;
-              var refSpan = el('span', 'bought-summary__ref', refText);
-              try {
-                if (maskedRef) {
-                  try { refSpan.setAttribute('data-full-ref', rawRef); } catch (e) { /* ignore */ }
-                  try { refSpan.setAttribute('title', rawRef); } catch (e) { /* ignore */ }
-                  try { refSpan.setAttribute('aria-label', 'Payment reference ' + refText); } catch (e) { /* ignore */ }
-                } else {
-                  try { refSpan.setAttribute('aria-label', 'Payment reference ' + rawRef); } catch (e) { /* ignore */ }
-                }
-                try { li.appendChild(refSpan); } catch (e) { /* ignore */ }
-              } catch (e) { /* ignore */ }
+              var fullRef = '';
+              try { fullRef = String(rec.ref || ''); } catch (e) { fullRef = ''; }
+              var masked = '';
+              try { masked = maskRef(fullRef); } catch (e) { masked = ''; }
+              var refSpan = el('span', 'bought-summary__ref', masked || '');
+              try { if (refSpan && typeof refSpan.setAttribute === 'function') refSpan.setAttribute('data-full-ref', fullRef || ''); } catch (e) { /* ignore */ }
+              try { if (refSpan && refSpan.textContent) li.appendChild(refSpan); } catch (e) { /* ignore */ }
             } catch (e) { /* ignore */ }
 
-            // Copy button
+            // Determine validated download/receipt presence for this item so the
+            // aria-live summary can reflect availability. Mirror the same
+            // conservative detection used in createBoughtCta().
+            var hasDownload = false;
+            var hasReceipt = false;
             try {
-              var fullRef = String(rec.ref || '');
-              if (fullRef) {
-                var copyBtn = el('button', 'button button--mono', 'Copy');
-                try { copyBtn.type = 'button'; } catch (e) { /* ignore */ }
-                try { copyBtn.setAttribute('aria-label', 'Copy payment reference'); } catch (e) { /* ignore */ }
+              var downloadUrl = '';
+              try {
+                if (typeof extractDownloadUrl === 'function') {
+                  try { downloadUrl = extractDownloadUrl(rec) || ''; } catch (e) { downloadUrl = ''; }
+                } else {
+                  downloadUrl = (rec && rec.downloadUrl) ? String(rec.downloadUrl).trim() : '';
+                  if (downloadUrl && !/^https?:\/\//i.test(downloadUrl)) downloadUrl = '';
+                }
+              } catch (e) { downloadUrl = ''; }
+              hasDownload = !!downloadUrl;
 
-                copyBtn.addEventListener('click', function (ev) {
-                  try {
-                    var btn = ev && ev.currentTarget ? ev.currentTarget : this;
-                    if (!btn) return;
-                    if (btn.disabled) return;
-                    btn.disabled = true;
-                    var prev = btn.textContent;
-                    // Local helper to show success feedback
-                    function showSuccess() {
+              var receiptUrl = '';
+              try {
+                if (typeof extractReceiptUrl === 'function') {
+                  try { receiptUrl = extractReceiptUrl(rec) || ''; } catch (e) { receiptUrl = ''; }
+                } else {
+                  receiptUrl = (rec && rec.receiptUrl) ? String(rec.receiptUrl).trim() : '';
+                  if (receiptUrl && !/^https?:\/\//i.test(receiptUrl)) receiptUrl = '';
+                }
+              } catch (e) { receiptUrl = ''; }
+              hasReceipt = !!receiptUrl;
+            } catch (e) { /* ignore detection */ }
+
+            // Record for summary
+            try {
+              var when = 0;
+              try { when = Number(rec.t) || 0; } catch (e) { when = 0; }
+              items.push({ label: (label || token), t: when, hasDownload: !!hasDownload, hasReceipt: !!hasReceipt });
+            } catch (e) { /* ignore */ }
+
+            // Copy button (per-item)
+            try {
+              var refSpan2 = null;
+              try { refSpan2 = li.querySelector('.bought-summary__ref'); } catch (e) { refSpan2 = null; }
+              if (refSpan2) {
+                var copyBtn = el('button', 'bought-summary__copy', 'Copy reference');
+                try { copyBtn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+                try {
+                  copyBtn.addEventListener('click', function (e) {
+                    try {
+                      var btn = e && e.currentTarget ? e.currentTarget : null;
+                      try { if (btn) btn.disabled = true; } catch (err) { /* ignore */ }
+
+                      var showSuccess = function () {
+                        try {
+                          if (SS && typeof SS.toast === 'function') {
+                            try { SS.toast('Reference copied'); } catch (e) { /* ignore */ }
+                          }
+                        } catch (e) { /* ignore */ }
+                      };
+
+                      var toCopy = '';
                       try {
-                        if (SS && typeof SS.toast === 'function') {
-                          try { SS.toast('Reference copied'); } catch (e) { /* ignore */ }
-                        } else {
-                          try { btn.textContent = 'Copied'; } catch (e) { /* ignore */ }
-                          try { setTimeout(function () { try { btn.textContent = prev; } catch (e) { /* ignore */ } }, 1500); } catch (e) { /* ignore */ }
+                        var container = btn.parentNode || null;
+                        var refEl = null;
+                        try { if (container && container.querySelector) refEl = container.querySelector('.bought-summary__ref'); } catch (e) { refEl = null; }
+                        if (refEl && refEl.getAttribute) {
+                          try { toCopy = refEl.getAttribute('data-full-ref') || refEl.textContent || ''; } catch (e) { toCopy = refEl.textContent || ''; }
+                        }
+                        if (!toCopy) {
+                          // Fallback: use button's closest li record via DOM dataset/attributes
+                          try { toCopy = fullRef || ''; } catch (e) { toCopy = ''; }
+                        }
+                      } catch (e) { toCopy = fullRef || ''; }
+
+                      // Try SS.copyText when available
+                      try {
+                        if (SS && typeof SS.copyText === 'function') {
+                          try {
+                            SS.copyText(toCopy);
+                            try { showSuccess(); } catch (e) { /* ignore */ }
+                            try { btn.disabled = false; } catch (e) { /* ignore */ }
+                            return;
+                          } catch (e) { /* fall through to fallback */ }
                         }
                       } catch (e) { /* ignore */ }
-                    }
 
-                    // Determine the reference to copy by locating the nearest ref element
-                    var toCopy = '';
-                    try {
-                      var container = btn.parentNode || null;
-                      var refEl = null;
-                      try { if (container && container.querySelector) refEl = container.querySelector('.bought-summary__ref'); } catch (e) { refEl = null; }
-                      if (refEl && refEl.getAttribute) {
-                        try { toCopy = refEl.getAttribute('data-full-ref') || refEl.textContent || ''; } catch (e) { toCopy = refEl.textContent || ''; }
-                      }
-                      if (!toCopy) {
-                        // Fallback: use button's closest li record via DOM dataset/attributes
-                        try { toCopy = fullRef || ''; } catch (e) { toCopy = ''; }
-                      }
-                    } catch (e) { toCopy = fullRef || ''; }
-
-                    // Try SS.copyText when available
-                    try {
-                      if (SS && typeof SS.copyText === 'function') {
-                        try {
-                          SS.copyText(toCopy);
+                      // Fallback: create a temporary textarea and use execCommand
+                      try {
+                        var ta = document.createElement('textarea');
+                        ta.value = toCopy;
+                        // Keep it out of view
+                        ta.style.position = 'absolute';
+                        ta.style.left = '-9999px';
+                        ta.style.top = '0';
+                        ta.setAttribute('aria-hidden', 'true');
+                        document.body.appendChild(ta);
+                        ta.focus();
+                        ta.select();
+                        var ok = false;
+                        try { ok = document.execCommand && document.execCommand('copy'); } catch (e) { ok = false; }
+                        try { document.body.removeChild(ta); } catch (e) { /* ignore */ }
+                        if (ok) {
                           try { showSuccess(); } catch (e) { /* ignore */ }
-                          try { btn.disabled = false; } catch (e) { /* ignore */ }
-                          return;
-                        } catch (e) { /* fall through to fallback */ }
-                      }
-                    } catch (e) { /* ignore */ }
-
-                    // Fallback: create a temporary textarea and use execCommand
-                    try {
-                      var ta = document.createElement('textarea');
-                      ta.value = toCopy;
-                      // Keep it out of view
-                      ta.style.position = 'absolute';
-                      ta.style.left = '-9999px';
-                      ta.style.top = '0';
-                      ta.setAttribute('aria-hidden', 'true');
-                      document.body.appendChild(ta);
-                      ta.focus();
-                      ta.select();
-                      var ok = false;
-                      try { ok = document.execCommand && document.execCommand('copy'); } catch (e) { ok = false; }
-                      try { document.body.removeChild(ta); } catch (e) { /* ignore */ }
-                      if (ok) {
-                        try { showSuccess(); } catch (e) { /* ignore */ }
-                      } else {
+                        } else {
+                          try {
+                            if (SS && typeof SS.toast === 'function') {
+                              try { SS.toast('Copy failed'); } catch (e) { /* ignore */ }
+                            }
+                          } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) {
                         try {
                           if (SS && typeof SS.toast === 'function') {
                             try { SS.toast('Copy failed'); } catch (e) { /* ignore */ }
                           }
                         } catch (e) { /* ignore */ }
                       }
-                    } catch (e) {
-                      try {
-                        if (SS && typeof SS.toast === 'function') {
-                          try { SS.toast('Copy failed'); } catch (e) { /* ignore */ }
-                        }
-                      } catch (e) { /* ignore */ }
-                    }
 
-                    try { btn.disabled = false; } catch (e) { /* ignore */ }
+                      try { btn.disabled = false; } catch (e) { /* ignore */ }
 
-                  } catch (e) { try { if (SS && typeof SS.toast === 'function') SS.toast('Copy failed'); } catch (err) { /* ignore */ } }
-                });
+                    } catch (e) { try { if (SS && typeof SS.toast === 'function') SS.toast('Copy failed'); } catch (err) { /* ignore */ } }
+                  });
+                } catch (e) { /* ignore listener */ }
 
                 // Append button after the ref span
                 try {
-                  if (refSpan && refSpan.parentNode) refSpan.parentNode.insertBefore(copyBtn, refSpan.nextSibling);
+                  if (refSpan2 && refSpan2.parentNode) refSpan2.parentNode.insertBefore(copyBtn, refSpan2.nextSibling);
                   else li.appendChild(copyBtn);
                 } catch (e) { try { li.appendChild(copyBtn); } catch (err) { /* ignore */ } }
               }
@@ -597,6 +622,93 @@
             list.appendChild(li);
             any = true;
           }
+
+          // Build or update an aria-live polite status node summarising the
+          // remembered purchases so screen-reader users are informed when the
+          // bought-summary renders. Keep the message short, idempotent and
+          // reuse the same node across re-renders.
+          try {
+            var statusSelector = '[data-bought-summary-status]';
+            var statusNode = null;
+            try { statusNode = host.querySelector(statusSelector); } catch (e) { statusNode = null; }
+
+            if (any) {
+              // Compose a short message based on the items we collected.
+              try {
+                var labels = [];
+                var latest = 0;
+                var anyDownload = false;
+                var anyReceipt = false;
+                for (var j = 0; j < items.length; j++) {
+                  try { labels.push(items[j].label || ''); } catch (e) { /* ignore */ }
+                  try { if (Number(items[j].t) > latest) latest = Number(items[j].t) || latest; } catch (e) { /* ignore */ }
+                  try { if (items[j].hasDownload) anyDownload = true; } catch (e) { /* ignore */ }
+                  try { if (items[j].hasReceipt) anyReceipt = true; } catch (e) { /* ignore */ }
+                }
+
+                var labelText = '';
+                try {
+                  if (labels.length === 1) labelText = labels[0];
+                  else if (labels.length === 2) labelText = labels[0] + ' and ' + labels[1];
+                  else if (labels.length > 2) {
+                    labelText = labels.slice(0, -1).join(', ') + ' and ' + labels[labels.length - 1];
+                  }
+                } catch (e) { labelText = labels.join(', '); }
+
+                var dateText = '';
+                try {
+                  if (latest > 0) {
+                    var d = new Date(Number(latest));
+                    var day = d.getUTCDate();
+                    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                    var mon = months[d.getUTCMonth()] || '';
+                    var year = d.getUTCFullYear();
+                    dateText = day + ' ' + mon + ' ' + year;
+                  }
+                } catch (e) { dateText = ''; }
+
+                var avail = '';
+                try {
+                  if (anyDownload) avail = 'Download available.';
+                  else if (anyReceipt) avail = 'View receipt available.';
+                  else avail = 'Contact support to get the product.';
+                } catch (e) { avail = ''; }
+
+                var message = '';
+                try {
+                  if (labelText) {
+                    if (dateText) message = labelText + ' bought on this device on ' + dateText + '. ' + avail;
+                    else message = labelText + ' bought on this device. ' + avail;
+                  } else {
+                    message = 'Purchase remembered on this device. ' + avail;
+                  }
+                } catch (e) { message = 'Purchase remembered on this device.'; }
+
+                // Create the status node if missing
+                if (!statusNode) {
+                  try {
+                    statusNode = document.createElement('p');
+                    statusNode.setAttribute('data-bought-summary-status', 'on');
+                    try { statusNode.setAttribute('role', 'status'); } catch (e) { /* ignore */ }
+                    try { statusNode.setAttribute('aria-live', 'polite'); } catch (e) { /* ignore */ }
+                    // Keep visually out of the way but available to assistive tech.
+                    try { statusNode.style.cssText = 'position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;'; } catch (e) { /* ignore */ }
+                    try { host.appendChild(statusNode); } catch (e) { /* ignore */ }
+                  } catch (e) { statusNode = null; }
+                }
+
+                if (statusNode) {
+                  try { statusNode.textContent = message || ''; } catch (e) { /* ignore */ }
+                }
+
+              } catch (e) { /* ignore compose */ }
+            } else {
+              // No purchases: remove any existing status node
+              try {
+                if (statusNode && statusNode.parentNode) statusNode.parentNode.removeChild(statusNode);
+              } catch (e) { /* ignore */ }
+            }
+          } catch (e) { /* ignore status node */ }
 
           // Unhide the host only when we actually rendered something
           try {
