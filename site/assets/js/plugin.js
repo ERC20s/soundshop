@@ -242,61 +242,7 @@
     try { return window.location.protocol === 'file:'; } catch (e) { return false; }
   }
 
-  // Ensure a small, conservative reveal-and-focus behaviour for discovered
-  // product Download anchors. This keeps the UI actionable after verification
-  // without causing navigation or automatic download. The function is careful
-  // to only act on visible elements and to respect reduced-motion preferences.
-  function focusAndReveal(elm) {
-    try {
-      if (!elm || !elm.getClientRects) return;
-      var rects = elm.getClientRects();
-      if (!rects || rects.length === 0) return;
-
-      // Ensure the element is focusable (but avoid stomping existing tabindex)
-      var tag = (elm.tagName || '').toLowerCase();
-      var isNaturalFocusable = false;
-      try {
-        if (tag === 'a' && elm.hasAttribute('href')) isNaturalFocusable = true;
-        if (tag === 'button' || tag === 'input' || tag === 'select' || tag === 'textarea') isNaturalFocusable = true;
-        if (elm.hasAttribute && elm.hasAttribute('tabindex')) isNaturalFocusable = true;
-      } catch (e) { /* ignore */ }
-      if (!isNaturalFocusable) {
-        try { elm.setAttribute('tabindex', '-1'); } catch (e) { /* ignore */ }
-      }
-
-      // Scroll into view respecting reduced-motion
-      try {
-        if (typeof elm.scrollIntoView === 'function') {
-          try {
-            elm.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'center', inline: 'nearest' });
-          } catch (e) {
-            try { elm.scrollIntoView(); } catch (e) { /* ignore */ }
-          }
-        }
-      } catch (e) { /* ignore */ }
-
-      // Focus the element
-      try { elm.focus && elm.focus({ preventScroll: true }); } catch (e) { try { elm.focus && elm.focus(); } catch (e) { /* ignore */ } }
-
-    } catch (e) { /* ignore any error to keep callers safe */ }
-  }
-
-  /* =======================================================================
-     01  CORE HELPERS
-     ======================================================================= */
-
-  function maskEmail(email) {
-    try {
-      if (!email || typeof email !== 'string') return '';
-      var parts = email.split('@');
-      if (parts.length !== 2) return '';
-      var left = parts[0];
-      var right = parts[1];
-      if (left.length <= 2) left = left[0] + '…';
-      else left = left.slice(0, 2) + '…';
-      return left + '@' + right;
-    } catch (e) { return ''; }
-  }
+  // E
 
   function readBoughtArray(root) {
     try {
@@ -341,6 +287,56 @@
     } catch (e) { return null; }
   }
 
+  // Copy helper: uses navigator.clipboard then a textarea fallback. Transient
+  // feedback should be handled by the caller; this returns a Promise that
+  // resolves on success and rejects on failure.
+  function copyToClipboard(text) {
+    return new Promise(function (resolve, reject) {
+      try {
+        if (!text && text !== '') return reject(new Error('no-text'));
+        if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          try {
+            navigator.clipboard.writeText(String(text)).then(function () { resolve(); }).catch(function (e) { reject(e); });
+            return;
+          } catch (e) { /* fall through to fallback */ }
+        }
+
+        // Fallback using a transient textarea
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = String(text);
+          // Prevent scrolling to bottom in iOS
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          ta.style.top = '0px';
+          ta.setAttribute('aria-hidden', 'true');
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          var ok = false;
+          try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+          try { if (ta && ta.parentNode) ta.parentNode.removeChild(ta); } catch (e) { /* ignore */ }
+          if (ok) resolve(); else reject(new Error('execcommand-failed'));
+        } catch (e) { reject(e); }
+
+      } catch (e) { reject(e); }
+    });
+  }
+
+  function makeReceiptAnchor(url) {
+    try {
+      if (!url || typeof url !== 'string') return null;
+      if (!/^https?:\/\//i.test(url)) return null;
+      var a = document.createElement('a');
+      a.className = 'bought__receipt';
+      try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
+      try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+      try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+      a.textContent = 'View receipt';
+      return a;
+    } catch (e) { return null; }
+  }
+
   /* =======================================================================
      02  BOUGHT NOTE / SUMMARY UI
      ======================================================================= */
@@ -379,28 +375,33 @@
       if (host.getAttribute('data-ssp-bought-summary') === 'on') return;
       host.setAttribute('data-ssp-bought-summary', 'on');
 
-      var arr = readBoughtArray(document);
-      if (!arr || !arr.length) return;
-
-      // Create list
       try {
+        var arr = readBoughtArray(document);
+        if (!arr || !arr.length) return;
         var ul = document.createElement('ul');
         ul.className = 'bought__list';
+
         for (var i = 0; i < arr.length; i++) {
           var it = arr[i];
           if (!it) continue;
-          var li = document.createElement('li');
-          li.className = 'bought__item';
-          var span = document.createElement('span');
-          span.className = 'bought__label';
-          span.textContent = maskEmail(it.email || '') || (it.ref || 'Purchased');
-          li.appendChild(span);
-          li.setAttribute('data-bought-item', it.ref || '');
+          try {
+            var li = document.createElement('li');
+            li.className = 'bought__item';
+            try { li.setAttribute('data-bought-id', it.ref || it.id || ''); } catch (e) { /* ignore */ }
 
-          // let createBoughtCta populate CTA area
-          try { createBoughtCta(li, it); } catch (e) { /* ignore */ }
+            var title = el('div', 'bought__title', (it.name || it.itemName || 'Purchased'));
+            li.appendChild(title);
 
-          ul.appendChild(li);
+            var meta = el('div', 'bought__meta');
+            try { meta.appendChild(el('div', 'bought__when', new Date((it.t || 0)).toLocaleString())); } catch (e) { /* ignore */ }
+            try { meta.appendChild(el('div', 'bought__ref', it.ref || '')); } catch (e) { /* ignore */ }
+            li.appendChild(meta);
+
+            // let createBoughtCta populate CTA area
+            try { createBoughtCta(li, it); } catch (e) { /* ignore */ }
+
+            ul.appendChild(li);
+          } catch (e) { /* ignore */ }
         }
         try { host.innerHTML = ''; host.appendChild(ul); } catch (e) { /* ignore */ }
       } catch (e) { /* ignore */ }
@@ -427,7 +428,6 @@
                 try { existing.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
                 try { existing.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
                 try { existing.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-                return;
               }
               // If existing CTA exists but is not an anchor, append a proper link
               var a2 = makeDownloadAnchor(url);
@@ -436,6 +436,40 @@
               }
             } catch (e) { /* ignore update */ }
           }
+
+          // Update or append conservative Copy / View receipt UI when present
+          try {
+            var refVal = (detail && (detail.ref || detail.reference)) ? String(detail.ref || detail.reference) : '';
+            if (refVal) {
+              var existBtn = host.querySelector('[data-ssp-bought-copy]');
+              if (existBtn) {
+                try { existBtn.setAttribute('data-ssp-bought-copy', refVal); } catch (e) { /* ignore */ }
+              } else {
+                var cb = document.createElement('button');
+                cb.className = 'btn btn-ghost bought__copy';
+                try { cb.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+                try { cb.setAttribute('data-ssp-bought-copy', refVal); } catch (e) { /* ignore */ }
+                try { cb.textContent = 'Copy reference'; } catch (e) { /* ignore */ }
+                try { host.appendChild(cb); } catch (e) { /* ignore */ }
+              }
+            }
+            var rUrl = (detail && (detail.receiptUrl || detail.receipt)) ? String(detail.receiptUrl || detail.receipt) : '';
+            if (rUrl && /^https?:\/\//i.test(rUrl)) {
+              var existA = host.querySelector('.bought__receipt');
+              if (existA && existA.tagName && existA.tagName.toLowerCase() === 'a') {
+                try { existA.setAttribute('href', rUrl); } catch (e) { /* ignore */ }
+                try { existA.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+                try { existA.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+                try { existA.textContent = 'View receipt'; } catch (e) { /* ignore */ }
+              } else {
+                var ra = makeReceiptAnchor(rUrl);
+                if (ra) {
+                  try { host.appendChild(ra); } catch (e) { /* ignore */ }
+                }
+              }
+            }
+          } catch (e) { /* ignore copy/receipt update */ }
+
           return;
         }
       } catch (e) { /* ignore */ }
@@ -471,6 +505,31 @@
             wrapper.appendChild(vb);
           }
         }
+
+        // Add conservative Copy reference and View receipt CTAs when available
+        try {
+          var metaWrap = el('div', 'bought__meta-ctas');
+
+          var ref = (detail && (detail.ref || detail.reference)) ? String(detail.ref || detail.reference) : '';
+          if (ref) {
+            var copyBtn = document.createElement('button');
+            copyBtn.className = 'btn btn-ghost bought__copy';
+            try { copyBtn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+            try { copyBtn.setAttribute('data-ssp-bought-copy', ref); } catch (e) { /* ignore */ }
+            try { copyBtn.textContent = 'Copy reference'; } catch (e) { /* ignore */ }
+            metaWrap.appendChild(copyBtn);
+          }
+
+          var ruri = (detail && (detail.receiptUrl || detail.receipt)) ? String(detail.receiptUrl || detail.receipt) : '';
+          if (ruri && /^https?:\/\//i.test(ruri)) {
+            var rlink = makeReceiptAnchor(ruri);
+            if (rlink) metaWrap.appendChild(rlink);
+          }
+
+          // Only append if anything was added
+          if (metaWrap && metaWrap.childNodes && metaWrap.childNodes.length) wrapper.appendChild(metaWrap);
+        } catch (e) { /* ignore extra CTAs */ }
+
         try { host.appendChild(wrapper); } catch (e) { /* ignore */ }
       } catch (e) { /* ignore create */ }
 
@@ -602,6 +661,37 @@
         }
 
       } catch (e) { /* ignore handler errors */ }
+    });
+  } catch (e) { /* ignore binding */ }
+
+  // Delegated, defensive click handler for Copy reference buttons.
+  try {
+    document.addEventListener('click', function (e) {
+      try {
+        var btn = e.target && e.target.closest ? e.target.closest('[data-ssp-bought-copy]') : null;
+        if (!btn) return;
+        var tag = (btn.tagName || '').toLowerCase();
+        if (tag !== 'button' && tag !== 'a' && tag !== 'input') return;
+
+        e.preventDefault();
+
+        // Read the reference from the attribute
+        var ref = attr(btn, 'data-ssp-bought-copy') || '';
+        if (!ref) return;
+
+        var orig = btn.textContent || '';
+        try { btn.disabled = true; } catch (e) { /* ignore */ }
+        try { btn.textContent = 'Copying…'; } catch (e) { /* ignore */ }
+
+        copyToClipboard(ref).then(function () {
+          try { btn.textContent = 'Copied!'; } catch (e) { /* ignore */ }
+          setTimeout(function () { try { btn.textContent = orig; } catch (e) { /* ignore */ } try { btn.disabled = false; } catch (e) { /* ignore */ } }, 1800);
+        }).catch(function () {
+          try { btn.textContent = 'Copy failed'; } catch (e) { /* ignore */ }
+          setTimeout(function () { try { btn.textContent = orig; } catch (e) { /* ignore */ } try { btn.disabled = false; } catch (e) { /* ignore */ } }, 1800);
+        });
+
+      } catch (e) { /* ignore */ }
     });
   } catch (e) { /* ignore binding */ }
 
@@ -757,54 +847,6 @@
   P.init = function () {
     try { P.initBoughtSummary(); } catch (e) { /* ignore */ }
     try { P.initBoughtNote(); } catch (e) { /* ignore */ }
-
-    // Conservative, one-shot auto-verify pass for remembered purchases that
-    // have an order id but no verified downloadUrl. This only runs when the
-    // platform verifier (window.groupStoreVerify) is available and only once
-    // per page load to keep privacy and server load minimal.
-    try {
-      if (!_boughtAutoVerifyCalled && typeof window.groupStoreVerify === 'function') {
-        var arr = [];
-        try { arr = readBoughtArray(document); } catch (e) { arr = []; }
-        if (arr && arr.length) {
-          var toVerify = null;
-          for (var i = 0; i < arr.length; i++) {
-            var it = arr[i];
-            if (!it) continue;
-            if ((it.id || it.ref) && !it.downloadUrl) { toVerify = it; break; }
-          }
-          if (toVerify) {
-            _boughtAutoVerifyCalled = true;
-            try {
-              var vid = toVerify.id || toVerify.ref || '';
-              var p = null;
-              try { p = window.groupStoreVerify(vid); } catch (e) { p = null; }
-              if (p && typeof p.then === 'function') {
-                p.then(function (order) {
-                  try {
-                    if (!order) return;
-                    // Only persist and broadcast when a conservative https download URL exists
-                    var d = extractDownloadUrl(order);
-                    if (!d) return;
-                    try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-                    try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
-                  } catch (e) { /* ignore */ }
-                }).catch(function () { /* ignore */ });
-              }
-            } catch (e) { /* ignore */ }
-          }
-        }
-      }
-    } catch (e) { /* ignore */ }
-
-    // If the payments widget is absent, offer a conservative, user-initiated
-    // verification UI when the URL contains ?d8a_order=<id>. This is a one-shot
-    // per page load to keep traffic and privacy impact minimal.
-    try {
-      if (typeof window.groupStoreVerify !== 'function' && !_sspUrlOrderVerifyDone) {
-        try { initUrlOrderVerifyBanner(); } catch (e) { /* ignore */ }
-      }
-    } catch (e) { /* ignore */ }
   };
 
   // Export public helpers that may be used externally
@@ -812,5 +854,20 @@
   P.readBoughtArray = readBoughtArray;
   P.maskEmail = maskEmail;
   P.createBoughtCta = createBoughtCta;
+
+  // Helper: maskEmail(email) — show a conservative redaction of local-part
+  function maskEmail(email) {
+    try {
+      if (!email || typeof email !== 'string') return '';
+      var s = String(email).trim();
+      var parts = s.split('@');
+      if (parts.length !== 2) return s;
+      var local = parts[0];
+      var domain = parts[1];
+      if (!local) return '';
+      if (local.length <= 2) return local.charAt(0) + '***@' + domain;
+      return local.charAt(0) + '***' + local.charAt(local.length - 1) + '@' + domain;
+    } catch (e) { return ''; }
+  }
 
 }(window, document));
