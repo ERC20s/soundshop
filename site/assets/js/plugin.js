@@ -294,6 +294,10 @@
   function createBoughtCta(hostEl, record) {
     try {
       if (!hostEl || !record || typeof record !== 'object') return null;
+      // Idempotent: avoid appending multiple CTA wrappers if this helper is run
+      // more than once for the same host element.
+      if (bound(hostEl, 'bought-cta')) return null;
+
       var wrapper = el('div', 'bought-summary__ctas__wrap');
 
       // If we have a download URL already, expose it
@@ -304,6 +308,23 @@
           a.target = '_blank';
           a.rel = 'noopener noreferrer';
           wrapper.appendChild(a);
+        }
+      } catch (e) { /* ignore */ }
+
+      // If we have a provider receipt URL, expose it conservatively. This is
+      // intentionally small and local: validate the value and append a simple
+      // anchor so buyers can jump to the payment-provider receipt if needed.
+      try {
+        var rurl = record.receiptUrl;
+        if (typeof rurl === 'string') {
+          rurl = rurl.trim();
+          if (rurl && rurl.length <= 2000 && /^https?:\/\//i.test(rurl)) {
+            var receiptA = el('a', 'button', 'Receipt');
+            receiptA.href = String(rurl);
+            receiptA.target = '_blank';
+            receiptA.rel = 'noopener noreferrer';
+            wrapper.appendChild(receiptA);
+          }
         }
       } catch (e) { /* ignore */ }
 
@@ -361,42 +382,23 @@
 
   function initBoughtSummary(root) {
     try {
-      var host = $("[data-bought-summary]", root || document);
-      if (!host) return;
-      if (bound(host, 'bought-summary')) return;
-      // Find the list element
-      var list = $("[data-bought-summary-list]", host) || host.querySelector('ul') || null;
+      var list = $('[data-bought-summary]', root || document);
       if (!list) return;
+      if (bound(list, 'bought-summary')) return;
 
-      // Labels
-      var labContainer = $("[data-bought-summary-labels]", host) || $("[data-bought-summary-labels]", document) || null;
-      var labels = {};
-      if (labContainer) {
-        var attrs = labContainer.attributes || [];
-        for (var i = 0; i < attrs.length; i++) {
-          var name = attrs[i].name;
-          var m = name.match(/^data-bought-label-(.+)$/);
-          if (m) labels[m[1]] = attrs[i].value;
-        }
-      }
+      var labels = {}; try { labels = JSON.parse(attr(list, 'data-bought-labels') || '{}'); } catch (e) { labels = {}; }
+      var prefixDate = attr(list, 'data-bought-date-prefix') || '';
+      var prefixRef = attr(list, 'data-bought-ref-prefix') || '';
+      var suffixRef = attr(list, 'data-bought-ref-suffix') || '';
+      var norefText = attr(list, 'data-bought-no-ref-text') || '';
 
-      var prefixDate = attr(host, 'data-bought-summary-date-prefix') || '';
-      var prefixRef = attr(host, 'data-bought-summary-ref-prefix') || '';
-      var suffixRef = attr(host, 'data-bought-summary-ref-suffix') || '';
-      var norefText = attr(host, 'data-bought-summary-noref') || '';
-
-      // Clear existing items (idempotent)
-      try { while (list.firstChild) list.removeChild(list.firstChild); } catch (e) { }
-
+      list.innerHTML = '';
       var bought = readBoughtArray();
-      var keys = Object.keys(bought);
-      if (!keys.length) return;
-
-      keys.forEach(function (token) {
+      Object.keys(bought || {}).forEach(function (token) {
         try {
           var d = bought[token];
           if (!d) return;
-          var li = el('li', 'bought-summary__item');
+          var li = el('div', 'bought-summary__item');
 
           // Label for the product
           var labelText = (labels && labels[token]) ? labels[token] : token.toUpperCase();
@@ -426,111 +428,4 @@
               var em = el('div', 'bought-summary__email', e);
               li.appendChild(em);
             }
-          }
 
-          // CTAs
-          var ctnHost = el('div', 'bought-summary__ctas');
-          createBoughtCta(ctnHost, d);
-          li.appendChild(ctnHost);
-
-          list.appendChild(li);
-        } catch (e) { /* ignore per-record */ }
-      });
-
-    } catch (e) { /* ignore */ }
-  }
-
-  function initBoughtNote(root) {
-    try {
-      var note = $("[data-bought-note]", root || document);
-      if (!note) return;
-      if (bound(note, 'bought-note')) return;
-
-      var item = attr(note, 'data-bought-item') || '';
-      var covered = attr(note, 'data-bought-covered-by') || '';
-      if (!item) return;
-
-      var bought = readBoughtArray();
-      if (bought[item] || (covered && bought[covered])) {
-        try { note.hidden = false; } catch (e) { note.removeAttribute('hidden'); }
-        // reveal spans if present
-        var cover = $("[data-bought-cover]", note);
-        if (cover) cover.hidden = false;
-        var date = $("[data-bought-date]", note);
-        if (date) date.hidden = false;
-      }
-    } catch (e) { /* ignore */ }
-  }
-
-  function initUrlOrderVerifyBanner(root) {
-    try {
-      if (_sspUrlOrderVerifyDone) return;
-      _sspUrlOrderVerifyDone = true;
-      // Conservative: only attempt when a d8a_order query is present and when
-      // a platform helper is available. The canonical widget in .d8a already
-      // performs this verification; this function is a harmless no-op fallback.
-      try {
-        var match = (location.search || '').match(/[?&]d8a_order=([A-Za-z0-9_-]+)/);
-        var id = match && match[1] ? match[1] : '';
-        if (!id) return;
-        if (typeof window.groupStoreVerify === 'function') {
-          try {
-            window.groupStoreVerify(id).then(function (o) {
-              try {
-                if (!o) return;
-                if (typeof window.soundshopPersistBought === 'function') {
-                  try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
-                }
-                // Notify other codepaths
-                try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
-              } catch (e) { /* ignore */ }
-            }).catch(function () { /* ignore */ });
-          } catch (e) { /* ignore */ }
-        }
-      } catch (e) { /* ignore */ }
-    } catch (e) { /* ignore */ }
-  }
-
-  // Export on the public object so other scripts (and tests) can call them.
-  P.readBoughtArray = readBoughtArray;
-  P.maskEmail = maskEmail;
-  P.extractDownloadUrl = extractDownloadUrl;
-  P.createBoughtCta = createBoughtCta;
-  P.initBoughtSummary = initBoughtSummary;
-  P.initBoughtNote = initBoughtNote;
-  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
-
-  // Defensive listener: append-only addition to handle group-store:paid events
-  // in pages that include the payments widget. This mirrors existing verify
-  // flows but is intentionally small and guarded so it cannot break other code.
-  try {
-    document.addEventListener('group-store:paid', function (evt) {
-      try {
-        var order = (evt && evt.detail) ? evt.detail : (window.groupStorePaid || null);
-        if (!order) return;
-
-        // Persist the bought record when the canonical helper is present
-        try {
-          if (typeof window.soundshopPersistBought === 'function') {
-            try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-          }
-        } catch (e) { /* ignore */ }
-
-        // Re-emit the verified-order event so existing consumers keep working
-        try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
-
-        // Refresh on-page bought UI helpers when available
-        try {
-          if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
-            try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
-          }
-          if (window.SSPlugin && typeof window.SSPlugin.initBoughtNote === 'function') {
-            try { window.SSPlugin.initBoughtNote(); } catch (e) { /* ignore */ }
-          }
-        } catch (e) { /* ignore */ }
-
-      } catch (e) { /* swallow to be defensive */ }
-    });
-  } catch (e) { /* ignore */ }
-
-})(window, document);
