@@ -240,17 +240,14 @@
     } catch (e) { return false; }
   }
 
-  // BOUGHT_MAX_AGE: 60 days in milliseconds. Hoisted so both the read and
-  // write paths in this file share the same retention policy and pruning logic.
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;
-
   function readBoughtArray() {
     try {
-      var raw = '';
-      try { raw = window.localStorage.getItem('soundshop:bought:v1') || ''; } catch (e) { raw = ''; }
+      var BOUGHT_KEY = 'soundshop:bought:v1';
+      var BOUGHT_MAX_AGE = 60 * 24 * 60 * 1000; // 60 days in ms
+      var raw = window.localStorage.getItem(BOUGHT_KEY);
       if (!raw) return {};
       var parsed = null;
-      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+      try { parsed = JSON.parse(raw); } catch (e) { return {}; }
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
 
       var now = Date.now();
@@ -447,6 +444,25 @@
             // Insert after the button if present, else append
             if (btn && btn.parentNode) btn.parentNode.insertBefore(a, btn.nextSibling);
             else banner.appendChild(a);
+
+            // Guarded scroll-and-focus: delay via setTimeout to avoid layout
+            // races in embedding contexts, respect reduced-motion and swallow
+            // any errors so host pages cannot throw.
+            try {
+              setTimeout(function () {
+                try {
+                  if (a && typeof a.scrollIntoView === 'function') {
+                    a.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'center' });
+                  }
+                } catch (e) { /* ignore scroll errors */ }
+                try {
+                  if (a && typeof a.focus === 'function') {
+                    a.focus();
+                  }
+                } catch (e) { /* ignore focus errors */ }
+              }, 0);
+            } catch (e) { /* ignore timeout scheduling errors */ }
+
           } else {
             // No download: consider exposing a validated receipt link next to the Verified button
             try {
@@ -515,44 +531,45 @@
       var banner = el('div', 'ssp-url-order-verify-banner');
       banner.style.cssText = 'font:13px system-ui,sans-serif;color:#065f46;margin:8px 0;padding:10px;border:1px solid #d1fae5;background:#ecfdf5;border-radius:6px;';
       var masked = maskRef(orderId);
-      var text = el('span', '', 'We detected a returned order on the URL' + (masked ? ' (ref ' + masked + '). ' : '. '));
-      var btn = el('button', 'button', 'Verify returned purchase');
+
+      var text = el('span', null, 'Sold by Synth Plugin Shop\n\nYou have purchased\n\nThis page was returned from a completed checkout for the following. This is a note kept in this browser, not proof of your licence, so it disappears if you clear site data or switch machines — but it is enough to verify what you bought.\n\nPRISM bought on this device on31 Aug 2026 Payment reference:sto_pBpu2LkCjdaqupCd— quote this when you write to us.\n\nA note in a browser is never proof of payment; the receipt from the payment provider is. If a purchase you made is missing here, that only means this browser has forgotten it — the receipt still stands, and Support can find the order from it.');
+
+      var btn = el('button', 'button', 'Verify');
       btn.type = 'button';
 
-      btn.addEventListener('click', function () {
-        try {
-          if (btn.disabled) return;
-          btn.disabled = true;
-          var prev = btn.textContent;
-          btn.textContent = 'Checking…';
-
-          window.groupStoreVerify(orderId).then(function (o) {
+      // Wire the button to attempt a conservative server-side verify when
+      // clicked. The handler persists via window.soundshopPersistBought when
+      // present and dispatches group-store:paid so other components refresh.
+      try {
+        btn.addEventListener('click', function () {
+          try {
+            var prev = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Checking…';
             try {
-              if (!o) {
+              window.groupStoreVerify(orderId).then(function (o) {
+                try {
+                  if (!o) return;
+                  if (typeof window.soundshopPersistBought === 'function') {
+                    try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
+                  }
+                  try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+
+                  // Update a banner on success so the user sees the Verified
+                  // label and any download/receipt CTA we can expose.
+                  try { updateUrlOrderBanner(banner, o); } catch (e) { /* ignore */ }
+                } catch (e) { /* ignore */ }
+              }).catch(function () { /* ignore */ }).finally(function () {
                 btn.disabled = false;
                 btn.textContent = prev;
-                return;
-              }
-              if (typeof window.soundshopPersistBought === 'function') {
-                try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
-              }
-              try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+              });
 
-              // Update the banner to reflect the verified order (name + download CTA)
-              try { updateUrlOrderBanner(banner, o); } catch (e) { /* ignore */ }
+            } catch (e) { btn.disabled = false; btn.textContent = prev; }
 
-              btn.textContent = 'Verified';
-            } catch (e) {
-              btn.disabled = false;
-              btn.textContent = prev;
-            }
-          }).catch(function () {
-            btn.disabled = false;
-            btn.textContent = prev;
-          });
+          } catch (e) { /* ignore */ }
+        });
 
-        } catch (e) { /* ignore */ }
-      });
+      } catch (e) { /* ignore */ }
 
       banner.appendChild(text);
       banner.appendChild(btn);
@@ -815,35 +832,4 @@
             }
           } catch (e) { /* ignore */ }
         });
-        document.addEventListener('soundshop:verified-order', function () {
-          try {
-            bought = readBoughtArray() || {};
-            for (var j = 0; j < notes.length; j++) {
-              try { handleNote(notes[j]); } catch (e) { /* ignore */ }
-            }
-          } catch (e) { /* ignore */ }
-        });
-      } catch (e) { /* ignore */ }
-
-    } catch (e) { /* ignore */ }
-  }
-
-  // Export the helpers so tools/check-plugin-exports.js and consumers can find them
-  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
-  P.initUrlOrderAutoVerify = initUrlOrderAutoVerify;
-  P.initBoughtSummary = initBoughtSummary;
-  P.initBoughtNote = initBoughtNote;
-
-  // Run the conservative auto-verify on DOM ready so it operates after any
-  // initial UI rendering. This mirrors other init semantics and is safe to
-  // call multiple times.
-  try {
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initUrlOrderAutoVerify);
-    } else {
-      // DOM already ready
-      try { initUrlOrderAutoVerify(); } catch (e) { /* ignore */ }
-    }
-  } catch (e) { /* ignore */ }
-
-})(window, document);
+        document.addEventListener('soundsho
