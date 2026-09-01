@@ -240,8 +240,6 @@
     } catch (e) { return false; }
   }
 
-  var BOUGHT_MAX_AGE = (60 * 24 * 60 * 60 * 1000); // 60 days (ms)
-
   function readBoughtArray() {
     try {
       var raw = window.localStorage.getItem('soundshop:bought:v1');
@@ -249,7 +247,10 @@
       var parsed = null;
       try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-      // Prune expired records (best-effort)
+
+      // Best-effort pruning constant shared with writer
+      var BOUGHT_MAX_AGE = 1000 * 60 * 60 * 24 * 60; // 60 days
+
       try {
         var now = Date.now();
         var changed = false;
@@ -294,6 +295,10 @@
   function createBoughtCta(hostEl, record) {
     try {
       if (!hostEl || !record || typeof record !== 'object') return null;
+      // Guard using the bound() helper so repeated runs do not append duplicate
+      // CTAs. This uses the data-ssp-bought-cta attribute as the one-shot guard.
+      if (bound(hostEl, 'bought-cta')) return null;
+
       var wrapper = el('div', 'bought-summary__ctas__wrap');
 
       // If we have a download URL already, expose it
@@ -361,82 +366,73 @@
 
   function initBoughtSummary(root) {
     try {
-      var host = $("[data-bought-summary]", root || document);
-      if (!host) return;
-      if (bound(host, 'bought-summary')) return;
-      // Find the list element
-      var list = $("[data-bought-summary-list]", host) || host.querySelector('ul') || null;
+      var list = $('[data-bought-summary]', root || document);
       if (!list) return;
+      if (bound(list, 'bought-summary')) return;
 
-      // Labels
-      var labContainer = $("[data-bought-summary-labels]", host) || $("[data-bought-summary-labels]", document) || null;
-      var labels = {};
-      if (labContainer) {
-        var attrs = labContainer.attributes || [];
-        for (var i = 0; i < attrs.length; i++) {
-          var name = attrs[i].name;
-          var m = name.match(/^data-bought-label-(.+)$/);
-          if (m) labels[m[1]] = attrs[i].value;
-        }
-      }
+      var labels = {
+        vanta: 'VANTA', drift: 'DRIFT', prism: 'PRISM', anvil: 'ANVIL', bundle: 'THE FULL SHOP'
+      };
 
-      var prefixDate = attr(host, 'data-bought-summary-date-prefix') || '';
-      var prefixRef = attr(host, 'data-bought-summary-ref-prefix') || '';
-      var suffixRef = attr(host, 'data-bought-summary-ref-suffix') || '';
-      var norefText = attr(host, 'data-bought-summary-noref') || '';
-
-      // Clear existing items (idempotent)
-      try { while (list.firstChild) list.removeChild(list.firstChild); } catch (e) { }
+      var prefixDate = attr(list, 'data-bought-prefix-date') || '';
+      var prefixRef = attr(list, 'data-bought-prefix-ref') || '';
+      var suffixRef = attr(list, 'data-bought-suffix-ref') || '';
+      var norefText = attr(list, 'data-bought-noref-text') || '';
 
       var bought = readBoughtArray();
-      var keys = Object.keys(bought);
-      if (!keys.length) return;
 
-      keys.forEach(function (token) {
-        try {
-          var d = bought[token];
-          if (!d) return;
-          var li = el('li', 'bought-summary__item');
+      try {
+        Object.keys(bought).sort().reverse().forEach(function (k) {
+          try {
+            var d = bought[k];
+            if (!d || (typeof d !== 'object' && typeof d !== 'number')) return;
 
-          // Label for the product
-          var labelText = (labels && labels[token]) ? labels[token] : token.toUpperCase();
-          var labelEl = el('div', 'bought-summary__label', labelText);
-          li.appendChild(labelEl);
+            var li = el('div', 'bought-summary__item');
 
-          // Date
-          if (d.t) {
-            var when = new Date(Number(d.t));
-            var dateEl = el('div', 'bought-summary__date', (prefixDate || '') + when.toLocaleString());
-            li.appendChild(dateEl);
-          }
+            // Label for the product
+            var token = k;
+            if (!token) return;
 
-          // Reference or fallback
-          if (d.ref) {
-            var refEl = el('div', 'bought-summary__ref', (prefixRef || '') + d.ref + (suffixRef || ''));
-            li.appendChild(refEl);
-          } else if (norefText) {
-            var norefEl = el('div', 'bought-summary__noref', norefText);
-            li.appendChild(norefEl);
-          }
+            // Label for the product
+            var labelText = (labels && labels[token]) ? labels[token] : token.toUpperCase();
+            var labelEl = el('div', 'bought-summary__label', labelText);
+            li.appendChild(labelEl);
 
-          // Masked email if present
-          if (d.email) {
-            var e = maskEmail(d.email);
-            if (e) {
-              var em = el('div', 'bought-summary__email', e);
-              li.appendChild(em);
+            // Date
+            if (d.t) {
+              var when = new Date(Number(d.t));
+              var dateEl = el('div', 'bought-summary__date', (prefixDate || '') + when.toLocaleString());
+              li.appendChild(dateEl);
             }
-          }
 
-          // CTAs
-          var ctnHost = el('div', 'bought-summary__ctas');
-          createBoughtCta(ctnHost, d);
-          li.appendChild(ctnHost);
+            // Reference or fallback
+            if (d.ref) {
+              var refEl = el('div', 'bought-summary__ref', (prefixRef || '') + d.ref + (suffixRef || ''));
+              li.appendChild(refEl);
+            } else if (norefText) {
+              var norefEl = el('div', 'bought-summary__noref', norefText);
+              li.appendChild(norefEl);
+            }
 
-          list.appendChild(li);
-        } catch (e) { /* ignore per-record */ }
-      });
+            // Masked email if present
+            if (d.email) {
+              var e = maskEmail(d.email);
+              if (e) {
+                var em = el('div', 'bought-summary__email', e);
+                li.appendChild(em);
+              }
+            }
 
+            // CTAs
+            var ctnHost = el('div', 'bought-summary__ctas');
+            createBoughtCta(ctnHost, d);
+            li.appendChild(ctnHost);
+
+            list.appendChild(li);
+          } catch (e) { /* ignore per-record */ }
+        });
+
+      } catch (e) { /* ignore */ }
     } catch (e) { /* ignore */ }
   }
 
