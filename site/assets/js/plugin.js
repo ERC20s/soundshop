@@ -366,6 +366,64 @@
         } catch (e) { /* ignore */ }
       }
 
+      // Guarded "Verify & reveal" button: only when we have a reference, we
+      // do not already have a download URL, and a platform verify helper exists.
+      try {
+        if (ref && !durl && typeof window.groupStoreVerify === 'function') {
+          var verifyBtn = el('button', 'btn btn-secondary btn--sm', 'Verify & reveal');
+          verifyBtn.type = 'button';
+          verifyBtn.setAttribute('aria-label', 'Verify payment reference and reveal missing download link');
+
+          verifyBtn.addEventListener('click', function () {
+            // Async handler but keep it defensive
+            try {
+              var originalLabel = verifyBtn.textContent;
+              verifyBtn.disabled = true;
+              verifyBtn.textContent = 'Checking\u2026';
+
+              // Call the platform verify helper
+              try {
+                var p = null;
+                try { p = window.groupStoreVerify(ref); } catch (e) { p = null; }
+                if (!p || typeof p.then !== 'function') {
+                  // Not a promise – restore and exit
+                  verifyBtn.disabled = false;
+                  verifyBtn.textContent = originalLabel;
+                  return;
+                }
+                p.then(function (order) {
+                  try {
+                    if (order) {
+                      try {
+                        if (typeof window.soundshopPersistBought === 'function') {
+                          try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
+
+                      try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: order })); } catch (e) { /* ignore */ }
+
+                      try {
+                        if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
+                          try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
+                    }
+                  } catch (e) { /* ignore */ }
+                }).catch(function () { /* ignore verify failure */ }).finally(function () {
+                  try { verifyBtn.disabled = false; verifyBtn.textContent = originalLabel; } catch (e) { /* ignore */ }
+                });
+
+              } catch (e) {
+                try { verifyBtn.disabled = false; verifyBtn.textContent = originalLabel; } catch (e) { /* ignore */ }
+              }
+
+            } catch (e) { /* swallow */ }
+          });
+
+          wrapper.appendChild(verifyBtn);
+        }
+      } catch (e) { /* ignore guard */ }
+
       hostEl.appendChild(wrapper);
       return wrapper;
     } catch (e) { return null; }
