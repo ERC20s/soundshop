@@ -318,30 +318,7 @@
         }
       } catch (e) { /* ignore */ }
 
-      // If we have a provider receipt URL, expose it as a muted CTA
-      try {
-        var r = record.receiptUrl || record.receipt || '';
-        if (typeof r === 'string') {
-          r = r.trim();
-          if (r && /^https?:\/\//i.test(r)) {
-            var receiptA = el('a', 'button button--muted', 'Receipt');
-            receiptA.href = String(r);
-            receiptA.target = '_blank';
-            receiptA.rel = 'noopener noreferrer';
-            wrapper.appendChild(receiptA);
-            hasCta = true;
-          }
-        }
-      } catch (e) { /* ignore */ }
-
-      // Show a Verify & reveal button when we have a reference but no URL
-      try {
-        var hasRef = !!record.ref;
-        var hasUrl = !!record.downloadUrl;
-        if (hasRef && !hasUrl && typeof window.groupStoreVerify === 'function') {
-          var verifyBtn = el('button', 'button', 'Verify & reveal');
-          verifyBtn.type = 'button';
-          try { verifyBtn.addEventListener('click', function () {
+      try { verifyBtn.addEventListener('click', function () {
             try {
               var ref = String(record.ref || '').trim();
               if (!ref) return;
@@ -364,8 +341,6 @@
 
             } catch (e) { /* ignore */ }
           }); } catch (e) { /* ignore */ }
-        }
-      } catch (e) { /* ignore */ }
 
       if (hasCta) return wrapper;
       return null;
@@ -468,7 +443,73 @@
     } catch (e) { /* swallow to remain safe in varied embedding contexts */ }
   }
 
-  // Export the helper so tools/check-plugin-exports.js and consumers can find it
+  // -----------------------------------------------------------------------
+  // initUrlOrderAutoVerify
+  //
+  // Conservative, one-shot auto verification that runs on page load when
+  // the URL contains a ?d8a_order=<id>. It attempts a server-side verify once
+  // and, on success, persists the canonical order with
+  // window.soundshopPersistBought and dispatches the existing group-store:paid
+  // event so UI components refresh. The routine is guarded so it only runs
+  // once per page and avoids firing when a Download CTA is already present.
+  // -----------------------------------------------------------------------
+  function initUrlOrderAutoVerify() {
+    try {
+      // Ensure the window-scoped flag exists so embedding contexts can't
+      // throw on identifier access.
+      if (typeof window._boughtAutoVerifyCalled === 'undefined') window._boughtAutoVerifyCalled = false;
+
+      // Only attempt once per page load.
+      if (window._boughtAutoVerifyCalled) return;
+      window._boughtAutoVerifyCalled = true;
+
+      // Bail unless the URL explicitly contains a returned order id.
+      var orderId = (location.search.match(/[?&]d8a_order=([A-Za-z0-9_-]+)/) || [])[1];
+      if (!orderId) return;
+
+      // Need server-side verify helper to exist.
+      if (typeof window.groupStoreVerify !== 'function') return;
+
+      // If there's already a Download CTA inside the bought-summary, skip.
+      try {
+        if (document.querySelector('[data-bought-summary] a.button.button--primary')) return;
+      } catch (e) { /* ignore */ }
+
+      // Mark the banner path done so we don't later show a redundant banner.
+      if (typeof window._sspUrlOrderVerifyDone === 'undefined') window._sspUrlOrderVerifyDone = false;
+      window._sspUrlOrderVerifyDone = true;
+
+      // Attempt verification but remain conservative: don't throw, and handle
+      // network errors silently. Persist and dispatch on success.
+      try {
+        window.groupStoreVerify(orderId).then(function (o) {
+          try {
+            if (!o) return;
+            if (typeof window.soundshopPersistBought === 'function') {
+              try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
+            }
+            try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore success handling */ }
+        }).catch(function () { /* ignore network/verify errors */ });
+      } catch (e) { /* ignore */ }
+
+    } catch (e) { /* ignore to remain safe */ }
+  }
+
+  // Export the helpers so tools/check-plugin-exports.js and consumers can find them
   P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
+  P.initUrlOrderAutoVerify = initUrlOrderAutoVerify;
+
+  // Run the conservative auto-verify on DOM ready so it operates after any
+  // initial UI rendering. This mirrors other init semantics and is safe to
+  // call multiple times.
+  try {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initUrlOrderAutoVerify);
+    } else {
+      // DOM already ready
+      try { initUrlOrderAutoVerify(); } catch (e) { /* ignore */ }
+    }
+  } catch (e) { /* ignore */ }
 
 })(window, document);
