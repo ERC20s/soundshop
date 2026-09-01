@@ -424,6 +424,61 @@
         } catch (e) { /* ignore */ }
       } catch (e) { /* ignore */ }
 
+      // Re-verify purchase button — guarded, minimal and host-provided only.
+      // Show only when there is no validated download and no validated receipt,
+      // the record has a reference, and the host provides window.groupStoreVerify
+      // as a function. This keeps the control invisible on sites without a
+      // verification endpoint and avoids duplicate behaviour when a download is
+      // already available.
+      try {
+        var hasReceipt = !!(receiptUrl);
+        var canShowVerify = (!hasDownload && !hasReceipt && rec && rec.ref && typeof window.groupStoreVerify === 'function');
+        if (canShowVerify) {
+          var verifyBtn = el('button', 'bought-summary__verify', 'Re-verify purchase');
+          try { verifyBtn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+
+          verifyBtn.addEventListener('click', function (e) {
+            var btn = e && e.currentTarget ? e.currentTarget : null;
+            try { if (btn) btn.disabled = true; } catch (err) { /* ignore */ }
+
+            var showToast = function (msg) {
+              try { if (SS && typeof SS.toast === 'function') SS.toast(msg); } catch (e) { /* ignore */ }
+            };
+
+            try {
+              var ref = '';
+              try { ref = String((rec && rec.ref) ? rec.ref : ''); } catch (e) { ref = ''; }
+
+              var call = null;
+              try { call = window.groupStoreVerify(ref); } catch (e) { call = null; }
+
+              // Accept either a Promise or a synchronous return value.
+              Promise.resolve(call).then(function (order) {
+                try {
+                  if (order) {
+                    try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                    try { showToast('Purchase re-verified'); } catch (e) { /* ignore */ }
+                  } else {
+                    try { showToast('Purchase not found'); } catch (e) { /* ignore */ }
+                  }
+                } catch (e) {
+                  try { showToast('Verification failed'); } catch (err) { /* ignore */ }
+                }
+                try { if (btn) btn.disabled = false; } catch (e) { /* ignore */ }
+              }).catch(function () {
+                try { showToast('Verification failed'); } catch (e) { /* ignore */ }
+                try { if (btn) btn.disabled = false; } catch (e) { /* ignore */ }
+              });
+
+            } catch (e) {
+              try { if (btn) btn.disabled = false; } catch (err) { /* ignore */ }
+            }
+          });
+
+          try { container.appendChild(verifyBtn); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore verify button */ }
+
       return container;
     } catch (e) { return null; }
   }
