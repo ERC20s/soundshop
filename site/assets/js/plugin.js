@@ -32,6 +32,152 @@
   var P = {};
   window.SSPlugin = P;
 
+  // Provide a safe, non-overriding fallback for window.soundshopPersistBought so
+  // callers in this file can invoke it without depending on the presence of
+  // site/plugins/index.html. This mirrors the canonical behaviour in
+  // site/plugins/index.html without overwriting an authoritative implementation.
+  try {
+    if (typeof window.soundshopPersistBought !== 'function') {
+      window.soundshopPersistBought = function (order) {
+        try {
+          if (!order || typeof order !== 'object') return;
+
+          var BOUGHT_KEY = 'soundshop:bought:v1';
+          var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
+          var MAX_EMAIL_LEN = 128;
+          var MAX_RECEIPT_LEN = 2000;
+
+          // Map product names/IDs to internal tokens (kept small and conservative)
+          function getProductToken(itemName, itemId) {
+            var name = String(itemName || itemId || '').trim().toLowerCase();
+            if (!name) return null;
+            if (name === 'the full shop' || name === 'bundle' || name === 'full shop') return 'bundle';
+            if (name === 'vanta' || name.indexOf('vanta') !== -1) return 'vanta';
+            if (name === 'drift' || name.indexOf('drift') !== -1) return 'drift';
+            if (name === 'prism' || name.indexOf('prism') !== -1) return 'prism';
+            if (name === 'anvil' || name.indexOf('anvil') !== -1) return 'anvil';
+            return null;
+          }
+
+          // Conservative email validation
+          var email = '';
+          try {
+            var cand = '';
+            if (order && typeof order === 'object') {
+              cand = (order.email || order.buyerEmail || order.customerEmail || order.deliveryEmail || '');
+              if (cand && typeof cand === 'string') cand = cand.trim(); else cand = '';
+            }
+            var EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+            if (cand && EMAIL_RE.test(cand)) {
+              if (cand.length > MAX_EMAIL_LEN) cand = cand.slice(0, MAX_EMAIL_LEN);
+              email = cand;
+            }
+          } catch (e) { /* ignore */ }
+
+          // Build the record we will store under the token
+          var rec = { t: Date.now(), ref: String(order.id || order.ref || order.reference || '') , state: 'paid' };
+          if (email) rec.email = email;
+
+          // Extract a download URL conservatively
+          try {
+            var durl = '';
+            if (order && typeof order === 'object') {
+              durl = order.downloadUrl || order.installerUrl || (order.installers && order.installers[0] && order.installers[0].url) || '';
+              if (typeof durl === 'string') {
+                durl = durl.trim();
+                if (durl && /^https?:\/\//i.test(durl)) rec.downloadUrl = durl;
+              }
+            }
+          } catch (e) { /* ignore */ }
+
+          // Conservatively accept a provider receipt URL when it looks like a real URL
+          try {
+            var rurl = '';
+            if (order && typeof order === 'object') rurl = order.receiptUrl || order.receipt || '';
+            if (typeof rurl === 'string') {
+              rurl = rurl.trim();
+              if (rurl && rurl.length <= MAX_RECEIPT_LEN && /^https?:\/\//i.test(rurl)) rec.receiptUrl = rurl;
+            }
+          } catch (e) { /* ignore */ }
+
+          // Decide token and persist under canonical v1 mapping
+          try {
+            var token = getProductToken(order.itemName || order.name || order.itemId || order.item || '', order.itemId || order.id);
+            if (!token) return; // unknown product, do not persist
+
+            // Read existing records
+            var bought = {};
+            try {
+              var raw = window.localStorage.getItem(BOUGHT_KEY);
+              if (raw) {
+                var parsed = null;
+                try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) bought = parsed;
+              }
+            } catch (e) { /* ignore read */ }
+
+            // Merge: preserve any existing downloadUrl unless we have a new one
+            try {
+              var exist = bought[token];
+              if (exist && typeof exist === 'object') {
+                // Keep existing downloadUrl if we don't have one
+                if (!rec.downloadUrl && exist.downloadUrl) rec.downloadUrl = exist.downloadUrl;
+                // Keep existing email if missing
+                if (!rec.email && exist.email) rec.email = exist.email;
+                // Keep existing t/ref if missing
+                if (!rec.ref && exist.ref) rec.ref = exist.ref;
+              }
+            } catch (e) { /* ignore merge */ }
+
+            bought[token] = rec;
+
+            try { window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(bought)); } catch (e) { /* ignore write */ }
+
+            // Refresh the purchase summary display if present: remove guard so
+            // SSPlugin.initBoughtSummary() can re-run and read the updated data.
+            try {
+              var summaryEl = document.querySelector('[data-bought-summary]');
+              if (summaryEl) {
+                summaryEl.removeAttribute('data-ssp-bought-summary');
+                if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
+                  try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
+                }
+              }
+            } catch (e) { /* ignore */ }
+
+            // Prune expired records (best-effort)
+            try {
+              var raw2 = window.localStorage.getItem(BOUGHT_KEY);
+              if (raw2) {
+                var parsed2 = null;
+                try { parsed2 = JSON.parse(raw2); } catch (e) { parsed2 = null; }
+                if (parsed2 && typeof parsed2 === 'object' && !Array.isArray(parsed2)) {
+                  var now = Date.now();
+                  var changed = false;
+                  for (var k in parsed2) {
+                    if (!Object.prototype.hasOwnProperty.call(parsed2, k)) continue;
+                    var r = parsed2[k];
+                    var isObj = !!r && typeof r === 'object' && !Array.isArray(r);
+                    var when = Number(isObj ? r.t : r);
+                    if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
+                      delete parsed2[k];
+                      changed = true;
+                    }
+                  }
+                  if (changed) {
+                    try { window.localStorage.setItem(BOUGHT_KEY, JSON.stringify(parsed2)); } catch (e) { /* ignore */ }
+                  }
+                }
+              }
+            } catch (e) { /* ignore prune */ }
+
+          } catch (e) { /* ignore token/persist */ }
+
+        } catch (e) { /* swallow to keep callers safe */ }
+      };
+    }
+  } catch (e) { /* ignore */ }
+
   // Gate to ensure we only attempt an auto server-side verify once per page
   // load. This keeps the privacy/traffic impact minimal when multiple hosts
   // exist on a single document.
@@ -251,483 +397,3 @@
               }
               // If existing CTA exists but is not an anchor, append a proper link
               try { makeDownloadAnchor(url); } catch (e) { /* ignore */ }
-            } catch (e) { /* ignore */ }
-          }
-          return;
-        }
-      } catch (e) { /* ignore */ }
-
-      try { host.setAttribute('data-ssp-bought-cta', 'on'); } catch (e) { /* ignore */ }
-
-      var wrapper = document.createElement('span');
-      wrapper.className = 'bought__cta-wrapper';
-
-      function makeDownloadAnchor(url) {
-        try {
-          var a = document.createElement('a');
-          a.className = 'bought__cta';
-          try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
-          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-          try { a.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-          try { wrapper.appendChild(a); } catch (e) { /* ignore */ }
-        } catch (e) { /* ignore */ }
-      }
-
-      // If we already have a verified download URL, render it now.
-      try {
-        if (detail && extractDownloadUrl(detail)) {
-          try { makeDownloadAnchor(extractDownloadUrl(detail)); } catch (e) { /* ignore */ }
-        } else {
-          // Otherwise render the fallback controls: Check order / Contact Support
-          var btn = document.createElement('button');
-          try { btn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
-          btn.className = 'bought__cta';
-          btn.textContent = 'Check order';
-          try { btn.setAttribute('title', 'Check order'); } catch (e) { /* ignore */ }
-
-          try {
-            btn.addEventListener('click', function () {
-              try {
-                var id = (detail && (detail.id || detail.ref)) || '';
-                if (!id) return;
-                // If platform supports verify, call it and update in-place
-                if (typeof window.groupStoreVerify !== 'function') return;
-                var p = null;
-                try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
-                if (!p || typeof p.then !== 'function') return;
-                p.then(function (order) {
-                  try {
-                    var v = P._normalisePaidDetail(order);
-                    if (!v) return;
-                    if (v.downloadUrl) {
-                      try { detail.downloadUrl = v.downloadUrl; } catch (e) { /* ignore */ }
-
-                      // Update any bought-summary list item for this paid id
-                      try {
-                        var paidEl = null;
-                        try { paidEl = document.querySelector('[data-ssp-paid-id="' + String(id) + '"]'); } catch (e) { paidEl = null; }
-                        if (paidEl) {
-                          try { createBoughtCta(paidEl, detail); } catch (e) { /* ignore */ }
-                        }
-                      } catch (e) { /* ignore */ }
-
-                      // Update any visible bought-note hosts too
-                      try {
-                        $$('[data-bought-note]').forEach(function (host) {
-                          try {
-                            var ref = (detail && (detail.ref || detail.id)) || '';
-                            try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
-                            try { createBoughtCta(host, detail); } catch (e) { /* ignore */ }
-                          } catch (e) { /* ignore per-host */ }
-                        });
-                      } catch (e) { /* ignore */ }
-
-                    }
-                  } catch (e) { /* ignore then */ }
-                }).catch(function () { /* ignore */ });
-
-              } catch (e) { /* ignore click */ }
-            });
-          } catch (e) { /* ignore */ }
-
-          try { wrapper.appendChild(btn); } catch (e) { /* ignore append */ }
-        }
-      } catch (e) { /* ignore */ }
-
-      try { host.appendChild(wrapper); } catch (e) { /* ignore append */ }
-    } catch (e) { /* ignore */ }
-  }
-
-  /**
-   * Normalise a platform-supplied order object into the record shape used
-   * by the rest of plugin.js. This is intentionally defensive and shallow.
-   */
-  P._normalisePaidDetail = function (o) {
-    try {
-      if (!o || typeof o !== 'object') return null;
-      var out = {};
-      out.id = o.id || o.ref || o.reference || o.order || o.tx || '';
-      if (out.id) out.ref = out.id;
-      out.itemName = o.itemName || o.name || o.label || '';
-      out.email = o.email || o.deliveryEmail || o.buyerEmail || o.customerEmail || '';
-      out.t = o.t || o.time || o.date || null;
-      try { var d = extractDownloadUrl(o); if (d) out.downloadUrl = d; } catch (e) { /* ignore */ }
-      return out;
-    } catch (e) { return null; }
-  };
-
-  /**
-   * Handle a returned checkout object from the platform (window.groupStorePaid
-   * or document 'group-store:paid' event). Reveal bought-note and bought-summary
-   * UI immediately using the supplied object. This function is display-only
-   * and does not persist anything to localStorage.
-   */
-  P.handleGroupStorePaid = function (order) {
-    try {
-      var det = P._normalisePaidDetail(order);
-      if (!det) return;
-
-      // Trigger the per-page persistence helper when available so callers that
-      // only run the display logic here can still ensure the canonical
-      // storage and immediate bought-summary refresh occurs. Fail silently.
-      try {
-        if (typeof window.soundshopPersistBought === 'function') {
-          try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-        }
-      } catch (e) { /* ignore */ }
-
-      // Reveal and populate any [data-bought-note] hosts
-      try {
-        $$('[data-bought-note]').forEach(function (host) {
-          try {
-            // Populate first-item style as initBoughtNote does
-            try { host.removeAttribute('hidden'); } catch (e) { /* ignore */ }
-            try {
-              var titleEl = host.querySelector('[data-bought-note-title]');
-              if (titleEl) titleEl.textContent = String(det.itemName || det.name || det.title || det.label || 'Purchased item');
-            } catch (e) { /* ignore */ }
-            try {
-              var subEl = host.querySelector('[data-bought-note-sub]');
-              if (subEl) subEl.textContent = maskEmail(det.deliveryEmail || det.email || det.buyerEmail || det.customerEmail || '');
-            } catch (e) { /* ignore */ }
-
-            // Render payment reference + Copy control into the note area
-            try { createBoughtNoteRef(host, det.id || det.ref || ''); } catch (e) { /* ignore */ }
-
-            // Also append any CTA area into the note host
-            try { createBoughtCta(host, det); } catch (e) { /* ignore */ }
-
-            // Add Clear control so users can remove the remembered note locally
-            try { createBoughtClear(host); } catch (e) { /* ignore */ }
-
-          } catch (e) { /* ignore per-host */ }
-        });
-      } catch (e) { /* ignore */ }
-
-      // Insert into any [data-bought-summary] lists, guarded by data-ssp-paid-id
-      try {
-        $$('[data-bought-summary]').forEach(function (host) {
-          try {
-            var list = host.querySelector('[data-bought-summary-list]');
-            if (!list) return;
-
-            var id = det.id || det.ref || '';
-            if (!id) return;
-
-            // Avoid duplicates: if an item with this paid id already exists, do nothing
-            try {
-              if (host.querySelector('[data-ssp-paid-id="' + String(id) + '"]')) return;
-            } catch (e) { /* ignore selector errors */ }
-
-            // Build a list item matching the bought-summary structure
-            var li = document.createElement('li');
-            li.className = 'bought__item';
-            try { li.setAttribute('data-ssp-paid-id', String(id)); } catch (e) { /* ignore */ }
-
-            var titleSpan = document.createElement('span');
-            titleSpan.className = 'bought__title';
-            titleSpan.textContent = String(det.itemName || det.name || det.title || det.label || 'Purchased item');
-            li.appendChild(titleSpan);
-
-            var metaSpan = document.createElement('span');
-            metaSpan.className = 'bought__meta';
-            li.appendChild(metaSpan);
-
-            try {
-              var refSpan = document.createElement('span');
-              refSpan.className = 'bought__ref';
-              refSpan.textContent = 'Order: ' + String(id);
-              metaSpan.appendChild(refSpan);
-
-              var copyBtn = document.createElement('button');
-              copyBtn.setAttribute('type', 'button');
-              copyBtn.className = 'bought__copy';
-              copyBtn.textContent = 'Copy';
-              copyBtn.style.marginLeft = '8px';
-              try {
-                copyBtn.setAttribute('data-ssp-copy', 'on');
-                copyBtn.addEventListener('click', function () { try { navigator.clipboard.writeText(String(id || '')); } catch (e) { /* ignore */ } });
-              } catch (e) { /* ignore */ }
-              metaSpan.appendChild(copyBtn);
-
-            } catch (e) { /* ignore */ }
-
-            try { list.appendChild(li); } catch (e) { /* ignore append */ }
-
-            // Finally try to insert a CTA area for this item. If the detail
-            // already included a downloadUrl this will show a direct link; if
-            // not the CTA will provide a Check order / Contact Support fallback.
-            try { createBoughtCta(li, det); } catch (e) { /* ignore */ }
-
-          } catch (e) { /* ignore per-host */ }
-        });
-      } catch (e) { /* ignore */ }
-
-      // If the returned checkout did not include a direct download link but
-      // the platform supports an on-demand verify, attempt one now so the
-      // page can surface a "Download installers" link immediately for the
-      // buyer without requiring them to click "Check order".
-      try {
-        var idToVerify = det && det.id ? String(det.id) : '';
-        if (!det.downloadUrl && idToVerify && typeof window.groupStoreVerify === 'function') {
-          var p = null;
-          try { p = window.groupStoreVerify(idToVerify); } catch (e) { p = null; }
-          if (p && typeof p.then === 'function') {
-            p.then(function (order) {
-              try {
-                var vdet = P._normalisePaidDetail(order);
-                if (vdet && vdet.downloadUrl) {
-                  try { det.downloadUrl = vdet.downloadUrl; } catch (e) { /* ignore */ }
-
-                  // Update any bought-summary list item for this paid id
-                  try {
-                    var paidEl = null;
-                    try { paidEl = document.querySelector('[data-ssp-paid-id="' + String(idToVerify) + '"]'); } catch (e) { paidEl = null; }
-                    if (paidEl) {
-                      try { createBoughtCta(paidEl, det); } catch (e) { /* ignore */ }
-                    }
-                  } catch (e) { /* ignore */ }
-
-                  // Update any visible bought-note hosts too
-                  try {
-                    $$('[data-bought-note]').forEach(function (host) {
-                      try {
-                        var ref = (det && (det.ref || det.id)) || '';
-                        try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
-                        try { createBoughtCta(host, det); } catch (e) { /* ignore */ }
-                      } catch (e) { /* ignore per-host */ }
-                    });
-                  } catch (e) { /* ignore */ }
-
-                }
-              } catch (e) { /* ignore then */ }
-            }).catch(function () { /* ignore */ });
-          }
-        }
-      } catch (e) { /* ignore */ }
-
-    } catch (e) { /* ignore */ }
-  };
-
-  // Expose a small helper that reads the canonical bought storage and returns
-  // the normalised array shape. This is used by bought-note and bought-summary
-  // initialisers elsewhere in this file.
-  P._readBoughtArray = readBoughtArray;
-
-  /**
-   * Initialise any [data-bought-note] hosts to show the first remembered
-   * purchase. This function is defensive and idempotent and will not throw
-   * when run on documents that do not include the markup.
-   */
-  P.initBoughtNote = function (root) {
-    try {
-      var hosts = (root && root.querySelectorAll) ? root.querySelectorAll('[data-bought-note]') : document.querySelectorAll('[data-bought-note]');
-      if (!hosts || !hosts.length) return;
-
-      Array.prototype.slice.call(hosts).forEach(function (host) {
-        try {
-          if (bound(host, 'bought-note')) return;
-
-          var dataKey = attr(host, 'data-bought-key');
-          var arr = readBoughtArray(host, 'data-bought-key');
-          if (!arr || !arr.length) return;
-
-          var first = arr[0];
-          try { host.removeAttribute('hidden'); } catch (e) { /* ignore */ }
-
-          try {
-            var titleEl = host.querySelector('[data-bought-note-title]');
-            if (titleEl) titleEl.textContent = String(first.itemName || first.name || first.title || first.label || 'Purchased item');
-          } catch (e) { /* ignore */ }
-
-          try {
-            var subEl = host.querySelector('[data-bought-note-sub]');
-            if (subEl) subEl.textContent = maskEmail(first.email || '');
-          } catch (e) { /* ignore */ }
-
-          try { createBoughtNoteRef(host, first.ref || first.id || ''); } catch (e) { /* ignore */ }
-
-          try { createBoughtCta(host, first); } catch (e) { /* ignore */ }
-
-          try { createBoughtClear(host); } catch (e) { /* ignore */ }
-
-          try { host.setAttribute('data-ssp-paid-ref', String(first.ref || first.id || '')); } catch (e) { /* ignore */ }
-
-        } catch (e) { /* ignore per-host */ }
-      });
-
-    } catch (e) { /* ignore */ }
-  };
-
-  /**
-   * Initialise any [data-bought-summary] hosts by listing every remembered
-   * purchase. This function is defensive and idempotent and will be called
-   * on DOM ready by SSPlugin.init().
-   */
-  P.initBoughtSummary = function (root) {
-    try {
-      var hosts = (root && root.querySelectorAll) ? root.querySelectorAll('[data-bought-summary]') : document.querySelectorAll('[data-bought-summary]');
-      if (!hosts || !hosts.length) return;
-
-      Array.prototype.slice.call(hosts).forEach(function (host) {
-        try {
-          if (bound(host, 'bought-summary')) return;
-
-          var list = host.querySelector('[data-bought-summary-list]');
-          if (!list) return;
-
-          var arr = readBoughtArray(host, 'data-bought-key');
-          if (!arr || !arr.length) return;
-
-          arr.forEach(function (it) {
-            try {
-              var id = it.ref || it.id || '';
-              if (!id) return;
-              try { if (host.querySelector('[data-ssp-paid-id="' + String(id) + '"]')) return; } catch (e) { /* ignore */ }
-
-              var li = document.createElement('li');
-              li.className = 'bought__item';
-              try { li.setAttribute('data-ssp-paid-id', String(id)); } catch (e) { /* ignore */ }
-
-              var titleSpan = document.createElement('span');
-              titleSpan.className = 'bought__title';
-              titleSpan.textContent = String(it.itemName || it.name || it.title || it.label || 'Purchased item');
-              li.appendChild(titleSpan);
-
-              var metaSpan = document.createElement('span');
-              metaSpan.className = 'bought__meta';
-              li.appendChild(metaSpan);
-
-              try {
-                var refSpan = document.createElement('span');
-                refSpan.className = 'bought__ref';
-                refSpan.textContent = 'Order: ' + String(id);
-                metaSpan.appendChild(refSpan);
-
-                var copyBtn = document.createElement('button');
-                copyBtn.setAttribute('type', 'button');
-                copyBtn.className = 'bought__copy';
-                copyBtn.textContent = 'Copy';
-                copyBtn.style.marginLeft = '8px';
-                try {
-                  copyBtn.setAttribute('data-ssp-copy', 'on');
-                  copyBtn.addEventListener('click', function () { try { navigator.clipboard.writeText(String(id || '')); } catch (e) { /* ignore */ } });
-                } catch (e) { /* ignore */ }
-                metaSpan.appendChild(copyBtn);
-
-              } catch (e) { /* ignore */ }
-
-              try { list.appendChild(li); } catch (e) { /* ignore append */ }
-
-              try { createBoughtCta(li, it); } catch (e) { /* ignore */ }
-
-            } catch (e) { /* ignore per-item */ }
-          });
-
-        } catch (e) { /* ignore per-host */ }
-      });
-
-    } catch (e) { /* ignore */ }
-  };
-
-  /**
-   * Auto-verify remembered purchases when possible so the page can surface a
-   * "Download installers" link without a user click. This is guarded so it
-   * only runs once per page load and only when groupStoreVerify is available.
-   */
-  P._autoVerifyRememberedPurchases = function () {
-    try {
-      if (_boughtAutoVerifyCalled) return;
-      _boughtAutoVerifyCalled = true;
-
-      var arr = readBoughtArray(null, null);
-      if (!arr || !arr.length) return;
-
-      arr.forEach(function (it) {
-        try {
-          if (it.downloadUrl) return; // already have a URL, nothing to verify
-          var id = it.ref || it.id || '';
-          if (!id) return;
-          if (typeof window.groupStoreVerify !== 'function') return;
-          var p = null;
-          try { p = window.groupStoreVerify(String(id)); } catch (e) { p = null; }
-          if (!p || typeof p.then !== 'function') return;
-          p.then(function (order) {
-            try {
-              var v = P._normalisePaidDetail(order);
-              if (!v) return;
-              if (v.downloadUrl) {
-                try { it.downloadUrl = v.downloadUrl; } catch (e) { /* ignore */ }
-
-                // Persist canonical storage so remembered purchases keep the
-                // verified installer URL and other pages can reflect it too.
-                try {
-                  if (typeof window.soundshopPersistBought === 'function') {
-                    try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-                  }
-                } catch (e) { /* ignore */ }
-
-                // Update any bought-summary list item for this paid id (in-place)
-                try {
-                  var paidEl = null;
-                  try { paidEl = document.querySelector('[data-ssp-paid-id="' + String(id) + '"]'); } catch (e) { paidEl = null; }
-                  if (paidEl) {
-                    try { createBoughtCta(paidEl, it); } catch (e) { /* ignore */ }
-                  }
-                } catch (e) { /* ignore */ }
-
-                // Update any visible bought-note hosts too
-                try {
-                  $$('[data-bought-note]').forEach(function (host) {
-                    try {
-                      var ref = (it && (it.ref || it.id)) || '';
-                      try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
-                      try { createBoughtCta(host, it); } catch (e) { /* ignore */ }
-                    } catch (e) { /* ignore per-host */ }
-                  });
-                } catch (e) { /* ignore */ }
-
-                // Clear per-host guard attributes so initialisers can re-run
-                try {
-                  $$('[data-bought-summary]').forEach(function (h) {
-                    try {
-                      var items = h.querySelectorAll('[data-ssp-paid-id]');
-                      Array.prototype.slice.call(items).forEach(function (itm) { try { itm.removeAttribute('data-ssp-paid-id'); } catch (e) { /* ignore */ } });
-                      try { h.removeAttribute('data-ssp-bought-cta'); } catch (e) { /* ignore */ }
-                      try { h.removeAttribute('data-ssp-bought-summary'); } catch (e) { /* ignore */ }
-                    } catch (e) { /* ignore per-host */ }
-                  });
-                  $$('[data-bought-note]').forEach(function (h) {
-                    try { h.removeAttribute('data-ssp-bought-cta'); } catch (e) { /* ignore */ }
-                    try { h.removeAttribute('data-ssp-paid-ref'); } catch (e) { /* ignore */ }
-                  });
-                } catch (e) { /* ignore */ }
-
-                // Re-run initialisers where available to refresh UI immediately
-                try { if (typeof P.initBoughtSummary === 'function') { try { P.initBoughtSummary(); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
-                try { if (typeof P.initBoughtNote === 'function') { try { P.initBoughtNote(); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
-
-              }
-            } catch (e) { /* ignore then */ }
-          }).catch(function () { /* ignore */ });
-        } catch (e) { /* ignore per-item */ }
-      });
-
-    } catch (e) { /* ignore */ }
-  };
-
-  // Wrap initialiser binding so we can call the auto-verify after initBoughtNote
-  try {
-    var orig = P.initBoughtNote;
-    if (typeof orig === 'function') {
-      (function (orig) {
-        P.initBoughtNote = function (root) {
-          try { orig(root); } catch (e) { /* ignore */ }
-          try { if (typeof P._autoVerifyRememberedPurchases === 'function') P._autoVerifyRememberedPurchases(); } catch (e) { /* ignore */ }
-        };
-      })(orig);
-    }
-  } catch (e) { /* ignore */ }
-
-})(window, document);
