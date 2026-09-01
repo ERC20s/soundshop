@@ -297,7 +297,7 @@
             continue;
           }
 
-          // If it's an object mapping (v1), normalise to an array
+          // If it's an object mapping (v1), normalise to a array
           if (parsed && typeof parsed === 'object') {
             var out = [];
             var labelsEl = host && host.querySelector ? host.querySelector('[data-bought-summary-labels]') : null;
@@ -588,6 +588,45 @@
   P.init = function () {
     try { P.initBoughtSummary(); } catch (e) { /* ignore */ }
     try { P.initBoughtNote(); } catch (e) { /* ignore */ }
+
+    // Conservative, one-shot auto-verify pass for remembered purchases that
+    // have an order id but no verified downloadUrl. This only runs when the
+    // platform verifier (window.groupStoreVerify) is available and only once
+    // per page load to keep privacy and server load minimal.
+    try {
+      if (!_boughtAutoVerifyCalled && typeof window.groupStoreVerify === 'function') {
+        var arr = [];
+        try { arr = readBoughtArray(document); } catch (e) { arr = []; }
+        if (arr && arr.length) {
+          var toVerify = null;
+          for (var i = 0; i < arr.length; i++) {
+            var it = arr[i];
+            if (!it) continue;
+            if ((it.id || it.ref) && !it.downloadUrl) { toVerify = it; break; }
+          }
+          if (toVerify) {
+            _boughtAutoVerifyCalled = true;
+            try {
+              var vid = toVerify.id || toVerify.ref || '';
+              var p = null;
+              try { p = window.groupStoreVerify(vid); } catch (e) { p = null; }
+              if (p && typeof p.then === 'function') {
+                p.then(function (order) {
+                  try {
+                    if (!order) return;
+                    // Only persist and broadcast when a conservative https download URL exists
+                    var d = extractDownloadUrl(order);
+                    if (!d) return;
+                    try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                    try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
+                  } catch (e) { /* ignore */ }
+                }).catch(function () { /* ignore failures */ });
+              }
+            } catch (e) { /* ignore */ }
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
   };
 
 }(window, document));
