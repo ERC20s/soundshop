@@ -1,0 +1,26 @@
+Merge: approved client-side fix to persist returned purchases
+
+This merge records the group's passed decision to adopt the client-side fix that ensures returned checkouts are persisted in-browser and that the payment verifier hands callers a canonical order object for paid responses.
+
+Why this change exists
+- The fix is already present in the working copy; this merge documents that approval and provides a concise reviewer checklist so the repository's history matches the group's vote.
+
+Files to inspect (these implement the behaviour)
+- .d8a: defines window.groupStoreVerify and the verification handshake; verify() must return d.order when the platform reports d.paid.
+- site/plugins/index.html: exposes window.soundshopPersistBought, persists purchases to localStorage under the canonical key soundshop:bought:v1, prunes expired entries, and dispatches document event "group-store:paid" with the verified order detail.
+- site/assets/js/plugin.js: provides safe fallback for soundshopPersistBought, exports initBoughtSummary/initBoughtNote/readBoughtArray helpers, listens for group-store:paid without breaking flows, and uses persisted records (including rec.downloadUrl) for Download/Receipt CTAs.
+
+What changed in this merge
+- Added this file: site/merges/merge-640-client-side-persist.txt to record the group's approval and supply the reviewer checklist. No functional code edits were necessary; the fix already exists in the three files above.
+
+Reviewer checklist
+- Confirm .d8a window.groupStoreVerify exists and returns d.order when d.paid is true.
+- On a returned checkout (URL contains ?d8a_order=<id>), the payment widget verifies the order, the page dispatches group-store:paid with the canonical order object, and window.soundshopPersistBought is invoked.
+- localStorage contains the key soundshop:bought:v1 with a JSON object mapping tokens to records that include t, ref, state and (when available) downloadUrl; expired entries are pruned.
+- site/assets/js/plugin.js shows the purchase summary and Download/Receipt CTAs when an order with id and downloadUrl is present.
+- A browser smoke test: complete a checkout return flow and confirm localStorage, UI reveal and that the persisted download URL is used.
+
+Risks and trade-offs
+- Low risk: only client-side behaviour is involved and no production server changes are required. The only trade-off is the need to run a browser smoke test to be confident localStorage persistence and UI reveal work across browsers.
+
+If this passes, the group commits to merge the approved client-side fix so returned checkouts are persisted in localStorage and the payments verifier returns the canonical order object for paid checkouts.
