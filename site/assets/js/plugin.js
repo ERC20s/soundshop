@@ -240,63 +240,11 @@
     } catch (e) { return false; }
   }
 
-  // BOUGHT_MAX_AGE: 60 days in milliseconds. Hoisted so both the read and
-  // write paths in this file share the same retention policy and pruning logic.
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;
-
-  function readBoughtArray() {
-    try {
-      var raw = '';
-      try { raw = window.localStorage.getItem('soundshop:bought:v1') || ''; } catch (e) { raw = ''; }
-      if (!raw) return {};
-      var parsed = null;
-      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-
-      var now = Date.now();
-      var changed = false;
-      for (var k in parsed) {
-        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
-        var r = parsed[k];
-        var isObj = !!r && typeof r === 'object' && !Array.isArray(r);
-        var when = Number(isObj ? r.t : r);
-        if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
-          delete parsed[k];
-          changed = true;
-        }
-      }
-      if (changed) {
-        try { window.localStorage.setItem('soundshop:bought:v1', JSON.stringify(parsed)); } catch (e) { }
-      }
-      return parsed;
-    } catch (e) { return {}; }
-  }
-
-  function maskEmail(e) {
-    try {
-      if (!e || typeof e !== 'string') return '';
-      var p = String(e).split('@');
-      if (!p || p.length !== 2) return '';
-      var left = p[0] || '';
-      if (left.length <= 2) left = left[0] + '…'; else left = left[0] + '…' + left.slice(-1);
-      return left + '@' + p[1];
-    } catch (err) { return ''; }
-  }
-
-  // Mask a payment/reference id conservatively so the banner can show a short
-  // fragment without exposing the whole token. Example: abcdef123456 -> abcdef…3456
-  function maskRef(r) {
-    try {
-      if (!r || typeof r !== 'string') return '';
-      var s = String(r).trim();
-      if (!s) return '';
-      if (s.length <= 10) return s.slice(0, 3) + '…' + s.slice(-2);
-      var front = s.slice(0, 6);
-      var back = s.slice(-4);
-      return front + '…' + back;
-    } catch (e) { return ''; }
-  }
-
+  // -----------------------------------------------------------------------
+  // Small helpers for extracting URLs from orders/records. Keep these
+  // conservative and parallel in style so validation is consistent across
+  // different codepaths.
+  // -----------------------------------------------------------------------
   function extractDownloadUrl(o) {
     try {
       if (!o || typeof o !== 'object') return '';
@@ -306,6 +254,18 @@
       if (!u) return '';
       if (!/^https?:\/\//i.test(u)) return '';
       return u;
+    } catch (e) { return ''; }
+  }
+
+  function extractReceiptUrl(o) {
+    try {
+      if (!o || typeof o !== 'object') return '';
+      var r = o.receiptUrl || o.receipt || '';
+      if (typeof r !== 'string') return '';
+      r = r.trim();
+      if (!r) return '';
+      if (!/^https?:\/\//i.test(r)) return '';
+      return r;
     } catch (e) { return ''; }
   }
 
@@ -329,6 +289,24 @@
           a.rel = 'noopener noreferrer';
           wrapper.appendChild(a);
           hasCta = true;
+        }
+      } catch (e) { /* ignore */ }
+
+      // If we do not have a download CTA but we have a provider receipt URL,
+      // expose a secondary "Receipt" button that opens the provider's receipt
+      // in a new tab. This uses the same conservative validation used elsewhere.
+      try {
+        if (!hasCta) {
+          var r = '';
+          try { r = extractReceiptUrl(record) || ''; } catch (e) { r = ''; }
+          if (r) {
+            var recBtn = el('a', 'button', 'Receipt');
+            recBtn.href = r;
+            recBtn.target = '_blank';
+            recBtn.rel = 'noopener noreferrer';
+            wrapper.appendChild(recBtn);
+            hasCta = true;
+          }
         }
       } catch (e) { /* ignore */ }
 
@@ -392,6 +370,19 @@
             // Insert after the button if present, else append
             if (btn && btn.parentNode) btn.parentNode.insertBefore(a, btn.nextSibling);
             else banner.appendChild(a);
+          } else {
+            // No download available; if a receipt URL exists, expose it as a
+            // secondary "Receipt" CTA so users can reach the provider's receipt
+            // directly.
+            var r = extractReceiptUrl(order);
+            if (r) {
+              var ra = el('a', 'button', 'Receipt');
+              ra.href = r;
+              ra.target = '_blank';
+              ra.rel = 'noopener noreferrer';
+              if (btn && btn.parentNode) btn.parentNode.insertBefore(ra, btn.nextSibling);
+              else banner.appendChild(ra);
+            }
           }
         }
       } catch (e) { /* ignore banner update errors */ }
