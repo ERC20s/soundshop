@@ -341,6 +341,74 @@
     } catch (e) { return null; }
   }
 
+  // Defensive copy-to-clipboard helper: navigator.clipboard when available,
+  // fallback to a transient textarea + execCommand('copy'). Provides transient
+  // UI feedback by updating the originating button's textContent briefly.
+  function copyToClipboard(text, btn) {
+    try {
+      if (!text || typeof text !== 'string') return false;
+      var restore = null;
+      if (btn) {
+        try { restore = btn.textContent; } catch (e) { restore = null; }
+      }
+
+      function showTemp(msg) {
+        try {
+          if (btn) try { btn.textContent = msg; } catch (e) { /* ignore */ }
+          setTimeout(function () {
+            try { if (btn && restore != null) btn.textContent = restore; } catch (e) { /* ignore */ }
+          }, 2200);
+        } catch (e) { /* ignore */ }
+      }
+
+      // Prefer modern async clipboard API
+      if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          navigator.clipboard.writeText(text).then(function () { showTemp('Copied'); }, function () { showTemp('Copy failed'); });
+          return true;
+        } catch (e) { /* fall through to fallback */ }
+      }
+
+      // Fallback: transient textarea + execCommand
+      try {
+        var ta = document.createElement('textarea');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.top = '0';
+        ta.setAttribute('readonly', '');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        if (document.execCommand && document.execCommand('copy')) {
+          try { document.body.removeChild(ta); } catch (e) { /* ignore */ }
+          showTemp('Copied');
+          return true;
+        }
+        try { document.body.removeChild(ta); } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
+
+      showTemp('Copy failed');
+      return false;
+    } catch (e) { return false; }
+  }
+
+  // Create a conservative 'View receipt' anchor only for https? URLs.
+  function makeReceiptAnchor(url) {
+    try {
+      if (!url || typeof url !== 'string') return null;
+      var u = String(url).trim();
+      if (!u) return null;
+      if (!/^https?:\/\//i.test(u)) return null;
+      var a = document.createElement('a');
+      a.className = 'bought__receipt';
+      try { a.setAttribute('href', u); } catch (e) { /* ignore */ }
+      try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+      try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+      a.textContent = 'View receipt';
+      return a;
+    } catch (e) { return null; }
+  }
+
   /* =======================================================================
      02  BOUGHT NOTE / SUMMARY UI
      ======================================================================= */
@@ -358,53 +426,24 @@
       for (var i = 0; i < arr.length; i++) {
         var it = arr[i];
         if (!it) continue;
-        if (it.t && it.ref && it.state === 'paid') {
-          // We show the first matching token
-          if (token === (it.tok || '')) {
-            try {
-              note.className = note.className.replace(/(^|\s)is-hidden(\s|$)/, ' ');
-            } catch (e) { /* ignore */ }
-            try { P.initBoughtSummary(); } catch (e) { /* ignore */ }
-            break;
+        try {
+          if ((it.t || it.ref) && (it.ref || it.email || it.downloadUrl || it.state)) {
+            // Render a small line like "PRISM bought on <date>" with either an
+            // email mask (if present) or the order reference, then add CTAs.
+            var span = el('span', 'bought__summary');
+            span.textContent = maskEmail(it.email || '') || (it.ref || 'Purchased');
+            var meta = el('span', 'bought__meta');
+            try { meta.textContent = (new Date(Number(it.t || Date.now()))).toLocaleString(); } catch (e) { meta.textContent = ''; }
+            var wrapper = el('div', 'bought__row');
+            try { wrapper.appendChild(span); } catch (e) { /* ignore */ }
+            try { wrapper.appendChild(meta); } catch (e) { /* ignore */ }
+
+            try { createBoughtCta(wrapper, it); } catch (e) { /* ignore */ }
+
+            try { note.appendChild(wrapper); } catch (e) { /* ignore */ }
           }
-        }
+        } catch (e) { /* ignore */ }
       }
-    } catch (e) { /* ignore */ }
-  }
-
-  function initBoughtSummary(root) {
-    try {
-      var host = $( '[data-bought-summary]', root );
-      if (!host) return;
-      if (host.getAttribute('data-ssp-bought-summary') === 'on') return;
-      host.setAttribute('data-ssp-bought-summary', 'on');
-
-      var arr = readBoughtArray(document);
-      if (!arr || !arr.length) return;
-
-      // Create list
-      try {
-        var ul = document.createElement('ul');
-        ul.className = 'bought__list';
-        for (var i = 0; i < arr.length; i++) {
-          var it = arr[i];
-          if (!it) continue;
-          var li = document.createElement('li');
-          li.className = 'bought__item';
-          var span = document.createElement('span');
-          span.className = 'bought__label';
-          span.textContent = maskEmail(it.email || '') || (it.ref || 'Purchased');
-          li.appendChild(span);
-          li.setAttribute('data-bought-item', it.ref || '');
-
-          // let createBoughtCta populate CTA area
-          try { createBoughtCta(li, it); } catch (e) { /* ignore */ }
-
-          ul.appendChild(li);
-        }
-        try { host.innerHTML = ''; host.appendChild(ul); } catch (e) { /* ignore */ }
-      } catch (e) { /* ignore */ }
-
     } catch (e) { /* ignore */ }
   }
 
@@ -427,15 +466,51 @@
                 try { existing.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
                 try { existing.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
                 try { existing.textContent = 'Download installers'; } catch (e) { /* ignore */ }
-                return;
               }
               // If existing CTA exists but is not an anchor, append a proper link
-              var a2 = makeDownloadAnchor(url);
-              if (a2) {
-                try { host.appendChild(a2); } catch (e) { /* ignore */ }
+              else {
+                var a2 = makeDownloadAnchor(url);
+                if (a2) {
+                  try { host.appendChild(a2); } catch (e) { /* ignore */ }
+                }
               }
             } catch (e) { /* ignore update */ }
           }
+
+          // Also ensure copy-ref and receipt CTAs are present if supplied.
+          try {
+            if (detail) {
+              // Copy reference
+              var refVal = detail.ref || detail.reference || '';
+              if (refVal) {
+                var existingCopy = host.querySelector('[data-ssp-bought-copy]');
+                if (!existingCopy) {
+                  var cb = el('button', 'btn btn-ghost bought__copy', 'Copy reference');
+                  try { cb.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+                  try { cb.setAttribute('data-ssp-bought-copy', String(refVal)); } catch (e) { try { cb.setAttribute('data-ssp-bought-copy', 'on'); } catch (ee) { /* ignore */ } }
+                  try { host.appendChild(cb); } catch (e) { /* ignore */ }
+                } else {
+                  // ensure attribute holds the ref
+                  try { existingCopy.setAttribute('data-ssp-bought-copy', String(refVal)); } catch (e) { /* ignore */ }
+                }
+              }
+
+              // Receipt anchor
+              var rurl = detail.receiptUrl || detail.receipt || '';
+              if (rurl) {
+                var existingReceipt = host.querySelector('.bought__receipt');
+                if (!existingReceipt) {
+                  var ra = makeReceiptAnchor(rurl);
+                  if (ra) {
+                    try { host.appendChild(ra); } catch (e) { /* ignore */ }
+                  }
+                } else {
+                  try { existingReceipt.setAttribute('href', String(rurl)); } catch (e) { /* ignore */ }
+                }
+              }
+            }
+          } catch (e) { /* ignore dynamic adds */ }
+
           return;
         }
       } catch (e) { /* ignore */ }
@@ -471,6 +546,31 @@
             wrapper.appendChild(vb);
           }
         }
+
+        // Add Copy reference button when a reference is present
+        try {
+          if (detail) {
+            var ref = detail.ref || detail.reference || '';
+            if (ref) {
+              try {
+                var copyBtn = el('button', 'btn btn-ghost bought__copy', 'Copy reference');
+                try { copyBtn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+                try { copyBtn.setAttribute('data-ssp-bought-copy', String(ref)); } catch (e) { try { copyBtn.setAttribute('data-ssp-bought-copy', 'on'); } catch (ee) { /* ignore */ } }
+                try { wrapper.appendChild(copyBtn); } catch (e) { /* ignore */ }
+              } catch (e) { /* ignore */ }
+            }
+
+            // Add View receipt anchor conservatively when a receiptUrl exists
+            try {
+              var r = detail.receiptUrl || detail.receipt || '';
+              var raEl = makeReceiptAnchor(r);
+              if (raEl) {
+                try { wrapper.appendChild(raEl); } catch (e) { /* ignore */ }
+              }
+            } catch (e) { /* ignore */ }
+          }
+        } catch (e) { /* ignore add-ons */ }
+
         try { host.appendChild(wrapper); } catch (e) { /* ignore */ }
       } catch (e) { /* ignore create */ }
 
@@ -605,6 +705,26 @@
     });
   } catch (e) { /* ignore binding */ }
 
+  // Delegated click handler for copy reference buttons we create. This keeps
+  // the implementation small and avoids attaching per-button listeners.
+  try {
+    document.addEventListener('click', function (e) {
+      try {
+        var cb = e.target && e.target.closest ? e.target.closest('[data-ssp-bought-copy]') : null;
+        if (!cb) return;
+        var tag = (cb.tagName || '').toLowerCase();
+        if (tag !== 'button' && tag !== 'a' && tag !== 'input') return;
+        e.preventDefault();
+        var val = cb.getAttribute('data-ssp-bought-copy') || '';
+        if (!val) {
+          // if attribute used as guard only, try dataset or text
+          try { val = cb.dataset && cb.dataset.sspBoughtCopy ? cb.dataset.sspBoughtCopy : (cb.textContent || '').trim(); } catch (e) { val = ''; }
+        }
+        try { copyToClipboard(String(val), cb); } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
+    });
+  } catch (e) { /* ignore */ }
+
   // Listen for in-page verification events so a later discovery of a
   // verified download URL can update CTAs and summaries without a full page reload.
   try {
@@ -631,125 +751,8 @@
 
       } catch (e) { /* ignore */ }
     });
-  } catch (e) { /* ignore listener */ }
+  } catch (e) { /* ignore */ }
 
-  // Conservative, one-shot user-visible verify banner for URL-returned orders.
-  // This is intentionally conservative and only runs when the payments widget
-  // is absent, the URL contains ?d8a_order=<id>, and only once per page load.
-  function initUrlOrderVerifyBanner() {
-    try {
-      if (_sspUrlOrderVerifyDone) return;
-      _sspUrlOrderVerifyDone = true;
-
-      // Only run when payments widget is absent — we prefer the widget's
-      // own verification UI when it is present.
-      if (typeof window.groupStoreVerify === 'function') return;
-
-      var m = (window.location && window.location.search) ? String(window.location.search) : '';
-      var match = m.match(/[?&]d8a_order=([^&]+)/i);
-      if (!match) return;
-      var id = '';
-      try { id = decodeURIComponent(match[1] || ''); } catch (e) { id = match[1] || ''; }
-      if (!id) return;
-
-      // Build a small, non-invasive banner adjacent to <main>
-      var mainEl = document.querySelector('main') || document.body;
-      try {
-        var banner = el('div', 'ssp-url-order-verify');
-        banner.setAttribute('role', 'status');
-        banner.style.cssText = 'padding:12px;margin:12px 0;border:1px solid #e6e6e6;background:#fffefc;color:#111;font-size:14px;border-radius:6px;display:flex;align-items:center;justify-content:space-between;gap:12px';
-
-        var text = el('div', 'ssp-url-order-verify__text', 'This page was returned from a completed checkout. You can verify the order from the URL and restore any remembered purchase in this browser.');
-        text.style.flex = '1';
-        banner.appendChild(text);
-
-        var controls = el('div', 'ssp-url-order-verify__controls');
-        var btn = el('button', 'btn btn-ghost', 'Verify purchase');
-        try { btn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
-        controls.appendChild(btn);
-        banner.appendChild(controls);
-
-        // Insert banner before main's first child, or append to body as fallback
-        try {
-          if (mainEl && mainEl.parentNode) mainEl.parentNode.insertBefore(banner, mainEl.nextSibling);
-          else document.body.insertBefore(banner, document.body.firstChild);
-        } catch (e) { try { document.body.insertBefore(banner, document.body.firstChild); } catch (e) { /* ignore */ } }
-
-        var oneClick = false;
-        btn.addEventListener('click', function () {
-          try {
-            if (oneClick) return; oneClick = true;
-            btn.textContent = 'Verifying…';
-            btn.disabled = true;
-
-            var url = 'https://d8a.com/api/v1/store/orders/' + encodeURIComponent(id) + '?group=batch-synthshop';
-            fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, credentials: 'omit' }).then(function (res) {
-              if (!res || !res.ok) throw new Error('fetch-failed');
-              return res.json();
-            }).then(function (json) {
-              try {
-                if (!json) throw new Error('no-json');
-                var order = null;
-                // Accept either the object directly or a wrapper { order: ... }
-                if (typeof json === 'object' && json.paid === true) order = json;
-                else if (json && typeof json === 'object' && json.order && typeof json.order === 'object' && json.order.paid === true) order = json.order;
-                if (!order) throw new Error('not-paid-or-no-order');
-
-                try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-                try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
-
-                // Remove banner on success
-                try { if (banner && banner.parentNode) banner.parentNode.removeChild(banner); } catch (e) { /* ignore */ }
-
-                // Reveal and focus the Download CTA if present for this order
-                try {
-                  var d = extractDownloadUrl(order);
-                  if (d) {
-                    var cand = null;
-                    try { cand = document.querySelector('.bought__cta[href]'); } catch (e) { cand = null; }
-                    if (cand && cand.getAttribute && String(cand.getAttribute('href')).trim() === d) {
-                      try { focusAndReveal(cand); } catch (e) { /* ignore */ }
-                    }
-                  }
-                } catch (e) { /* ignore */ }
-
-              } catch (e) {
-                // Show a support hint inline, keep banner present
-                try {
-                  var hint = el('div', 'ssp-url-order-verify__hint');
-                  hint.style.cssText = 'margin-top:8px;font-size:13px;color:#6b7280';
-                  var a = document.createElement('a');
-                  a.setAttribute('href', 'docs.html#support');
-                  a.style.color = '#7c5cff';
-                  a.textContent = 'Verify failed — Contact Support';
-                  hint.appendChild(a);
-                  try { banner.appendChild(hint); } catch (e) { /* ignore */ }
-                } catch (e) { /* ignore */ }
-                try { btn.textContent = 'Verify purchase'; } catch (e) { /* ignore */ }
-                try { btn.disabled = false; } catch (e) { /* ignore */ }
-              }
-            }).catch(function () {
-              try {
-                var hint = el('div', 'ssp-url-order-verify__hint');
-                hint.style.cssText = 'margin-top:8px;font-size:13px;color:#6b7280';
-                var a = document.createElement('a');
-                a.setAttribute('href', 'docs.html#support');
-                a.style.color = '#7c5cff';
-                a.textContent = 'Verify failed — Contact Support';
-                hint.appendChild(a);
-                try { banner.appendChild(hint); } catch (e) { /* ignore */ }
-              } catch (e) { /* ignore */ }
-              try { btn.textContent = 'Verify purchase'; } catch (e) { /* ignore */ }
-              try { btn.disabled = false; } catch (e) { /* ignore */ }
-            });
-
-          } catch (e) { try { btn.textContent = 'Verify purchase'; } catch (e) { /* ignore */ } try { btn.disabled = false; } catch (e) { /* ignore */ } }
-        }, false);
-
-      } catch (e) { /* ignore banner build */ }
-
-    } catch (e) { /* swallow */ }
-  }
   // Expose internally for tests or manual invocation
   P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
 
