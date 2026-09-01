@@ -364,6 +364,54 @@
           dl.setAttribute('aria-label', 'Open download in a new tab');
           wrapper.appendChild(dl);
         } catch (e) { /* ignore */ }
+      } else {
+        // Guarded "Verify & reveal" button: show only when a reference exists
+        // and no download URL is present, and when a platform verify helper
+        // (window.groupStoreVerify) is available. This is user-initiated and
+        // intentionally conservative to avoid background network traffic.
+        try {
+          if (ref && typeof window.groupStoreVerify === 'function') {
+            var verifyBtn = el('button', 'btn btn-primary btn--sm', 'Verify & reveal');
+            verifyBtn.type = 'button';
+            verifyBtn.setAttribute('aria-label', 'Verify payment reference and reveal download link');
+
+            var origText = verifyBtn.textContent;
+            var running = false;
+
+            verifyBtn.addEventListener('click', function () {
+              try {
+                if (running) return;
+                running = true;
+                verifyBtn.disabled = true;
+                verifyBtn.textContent = 'Checking\u2026';
+                // Call the platform helper with the reference. It returns a
+                // promise resolving to an order object on success.
+                Promise.resolve().then(function () {
+                  return window.groupStoreVerify(ref);
+                }).then(function (order) {
+                  try {
+                    if (!order) return;
+                    // Persist when a canonical helper exists
+                    if (typeof window.soundshopPersistBought === 'function') {
+                      try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                    }
+                    // Notify listeners similarly to the payments widget
+                    try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: order })); } catch (e) { /* ignore */ }
+                    // Refresh the on-page bought UI if available
+                    if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
+                      try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
+                    }
+                  } catch (e) { /* ignore */ }
+                }).catch(function () { /* ignore */ }).finally(function () {
+                  try { running = false; verifyBtn.disabled = false; verifyBtn.textContent = origText; } catch (e) { /* ignore */ }
+                });
+
+              } catch (e) { /* ignore */ }
+            });
+
+            wrapper.appendChild(verifyBtn);
+          }
+        } catch (e) { /* ignore */ }
       }
 
       hostEl.appendChild(wrapper);
