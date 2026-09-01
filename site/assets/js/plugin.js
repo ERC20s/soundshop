@@ -318,47 +318,35 @@
         host.setAttribute('data-ssp-bought-cta', 'on');
       } catch (e) { /* ignore */ }
 
-      // Prefer using a validated download URL helper when present. Compute the
-      // actual validated URL (not just a boolean) so we can create a safe link.
-      var downloadUrl = '';
-      try {
-        if (typeof extractDownloadUrl === 'function') {
-          try { downloadUrl = extractDownloadUrl(rec) || ''; } catch (e) { downloadUrl = ''; }
-        } else {
-          downloadUrl = (rec && rec.downloadUrl) ? String(rec.downloadUrl).trim() : '';
-          if (downloadUrl && !/^https?:\/\//i.test(downloadUrl)) downloadUrl = '';
-        }
-      } catch (e) { downloadUrl = ''; }
-      var hasDownload = !!downloadUrl;
+      var container = el('span', 'bought-summary__ctas');
 
-      var container = el('div', 'bought-summary__ctas');
-
-      // If a download URL is present, surface a 'Download' button first so the
-      // buyer can open the installer directly. Use an accessible label that
-      // references the product when available.
       try {
-        if (hasDownload) {
-          var da = el('a', 'button', 'Download');
-          try { da.setAttribute('href', downloadUrl); } catch (e) { /* ignore */ }
-          try { da.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-          try { da.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+        // Download CTA
+        var downloadUrl = '';
+        try {
+          if (typeof extractDownloadUrl === 'function') {
+            try { downloadUrl = extractDownloadUrl(rec) || ''; } catch (e) { downloadUrl = ''; }
+          } else {
+            downloadUrl = (rec && rec.downloadUrl) ? String(rec.downloadUrl).trim() : '';
+            if (downloadUrl && !/^https?:\/\//i.test(downloadUrl)) downloadUrl = '';
+          }
+        } catch (e) { downloadUrl = ''; }
+
+        if (downloadUrl) {
           try {
-            var prodLabel = token || '';
-            try {
-              var lblEl = host.querySelector('.bought-summary__label');
-              if (lblEl && lblEl.textContent) prodLabel = (lblEl.textContent || '').trim();
-            } catch (e) { /* ignore */ }
-            try { da.setAttribute('aria-label', 'Download your ' + (prodLabel || 'purchase') + ' installer'); } catch (e) { /* ignore */ }
+            var a = document.createElement('a');
+            a.className = 'bought-summary__download';
+            a.textContent = 'Download';
+            a.setAttribute('href', downloadUrl);
+            a.setAttribute('target', '_blank');
+            a.setAttribute('rel', 'noopener noreferrer');
+            container.appendChild(a);
           } catch (e) { /* ignore */ }
-          container.appendChild(da);
         }
-      } catch (e) { /* ignore download anchor */ }
+      } catch (e) { /* ignore */ }
 
-      // If a provider receipt URL is present, surface a 'View receipt' button
-      // before adding the Contact support CTA so users can quickly open the
-      // payment provider's receipt page. Use extractReceiptUrl when available
-      // for validation; otherwise fall back to rec.receiptUrl. 
       try {
+        // View receipt CTA
         var receiptUrl = '';
         try {
           if (typeof extractReceiptUrl === 'function') {
@@ -368,60 +356,24 @@
             if (receiptUrl && !/^https?:\/\//i.test(receiptUrl)) receiptUrl = '';
           }
         } catch (e) { receiptUrl = ''; }
+
         if (receiptUrl) {
-          var ra = el('a', 'button', 'View receipt');
-          try { ra.setAttribute('href', receiptUrl); } catch (e) { /* ignore */ }
-          try { ra.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-          try { ra.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
           try {
-            var prodLabel2 = token || '';
-            try {
-              var lblEl2 = host.querySelector('.bought-summary__label');
-              if (lblEl2 && lblEl2.textContent) prodLabel2 = (lblEl2.textContent || '').trim();
-            } catch (e) { /* ignore */ }
-            try { ra.setAttribute('aria-label', 'View receipt for ' + (prodLabel2 || 'your') + ' purchase'); } catch (e) { /* ignore */ }
+            var a2 = document.createElement('a');
+            a2.className = 'bought-summary__receipt';
+            a2.textContent = 'View receipt';
+            a2.setAttribute('href', receiptUrl);
+            a2.setAttribute('target', '_blank');
+            a2.setAttribute('rel', 'noopener noreferrer');
+            container.appendChild(a2);
           } catch (e) { /* ignore */ }
-          container.appendChild(ra);
         }
-      } catch (e) { /* ignore receipt anchor */ }
+      } catch (e) { /* ignore */ }
 
-      // Contact support CTA (always available)
       try {
-        var masked = '';
-        try { masked = maskRef(rec.ref); } catch (e) { masked = ''; }
-        var prod = token || '';
-        try {
-          var a = el('a', 'button', 'Contact support');
-          var base = attr(document.querySelector('[data-bought-support-url]') || document.body, 'data-bought-support-url') || '';
-          var qbase = base;
-          var hash = '';
-          try {
-            var idx = base.indexOf('#');
-            if (idx !== -1) {
-              qbase = base.slice(0, idx);
-              hash = base.slice(idx);
-            }
-          } catch (e) { qbase = base; hash = ''; }
-
-          var sep = qbase.indexOf('?') !== -1 ? '&' : '?';
-          var params = [];
-          if (masked) params.push('ref=' + encodeURIComponent(masked));
-          if (prod) params.push('product=' + encodeURIComponent(prod));
-          var href = qbase + (params.length ? (sep + params.join('&')) : '') + (hash || '');
-
-          try { a.setAttribute('href', href); } catch (e) { /* ignore */ }
-          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-
-          var prodLabel = prod || '';
-          try {
-            var lblEl = host.querySelector('.bought-summary__label');
-            if (lblEl && lblEl.textContent) prodLabel = (lblEl.textContent || '').trim();
-          } catch (e) { /* ignore */ }
-          try { a.setAttribute('aria-label', 'Contact support about ' + (prodLabel || 'your') + ' purchase'); } catch (e) { /* ignore */ }
-
-          container.appendChild(a);
-        } catch (e) { /* ignore */ }
+        // Contact support CTA
+        var contact = createBoughtContactCta(host, rec);
+        if (contact) container.appendChild(contact);
       } catch (e) { /* ignore */ }
 
       return container;
@@ -729,6 +681,163 @@
 
       // Initial render
       try { render(); } catch (e) { /* ignore */ }
+
+      // Add a conservative, single "Re-verify purchases" button when there are
+      // remembered records with a ref but no validated download or receipt and
+      // when the host environment exposes window.groupStoreVerify(). The button
+      // is click-only, idempotent and removable when no missing refs remain.
+      try {
+        function hasValidatedUrls(rec) {
+          try {
+            var downloadUrl = '';
+            try {
+              if (typeof extractDownloadUrl === 'function') {
+                try { downloadUrl = extractDownloadUrl(rec) || ''; } catch (e) { downloadUrl = ''; }
+              } else {
+                downloadUrl = (rec && rec.downloadUrl) ? String(rec.downloadUrl).trim() : '';
+                if (downloadUrl && !/^https?:\/\//i.test(downloadUrl)) downloadUrl = '';
+              }
+            } catch (e) { downloadUrl = ''; }
+
+            var receiptUrl = '';
+            try {
+              if (typeof extractReceiptUrl === 'function') {
+                try { receiptUrl = extractReceiptUrl(rec) || ''; } catch (e) { receiptUrl = ''; }
+              } else {
+                receiptUrl = (rec && rec.receiptUrl) ? String(rec.receiptUrl).trim() : '';
+                if (receiptUrl && !/^https?:\/\//i.test(receiptUrl)) receiptUrl = '';
+              }
+            } catch (e) { receiptUrl = ''; }
+
+            return !!downloadUrl || !!receiptUrl;
+          } catch (e) { return false; }
+        }
+
+        // Only create the button if the host exposes groupStoreVerify and we
+        // actually have missing refs to attempt.
+        try {
+          if (typeof window.groupStoreVerify === 'function') {
+            // Guard so we don't create duplicates
+            if (!host.querySelector('[data-ssp-bought-reverify]')) {
+              var currentBought = readBoughtArray() || {};
+              var missingRefs = [];
+              try {
+                for (var k in currentBought) {
+                  if (!Object.prototype.hasOwnProperty.call(currentBought, k)) continue;
+                  var r = currentBought[k];
+                  try {
+                    var ref = (r && r.ref) ? String(r.ref).trim() : '';
+                    if (!ref) continue;
+                    if (!hasValidatedUrls(r)) missingRefs.push(ref);
+                  } catch (e) { /* ignore */ }
+                }
+              } catch (e) { missingRefs = []; }
+
+              if (missingRefs.length > 0) {
+                try {
+                  var reBtn = el('button', 'bought-summary__reverify', 'Re-verify purchases');
+                  try { reBtn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+                  try { reBtn.setAttribute('data-ssp-bought-reverify', 'on'); } catch (e) { /* ignore */ }
+
+                  reBtn.addEventListener('click', function () {
+                    try {
+                      try { reBtn.disabled = true; } catch (e) { /* ignore */ }
+
+                      try { if (SS && typeof SS.toast === 'function') SS.toast('Re-checking remembered purchases...'); } catch (e) { /* ignore */ }
+
+                      // Re-read current missing refs at click time so any recent
+                      // updates are considered.
+                      var toCheck = [];
+                      try {
+                        var nowBought = readBoughtArray() || {};
+                        for (var kk in nowBought) {
+                          if (!Object.prototype.hasOwnProperty.call(nowBought, kk)) continue;
+                          var rr = nowBought[kk];
+                          try {
+                            var rf = (rr && rr.ref) ? String(rr.ref).trim() : '';
+                            if (!rf) continue;
+                            if (!hasValidatedUrls(rr)) toCheck.push(rf);
+                          } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { toCheck = []; }
+
+                      if (!toCheck || toCheck.length === 0) {
+                        try { if (SS && typeof SS.toast === 'function') SS.toast('No purchases to re-verify.'); } catch (e) { /* ignore */ }
+                        try { reBtn.parentNode && reBtn.parentNode.removeChild(reBtn); } catch (e) { /* ignore */ }
+                        return;
+                      }
+
+                      var promises = toCheck.map(function (ref) {
+                        try {
+                          var res = null;
+                          try { res = window.groupStoreVerify(ref); } catch (e) { return Promise.resolve({ ref: ref, ok: false, err: String(e) }); }
+                          return Promise.resolve(res).then(function (order) {
+                            try {
+                              if (order && typeof order === 'object') {
+                                try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                                return { ref: ref, ok: true };
+                              }
+                              return { ref: ref, ok: false, err: 'no-order' };
+                            } catch (e) { return { ref: ref, ok: false, err: String(e) }; }
+                          }).catch(function (err) { return { ref: ref, ok: false, err: String(err) }; });
+                        } catch (e) { return Promise.resolve({ ref: ref, ok: false, err: String(e) }); }
+                      });
+
+                      Promise.all(promises).then(function (results) {
+                        try {
+                          var okCount = 0; var failCount = 0;
+                          for (var ii = 0; ii < results.length; ii++) {
+                            try { if (results[ii] && results[ii].ok) okCount++; else failCount++; } catch (e) { failCount++; }
+                          }
+                          try {
+                            if (SS && typeof SS.toast === 'function') {
+                              try {
+                                if (okCount > 0 && failCount === 0) SS.toast('Re-verify complete — purchases updated.');
+                                else if (okCount > 0) SS.toast('Re-verify complete — some purchases updated.');
+                                else SS.toast('Re-verify complete — nothing updated.');
+                              } catch (e) { /* ignore */ }
+                            }
+                          } catch (e) { /* ignore */ }
+
+                          // Re-run the render so the UI reflects any new download/receipt
+                          try { render(); } catch (e) { /* ignore */ }
+
+                          // Remove the button if there are no remaining missing refs
+                          try {
+                            var after = readBoughtArray() || {};
+                            var remaining = 0;
+                            for (var z in after) {
+                              if (!Object.prototype.hasOwnProperty.call(after, z)) continue;
+                              try { if ((after[z] && after[z].ref) && !hasValidatedUrls(after[z])) remaining++; } catch (e) { /* ignore */ }
+                            }
+                            if (remaining === 0) {
+                              try { reBtn.parentNode && reBtn.parentNode.removeChild(reBtn); } catch (e) { /* ignore */ }
+                            }
+                          } catch (e) { /* ignore */ }
+
+                        } catch (e) { /* ignore results handling */ }
+                        try { reBtn.disabled = false; } catch (e) { /* ignore */ }
+                      }).catch(function () {
+                        try { if (SS && typeof SS.toast === 'function') SS.toast('Re-verify failed'); } catch (e) { /* ignore */ }
+                        try { reBtn.disabled = false; } catch (e) { /* ignore */ }
+                      });
+
+                    } catch (e) { try { if (SS && typeof SS.toast === 'function') SS.toast('Re-verify failed'); } catch (err) { /* ignore */ } }
+                  });
+
+                  // Append the button once after the list
+                  try {
+                    if (list && list.parentNode) list.parentNode.insertBefore(reBtn, list.nextSibling);
+                    else host.appendChild(reBtn);
+                  } catch (e) { try { host.appendChild(reBtn); } catch (err) { /* ignore */ } }
+
+                } catch (e) { /* ignore create */ }
+              }
+            }
+          }
+        } catch (e) { /* ignore guard */ }
+      } catch (e) { /* ignore reverify setup */ }
+
     } catch (e) { /* ignore */ }
   }
 
