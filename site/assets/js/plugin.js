@@ -244,7 +244,273 @@
 
   // E
 
-  // (existing file continues...)
+  // Minimal, defensive helpers for bought-summary UI and URL-order verify.
+  // These are intentionally small and conservative: no wording, no innerHTML,
+  // only unprivileged DOM writes and guarded exports on P.
+
+  var BOUGHT_KEY = 'soundshop:bought:v1';
+  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
+  var MAX_DOWNLOAD_URL_LEN = 2000;
+
+  function readBoughtArray() {
+    var out = {};
+    try {
+      var raw = null;
+      try { raw = window.localStorage.getItem(BOUGHT_KEY); } catch (e) { raw = null; }
+      if (!raw) return out;
+      var parsed = null;
+      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
+      var now = Date.now();
+      for (var k in parsed) {
+        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
+        var r = parsed[k];
+        if (!r || typeof r !== 'object') continue;
+        var when = Number(r.t || 0);
+        if (!isFinite(when) || when <= 0) continue;
+        if ((now - when) > BOUGHT_MAX_AGE) continue; // expired
+        // Shallow copy of accepted fields
+        var rec = { t: when, ref: r.ref || '', state: r.state || 'paid' };
+        if (r.email && typeof r.email === 'string') rec.email = String(r.email);
+        if (r.downloadUrl && typeof r.downloadUrl === 'string') rec.downloadUrl = String(r.downloadUrl);
+        if (r.receiptUrl && typeof r.receiptUrl === 'string') rec.receiptUrl = String(r.receiptUrl);
+        out[k] = rec;
+      }
+    } catch (e) { /* ignore */ }
+    return out;
+  }
+
+  function maskEmail(email) {
+    try {
+      if (!email || typeof email !== 'string') return '';
+      var parts = email.split('@');
+      if (parts.length !== 2) return email;
+      var local = parts[0] || '';
+      var domain = parts[1] || '';
+      if (local.length <= 2) local = local.charAt(0) + '*';
+      else if (local.length <= 4) local = local.charAt(0) + '***' ;
+      else local = local.charAt(0) + '***' + local.charAt(local.length - 1);
+      return local + '@' + domain;
+    } catch (e) { return ''; }
+  }
+
+  function extractDownloadUrl(detail) {
+    try {
+      var d = '';
+      if (!detail) return '';
+      if (typeof detail === 'string') d = detail.trim();
+      else if (detail && typeof detail === 'object') d = String(detail.downloadUrl || detail.installerUrl || (detail.installers && detail.installers[0] && detail.installers[0].url) || '').trim();
+      if (!d) return '';
+      // Only allow https
+      if (!/^https:\/\//i.test(d)) return '';
+      if (d.length > MAX_DOWNLOAD_URL_LEN) return '';
+      return d;
+    } catch (e) { return ''; }
+  }
+
+  function createBoughtCta(hostEl, detail) {
+    try {
+      if (!hostEl || !(hostEl instanceof Element)) return null;
+      if (bound(hostEl, 'bought-cta')) return hostEl;
+
+      var wrapper = el('div', 'bought-cta');
+
+      // Copy reference button
+      var ref = (detail && detail.ref) ? String(detail.ref) : '';
+      if (ref) {
+        var copyBtn = el('button', 'btn btn--sm', 'Copy reference');
+        copyBtn.type = 'button';
+        copyBtn.setAttribute('aria-label', 'Copy payment reference to clipboard');
+        copyBtn.addEventListener('click', function () {
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(ref);
+            } else {
+              // Fallback: create a temporary textarea
+              var ta = document.createElement('textarea');
+              ta.value = ref;
+              ta.style.position = 'fixed'; ta.style.left = '-9999px';
+              document.body.appendChild(ta);
+              ta.select();
+              try { document.execCommand('copy'); } catch (e) { /* ignore */ }
+              document.body.removeChild(ta);
+            }
+          } catch (e) { /* ignore */ }
+        });
+        wrapper.appendChild(copyBtn);
+      }
+
+      // View receipt link
+      var receipt = (detail && detail.receiptUrl) ? String(detail.receiptUrl) : '';
+      if (receipt) {
+        try {
+          var a = el('a', 'btn btn-ghost btn--sm', 'View receipt');
+          a.href = receipt;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.setAttribute('aria-label', 'Open receipt in a new tab');
+          wrapper.appendChild(a);
+        } catch (e) { /* ignore */ }
+      }
+
+      // Download link (very conservative)
+      var durl = extractDownloadUrl(detail);
+      if (durl) {
+        try {
+          var dl = el('a', 'btn btn-primary btn--sm', 'Download');
+          dl.href = durl;
+          dl.target = '_blank';
+          dl.rel = 'noopener noreferrer';
+          dl.setAttribute('aria-label', 'Open download in a new tab');
+          wrapper.appendChild(dl);
+        } catch (e) { /* ignore */ }
+      }
+
+      hostEl.appendChild(wrapper);
+      return wrapper;
+    } catch (e) { return null; }
+  }
+
+  function initBoughtSummary(root) {
+    try {
+      var host = $("[data-bought-summary]", root || document);
+      if (!host) return;
+      if (bound(host, 'bought-summary')) return;
+      // Find the list element
+      var list = $("[data-bought-summary-list]", host) || host.querySelector('ul') || null;
+      if (!list) return;
+
+      // Labels
+      var labContainer = $("[data-bought-summary-labels]", host) || $("[data-bought-summary-labels]", document) || null;
+      var labels = {};
+      if (labContainer) {
+        var attrs = labContainer.attributes || [];
+        for (var i = 0; i < attrs.length; i++) {
+          var name = attrs[i].name;
+          var m = name.match(/^data-bought-label-(.+)$/);
+          if (m) labels[m[1]] = attrs[i].value;
+        }
+      }
+
+      var prefixDate = attr(host, 'data-bought-summary-date-prefix') || '';
+      var prefixRef = attr(host, 'data-bought-summary-ref-prefix') || '';
+      var suffixRef = attr(host, 'data-bought-summary-ref-suffix') || '';
+      var norefText = attr(host, 'data-bought-summary-noref') || '';
+
+      // Clear existing items (idempotent)
+      try { while (list.firstChild) list.removeChild(list.firstChild); } catch (e) { }
+
+      var bought = readBoughtArray();
+      var keys = Object.keys(bought);
+      if (!keys.length) return;
+
+      keys.forEach(function (token) {
+        try {
+          var d = bought[token];
+          if (!d) return;
+          var li = el('li', 'bought-summary__item');
+
+          // Label for the product
+          var labelText = (labels && labels[token]) ? labels[token] : token.toUpperCase();
+          var labelEl = el('div', 'bought-summary__label', labelText);
+          li.appendChild(labelEl);
+
+          // Date
+          if (d.t) {
+            var when = new Date(Number(d.t));
+            var dateEl = el('div', 'bought-summary__date', (prefixDate || '') + when.toLocaleString());
+            li.appendChild(dateEl);
+          }
+
+          // Reference or fallback
+          if (d.ref) {
+            var refEl = el('div', 'bought-summary__ref', (prefixRef || '') + d.ref + (suffixRef || ''));
+            li.appendChild(refEl);
+          } else if (norefText) {
+            var norefEl = el('div', 'bought-summary__noref', norefText);
+            li.appendChild(norefEl);
+          }
+
+          // Masked email if present
+          if (d.email) {
+            var e = maskEmail(d.email);
+            if (e) {
+              var em = el('div', 'bought-summary__email', e);
+              li.appendChild(em);
+            }
+          }
+
+          // CTAs
+          var ctnHost = el('div', 'bought-summary__ctas');
+          createBoughtCta(ctnHost, d);
+          li.appendChild(ctnHost);
+
+          list.appendChild(li);
+        } catch (e) { /* ignore per-record */ }
+      });
+
+    } catch (e) { /* ignore */ }
+  }
+
+  function initBoughtNote(root) {
+    try {
+      var note = $("[data-bought-note]", root || document);
+      if (!note) return;
+      if (bound(note, 'bought-note')) return;
+
+      var item = attr(note, 'data-bought-item') || '';
+      var covered = attr(note, 'data-bought-covered-by') || '';
+      if (!item) return;
+
+      var bought = readBoughtArray();
+      if (bought[item] || (covered && bought[covered])) {
+        try { note.hidden = false; } catch (e) { note.removeAttribute('hidden'); }
+        // reveal spans if present
+        var cover = $("[data-bought-cover]", note);
+        if (cover) cover.hidden = false;
+        var date = $("[data-bought-date]", note);
+        if (date) date.hidden = false;
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function initUrlOrderVerifyBanner(root) {
+    try {
+      if (_sspUrlOrderVerifyDone) return;
+      _sspUrlOrderVerifyDone = true;
+      // Conservative: only attempt when a d8a_order query is present and when
+      // a platform helper is available. The canonical widget in .d8a already
+      // performs this verification; this function is a harmless no-op fallback.
+      try {
+        var match = (location.search || '').match(/[?&]d8a_order=([A-Za-z0-9_-]+)/);
+        var id = match && match[1] ? match[1] : '';
+        if (!id) return;
+        if (typeof window.groupStoreVerify === 'function') {
+          try {
+            window.groupStoreVerify(id).then(function (o) {
+              try {
+                if (!o) return;
+                if (typeof window.soundshopPersistBought === 'function') {
+                  try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
+                }
+                // Notify other codepaths
+                try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+              } catch (e) { /* ignore */ }
+            }).catch(function () { /* ignore */ });
+          } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
+  }
+
+  // Export on the public object so other scripts (and tests) can call them.
+  P.readBoughtArray = readBoughtArray;
+  P.maskEmail = maskEmail;
+  P.extractDownloadUrl = extractDownloadUrl;
+  P.createBoughtCta = createBoughtCta;
+  P.initBoughtSummary = initBoughtSummary;
+  P.initBoughtNote = initBoughtNote;
+  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
 
   // Defensive listener: append-only addition to handle group-store:paid events
   // in pages that include the payments widget. This mirrors existing verify
