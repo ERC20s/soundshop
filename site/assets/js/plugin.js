@@ -119,6 +119,26 @@
   }
 
   /**
+   * Extract a conservative provider receipt URL from an order-like object.
+   * Mirrors extractDownloadUrl but looks at common receipt fields. Returns a
+   * string URL when valid, otherwise null.
+   */
+  function extractReceiptUrl(obj) {
+    try {
+      if (!obj || typeof obj !== 'object') return null;
+      var cand = obj.receiptUrl || obj.receipt_url || obj.receipt || '';
+      if (typeof cand !== 'string') return null;
+      cand = cand.trim();
+      if (!cand) return null;
+      // Conservative: only accept explicit http(s) URLs and reasonable length
+      if (!/^https?:\/\//i.test(cand)) return null;
+      if (cand.length > 2000) return null;
+      return cand;
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  /**
    * Read remembered purchases from localStorage and present them as an Array
    * of item-like objects that the rest of plugin.js expects. Behaviour:
    *  - If the host has an explicit data-* key (attr name provided) use that.
@@ -185,6 +205,12 @@
                 if (durl) item.downloadUrl = durl;
               } catch (e) { /* ignore */ }
 
+              // Preserve any provider receipt URL stored in the record
+              try {
+                var rurl = extractReceiptUrl(rec);
+                if (rurl) item.receiptUrl = rurl;
+              } catch (e) { /* ignore */ }
+
               out.push(item);
             }
             if (out.length) return out;
@@ -230,14 +256,15 @@
       if (!host || !host.appendChild) return;
 
       // If we've previously created a CTA in this host, allow updating it when
-      // a new detail provides a downloadUrl. This avoids duplicating CTAs but
-      // lets a later verification populate a "Download installers" anchor.
+      // a new detail provides a downloadUrl or receiptUrl. This avoids duplicating CTAs but
+      // lets a later verification populate a "Download installers" or "View receipt" anchor.
       try {
         var already = host.getAttribute('data-ssp-bought-cta');
         if (already === 'on') {
           // If the caller supplied a verified download URL, try to update an
-          // existing anchor (or append one if none exists). Otherwise do
-          // nothing and keep the existing CTA (usually a Contact Support link).
+          // existing anchor (or append one if none exists). Otherwise if a
+          // receiptUrl is available and no downloadUrl present, update to a
+          // conservative external "View receipt" link. Otherwise do nothing.
           if (detail && extractDownloadUrl(detail)) {
             var url = extractDownloadUrl(detail);
             try {
@@ -253,6 +280,23 @@
               try { makeDownloadAnchor(url); } catch (e) { /* ignore */ }
             } catch (e) { /* ignore */ }
           }
+
+          // If no downloadUrl but a receiptUrl is present, update existing anchor
+          if (detail && !extractDownloadUrl(detail) && extractReceiptUrl(detail)) {
+            var r = extractReceiptUrl(detail);
+            try {
+              var existingR = host.querySelector('.bought__cta');
+              if (existingR && existingR.tagName && existingR.tagName.toLowerCase() === 'a') {
+                try { existingR.setAttribute('href', r); } catch (e) { /* ignore */ }
+                try { existingR.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+                try { existingR.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+                try { existingR.textContent = 'View receipt'; } catch (e) { /* ignore */ }
+                return;
+              }
+              try { makeReceiptAnchor(r); } catch (e) { /* ignore */ }
+            } catch (e) { /* ignore */ }
+          }
+
           return;
         }
       } catch (e) { /* ignore */ }
@@ -274,10 +318,25 @@
         } catch (e) { /* ignore */ }
       }
 
+      function makeReceiptAnchor(url) {
+        try {
+          var a = document.createElement('a');
+          a.className = 'bought__cta';
+          try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
+          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+          try { a.textContent = 'View receipt'; } catch (e) { /* ignore */ }
+          try { wrapper.appendChild(a); } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore */ }
+      }
+
       // If we already have a verified download URL, render it now.
       try {
         if (detail && extractDownloadUrl(detail)) {
           try { makeDownloadAnchor(extractDownloadUrl(detail)); } catch (e) { /* ignore */ }
+        } else if (detail && extractReceiptUrl(detail)) {
+          // No direct installer URL but we conservatively have a provider receipt URL
+          try { makeReceiptAnchor(extractReceiptUrl(detail)); } catch (e) { /* ignore */ }
         } else {
           // Otherwise render the fallback controls: Check order / Contact Support
           var btn = document.createElement('button');
@@ -300,8 +359,18 @@
                   try {
                     var v = P._normalisePaidDetail(order);
                     if (!v) return;
+
+                    // If we discovered a download URL, update and persist canonical storage
                     if (v.downloadUrl) {
                       try { detail.downloadUrl = v.downloadUrl; } catch (e) { /* ignore */ }
+
+                      // Persist canonical storage so remembered purchases keep the
+                      // verified installer URL and other pages can reflect it too.
+                      try {
+                        if (typeof window.soundshopPersistBought === 'function') {
+                          try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
 
                       // Update any bought-summary list item for this paid id
                       try {
@@ -323,10 +392,37 @@
                         });
                       } catch (e) { /* ignore */ }
 
+                    } else if (v.receiptUrl) {
+                      // No installer but platform returned a receipt URL — persist it
+                      try { detail.receiptUrl = v.receiptUrl; } catch (e) { /* ignore */ }
+                      try {
+                        if (typeof window.soundshopPersistBought === 'function') {
+                          try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
+
+                      // Update UI to show a conservative "View receipt" link
+                      try {
+                        var paidEl2 = null;
+                        try { paidEl2 = document.querySelector('[data-ssp-paid-id="' + String(id) + '"]'); } catch (e) { paidEl2 = null; }
+                        if (paidEl2) {
+                          try { createBoughtCta(paidEl2, detail); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
+
+                      try {
+                        $$('[data-bought-note]').forEach(function (host) {
+                          try {
+                            var ref = (detail && (detail.ref || detail.id)) || '';
+                            try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
+                            try { createBoughtCta(host, detail); } catch (e) { /* ignore */ }
+                          } catch (e) { /* ignore per-host */ }
+                        });
+                      } catch (e) { /* ignore */ }
+
                     }
                   } catch (e) { /* ignore then */ }
                 }).catch(function () { /* ignore */ });
-
               } catch (e) { /* ignore click */ }
             });
           } catch (e) { /* ignore */ }
@@ -338,6 +434,11 @@
       try { host.appendChild(wrapper); } catch (e) { /* ignore append */ }
     } catch (e) { /* ignore */ }
   }
+
+  // Expose a small helper that reads the canonical bought storage and returns
+  // the normalised array shape. This is used by bought-note and bought-summary
+  // initialisers elsewhere in this file.
+  P._readBoughtArray = readBoughtArray;
 
   /**
    * Normalise a platform-supplied order object into the record shape used
@@ -353,6 +454,7 @@
       out.email = o.email || o.deliveryEmail || o.buyerEmail || o.customerEmail || '';
       out.t = o.t || o.time || o.date || null;
       try { var d = extractDownloadUrl(o); if (d) out.downloadUrl = d; } catch (e) { /* ignore */ }
+      try { var r = extractReceiptUrl(o); if (r) out.receiptUrl = r; } catch (e) { /* ignore */ }
       return out;
     } catch (e) { return null; }
   };
@@ -400,6 +502,8 @@
 
             // Add Clear control so users can remove the remembered note locally
             try { createBoughtClear(host); } catch (e) { /* ignore */ }
+
+            try { host.setAttribute('data-ssp-paid-ref', String(det.ref || det.id || '')); } catch (e) { /* ignore */ }
 
           } catch (e) { /* ignore per-host */ }
         });
@@ -455,65 +559,14 @@
 
             try { list.appendChild(li); } catch (e) { /* ignore append */ }
 
-            // Finally try to insert a CTA area for this item. If the detail
-            // already included a downloadUrl this will show a direct link; if
-            // not the CTA will provide a Check order / Contact Support fallback.
             try { createBoughtCta(li, det); } catch (e) { /* ignore */ }
 
           } catch (e) { /* ignore per-host */ }
         });
       } catch (e) { /* ignore */ }
 
-      // If the returned checkout did not include a direct download link but
-      // the platform supports an on-demand verify, attempt one now so the
-      // page can surface a "Download installers" link immediately for the
-      // buyer without requiring them to click "Check order".
-      try {
-        var idToVerify = det && det.id ? String(det.id) : '';
-        if (!det.downloadUrl && idToVerify && typeof window.groupStoreVerify === 'function') {
-          var p = null;
-          try { p = window.groupStoreVerify(idToVerify); } catch (e) { p = null; }
-          if (p && typeof p.then === 'function') {
-            p.then(function (order) {
-              try {
-                var vdet = P._normalisePaidDetail(order);
-                if (vdet && vdet.downloadUrl) {
-                  try { det.downloadUrl = vdet.downloadUrl; } catch (e) { /* ignore */ }
-
-                  // Update any bought-summary list item for this paid id
-                  try {
-                    var paidEl = null;
-                    try { paidEl = document.querySelector('[data-ssp-paid-id="' + String(idToVerify) + '"]'); } catch (e) { paidEl = null; }
-                    if (paidEl) {
-                      try { createBoughtCta(paidEl, det); } catch (e) { /* ignore */ }
-                    }
-                  } catch (e) { /* ignore */ }
-
-                  // Update any visible bought-note hosts too
-                  try {
-                    $$('[data-bought-note]').forEach(function (host) {
-                      try {
-                        var ref = (det && (det.ref || det.id)) || '';
-                        try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
-                        try { createBoughtCta(host, det); } catch (e) { /* ignore */ }
-                      } catch (e) { /* ignore per-host */ }
-                    });
-                  } catch (e) { /* ignore */ }
-
-                }
-              } catch (e) { /* ignore then */ }
-            }).catch(function () { /* ignore */ });
-          }
-        }
-      } catch (e) { /* ignore */ }
-
     } catch (e) { /* ignore */ }
   };
-
-  // Expose a small helper that reads the canonical bought storage and returns
-  // the normalised array shape. This is used by bought-note and bought-summary
-  // initialisers elsewhere in this file.
-  P._readBoughtArray = readBoughtArray;
 
   /**
    * Initialise any [data-bought-note] hosts to show the first remembered
@@ -646,7 +699,7 @@
 
       arr.forEach(function (it) {
         try {
-          if (it.downloadUrl) return; // already have a URL, nothing to verify
+          if (it.downloadUrl || it.receiptUrl) return; // already have a URL, nothing to verify
           var id = it.ref || it.id || '';
           if (!id) return;
           if (typeof window.groupStoreVerify !== 'function') return;
@@ -657,17 +710,25 @@
             try {
               var v = P._normalisePaidDetail(order);
               if (!v) return;
+              var didPersist = false;
               if (v.downloadUrl) {
                 try { it.downloadUrl = v.downloadUrl; } catch (e) { /* ignore */ }
+                didPersist = true;
+              }
+              if (!it.downloadUrl && v.receiptUrl) {
+                try { it.receiptUrl = v.receiptUrl; } catch (e) { /* ignore */ }
+                didPersist = true;
+              }
 
-                // Persist canonical storage so remembered purchases keep the
-                // verified installer URL and other pages can reflect it too.
-                try {
-                  if (typeof window.soundshopPersistBought === 'function') {
-                    try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-                  }
-                } catch (e) { /* ignore */ }
+              // Persist canonical storage so remembered purchases keep the
+              // verified installer URL or receipt URL and other pages can reflect it too.
+              try {
+                if (didPersist && typeof window.soundshopPersistBought === 'function') {
+                  try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                }
+              } catch (e) { /* ignore */ }
 
+              if (v.downloadUrl || v.receiptUrl) {
                 // Update any bought-summary list item for this paid id (in-place)
                 try {
                   var paidEl = null;
