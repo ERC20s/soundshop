@@ -371,6 +371,20 @@
    *  - host: an Element to append the CTA into (list item or host area)
    *  - detail: optional object with fields { id: <order id>, downloadUrl: <url>, itemName: ... }
    */
+  function makeDownloadAnchor(url) {
+    try {
+      var v = extractDownloadUrl({ downloadUrl: url });
+      if (!v) return null;
+      var a = document.createElement('a');
+      a.className = 'bought__cta';
+      a.setAttribute('href', v);
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
+      a.textContent = 'Download installers';
+      return a;
+    } catch (e) { return null; }
+  }
+
   function createBoughtCta(host, detail) {
     try {
       if (!host || !host.appendChild) return;
@@ -396,4 +410,200 @@
                 return;
               }
               // If existing CTA exists but is not an anchor, append a proper link
-              try { makeDownloadAnchor(url); } catch (e) { /* ignore */ }
+              var a2 = makeDownloadAnchor(url);
+              if (a2) {
+                try { host.appendChild(a2); } catch (e) { /* ignore */ }
+              }
+            } catch (e) { /* ignore update */ }
+          }
+          return;
+        }
+      } catch (e) { /* ignore */ }
+
+      // Mark this host as having had its CTA created so re-runs are idempotent
+      try { host.setAttribute('data-ssp-bought-cta', 'on'); } catch (e) { /* ignore */ }
+
+      // Create a small container and populate with the most conservative UI:
+      // - If we have a conservative, explicit https downloadUrl, show a
+      //   "Download installers" anchor.
+      // - Otherwise show a 'Contact Support' link and a small 'Verify' button
+      //   that other scripts can hook to attempt server-side verification.
+      try {
+        var wrapper = el('div', 'bought');
+        var urlv = detail && extractDownloadUrl(detail) ? extractDownloadUrl(detail) : null;
+        if (urlv) {
+          var a = makeDownloadAnchor(urlv);
+          if (a) wrapper.appendChild(a);
+        } else {
+          // Conservative fallback: Contact Support link (does not expose receiptUrl)
+          var support = document.createElement('a');
+          support.className = 'bought__cta';
+          try { support.setAttribute('href', 'docs.html#support'); } catch (e) { /* ignore */ }
+          support.textContent = 'Contact Support';
+          wrapper.appendChild(support);
+
+          // If there is an id we can offer a verify trigger; other code may
+          // listen for clicks on [data-bought-verify] to run a server verify.
+          if (detail && (detail.id || detail.ref)) {
+            var vb = el('button', 'btn btn-ghost bought__verify', 'Verify purchase');
+            try { vb.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+            vb.setAttribute('data-bought-verify', detail.id || detail.ref || '');
+            wrapper.appendChild(vb);
+          }
+        }
+        try { host.appendChild(wrapper); } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore create */ }
+
+    } catch (e) { /* swallow */ }
+  }
+
+  /**
+   * Populate the product page "You have purchased" summary list from localStorage.
+   * This function is safe to call repeatedly and will avoid duplicate work.
+   * It writes into [data-bought-summary-list] within each [data-bought-summary].
+   */
+  P.initBoughtSummary = function (root) {
+    try {
+      var hostRoot = root || document;
+      var summaryEls = $$("[data-bought-summary]", hostRoot);
+      summaryEls.forEach(function (summary) {
+        try {
+          if (bound(summary, 'bought-summary')) return;
+          var list = summary.querySelector('[data-bought-summary-list]');
+          if (!list) return;
+          // Clear any existing content first
+          while (list.firstChild) list.removeChild(list.firstChild);
+
+          var items = readBoughtArray(summary);
+          if (!items || !items.length) {
+            // nothing remembered; keep it hidden
+            try { summary.hidden = true; } catch (e) { /* ignore */ }
+            return;
+          }
+
+          items.forEach(function (it) {
+            try {
+              var li = el('li', 'bought__item');
+              var title = el('strong', 'bought__name', it.name || it.itemName || '');
+              li.appendChild(title);
+
+              var meta = document.createElement('div');
+              meta.className = 'bought__meta';
+
+              if (it.t) {
+                var datePrefix = attr(summary, 'data-bought-summary-date-prefix') || '';
+                var d = new Date(Number(it.t));
+                var ds = isFinite(d.getTime()) ? d.toLocaleDateString() : '';
+                if (ds) {
+                  meta.appendChild(el('span', 'bought__date', (datePrefix || '') + ds));
+                }
+              }
+
+              if (it.ref) {
+                var refPrefix = attr(summary, 'data-bought-summary-ref-prefix') || '';
+                var refSuffix = attr(summary, 'data-bought-summary-ref-suffix') || '';
+                var refText = (refPrefix || '') + it.ref + (refSuffix || '');
+                meta.appendChild(el('span', 'bought__ref', refText));
+              } else {
+                var noref = attr(summary, 'data-bought-summary-noref') || '';
+                if (noref) meta.appendChild(el('span', 'bought__noref', noref));
+              }
+
+              if (it.email) {
+                meta.appendChild(el('span', 'bought__email', maskEmail(it.email)));
+              }
+
+              li.appendChild(meta);
+
+              // Append CTA area; createBoughtCta will be defensive/idempotent
+              try { createBoughtCta(li, it); } catch (e) { /* ignore */ }
+
+              list.appendChild(li);
+            } catch (e) { /* ignore item */ }
+          });
+
+          // Unhide the summary now that we have content
+          try { summary.hidden = false; } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore per-summary */ }
+      });
+    } catch (e) { /* swallow */ }
+  };
+
+  /**
+   * Unhide and adjust the per-product "Already bought on this device" note
+   * when the browser remembers a purchase that covers this product.
+   */
+  P.initBoughtNote = function (root) {
+    try {
+      var hostRoot = root || document;
+      var notes = $$("[data-bought-note]", hostRoot);
+      if (!notes || !notes.length) return;
+      var items = readBoughtArray(document);
+      notes.forEach(function (note) {
+        try {
+          if (bound(note, 'bought-note')) return;
+          var want = attr(note, 'data-bought-item') || '';
+          var coveredBy = attr(note, 'data-bought-covered-by') || '';
+          var matched = items.some(function (it) {
+            try {
+              if (!it || !it.itemName) return false;
+              var name = String(it.itemName).trim().toLowerCase();
+              if (!name) return false;
+              if (want && name === String(want).trim().toLowerCase()) return true;
+              if (coveredBy && name === String(coveredBy).trim().toLowerCase()) return true;
+              return false;
+            } catch (e) { return false; }
+          });
+
+          if (matched) {
+            // If the bundle covers it, reveal the cover span
+            try {
+              var coverEl = note.querySelector('[data-bought-cover]');
+              if (coverEl && coveredBy) {
+                coverEl.hidden = false;
+              }
+            } catch (e) { /* ignore */ }
+            try { note.hidden = false; } catch (e) { /* ignore */ }
+
+            // Ensure CTA inside note reflects any stored downloadUrl
+            try {
+              // Build a detail from stored records and call createBoughtCta on the note
+              var recs = readBoughtArray(note);
+              var found = null;
+              for (var i = 0; i < recs.length; i++) {
+                var r = recs[i];
+                if (!r) continue;
+                var nm = (r.itemName || r.name || '').toLowerCase();
+                if (nm && want && nm === want.toLowerCase()) { found = r; break; }
+                if (coveredBy && nm === coveredBy.toLowerCase()) { found = r; break; }
+              }
+              if (found) createBoughtCta(note, found);
+            } catch (e) { /* ignore */ }
+          }
+
+        } catch (e) { /* ignore per-note */ }
+      });
+    } catch (e) { /* swallow */ }
+  };
+
+  // Listen for in-page verification events so a later discovery of a
+  // verified download URL can update CTAs and summaries without a full page reload.
+  try {
+    document.addEventListener('soundshop:verified-order', function (evt) {
+      try {
+        // evt.detail is expected to be an order-like object stored or discovered
+        // by the in-page verifier. Persisting is the responsibility of the
+        // code that discovered it; here we re-run init functions to refresh UI.
+        P.initBoughtSummary();
+        P.initBoughtNote();
+      } catch (e) { /* ignore */ }
+    });
+  } catch (e) { /* ignore listener */ }
+
+  // Public init: perform bought-note and bought-summary work (safe to call repeatedly)
+  P.init = function () {
+    try { P.initBoughtSummary(); } catch (e) { /* ignore */ }
+    try { P.initBoughtNote(); } catch (e) { /* ignore */ }
+  };
+
+}(window, document));
