@@ -330,6 +330,83 @@
         }
       } catch (e) { /* ignore */ }
 
+      // Add a Copy reference button when a stored reference exists. Capture
+      // the per-item reference into a local variable before wiring the handler
+      // to avoid closure edge-cases when this function is re-invoked.
+      try {
+        if (record.ref) {
+          var copyBtn = el('button', 'button button--muted', 'Copy reference');
+          copyBtn.type = 'button';
+          wrapper.appendChild(copyBtn);
+          hasCta = true;
+
+          // Capture the ref value for this item
+          (function (refVal, btn) {
+            refVal = String(refVal || '').trim();
+            btn.addEventListener('click', function () {
+              var originalLabel = '';
+              try {
+                if (!refVal) return;
+                if (btn.disabled) return;
+                btn.disabled = true;
+                originalLabel = btn.textContent;
+                btn.textContent = 'Copying…';
+
+                var restore = function () {
+                  try { btn.disabled = false; btn.textContent = originalLabel; } catch (e) { /* ignore */ }
+                };
+
+                var showTransient = function (msg) {
+                  try { btn.textContent = msg; } catch (e) { /* ignore */ }
+                  try { setTimeout(restore, 2000); } catch (e) { restore(); }
+                };
+
+                // Primary path: Clipboard API
+                if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                  navigator.clipboard.writeText(refVal).then(function () {
+                    showTransient('Copied!');
+                  }).catch(function () {
+                    // Fallback to textarea-based copy
+                    fallbackCopy(refVal, showTransient, restore);
+                  });
+                } else {
+                  // Fallback when clipboard API is unavailable
+                  fallbackCopy(refVal, showTransient, restore);
+                }
+
+              } catch (e) {
+                try { btn.disabled = false; btn.textContent = originalLabel || 'Copy reference'; } catch (e) { /* ignore */ }
+              }
+            });
+
+            function fallbackCopy(text, onDone, onFail) {
+              try {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                // Prevent layout shift / visible element
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                ta.style.top = '0';
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                var ok = false;
+                try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+                try { document.body.removeChild(ta); } catch (e) { /* ignore */ }
+                if (ok) {
+                  try { onDone('Copied!'); } catch (e) { try { onFail(); } catch (e) {} }
+                } else {
+                  try { onDone('Copy failed'); } catch (e) { try { onFail(); } catch (e) {} }
+                }
+              } catch (e) {
+                try { onDone('Copy failed'); } catch (err) { try { onFail(); } catch (e) {} }
+              }
+            }
+
+          })(record.ref, copyBtn);
+        }
+      } catch (e) { /* ignore */ }
+
       // Show a Verify & reveal button when we have a reference but no URL
       try {
         var hasRef = !!record.ref;
@@ -558,40 +635,5 @@
   P.extractDownloadUrl = extractDownloadUrl;
   P.createBoughtCta = createBoughtCta;
   P.initBoughtSummary = initBoughtSummary;
-  P.initBoughtNote = initBoughtNote;
-  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
-
-  // Defensive listener: append-only addition to handle group-store:paid events
-  // in pages that include the payments widget. This mirrors existing verify
-  // flows but is intentionally small and guarded so it cannot break other code.
-  try {
-    document.addEventListener('group-store:paid', function (evt) {
-      try {
-        var order = (evt && evt.detail) ? evt.detail : (window.groupStorePaid || null);
-        if (!order) return;
-
-        // Persist the bought record when the canonical helper is present
-        try {
-          if (typeof window.soundshopPersistBought === 'function') {
-            try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-          }
-        } catch (e) { /* ignore */ }
-
-        // Re-emit the verified-order event so existing consumers keep working
-        try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
-
-        // Refresh on-page bought UI helpers when available
-        try {
-          if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
-            try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
-          }
-          if (window.SSPlugin && typeof window.SSPlugin.initBoughtNote === 'function') {
-            try { window.SSPlugin.initBoughtNote(); } catch (e) { /* ignore */ }
-          }
-        } catch (e) { /* ignore */ }
-
-      } catch (e) { /* swallow to be defensive */ }
-    });
-  } catch (e) { /* ignore */ }
 
 })(window, document);
