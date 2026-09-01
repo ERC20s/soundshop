@@ -281,17 +281,41 @@
         host.setAttribute('data-ssp-bought-cta', 'on');
       } catch (e) { /* ignore */ }
 
-      // Prefer using a validated download URL helper when present
-      var hasDownload = false;
+      // Prefer using a validated download URL helper when present. Compute the
+      // actual validated URL (not just a boolean) so we can create a safe link.
+      var downloadUrl = '';
       try {
         if (typeof extractDownloadUrl === 'function') {
-          try { hasDownload = !!extractDownloadUrl(rec); } catch (e) { hasDownload = false; }
+          try { downloadUrl = extractDownloadUrl(rec) || ''; } catch (e) { downloadUrl = ''; }
         } else {
-          hasDownload = !!(rec && rec.downloadUrl);
+          downloadUrl = (rec && rec.downloadUrl) ? String(rec.downloadUrl).trim() : '';
+          if (downloadUrl && !/^https?:\/\//i.test(downloadUrl)) downloadUrl = '';
         }
-      } catch (e) { hasDownload = false; }
+      } catch (e) { downloadUrl = ''; }
+      var hasDownload = !!downloadUrl;
 
       var container = el('div', 'bought-summary__ctas');
+
+      // If a download URL is present, surface a 'Download' button first so the
+      // buyer can open the installer directly. Use an accessible label that
+      // references the product when available.
+      try {
+        if (hasDownload) {
+          var da = el('a', 'button', 'Download');
+          try { da.setAttribute('href', downloadUrl); } catch (e) { /* ignore */ }
+          try { da.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+          try { da.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+          try {
+            var prodLabel = token || '';
+            try {
+              var lblEl = host.querySelector('.bought-summary__label');
+              if (lblEl && lblEl.textContent) prodLabel = (lblEl.textContent || '').trim();
+            } catch (e) { /* ignore */ }
+            try { da.setAttribute('aria-label', 'Download your ' + (prodLabel || 'purchase') + ' installer'); } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore */ }
+          container.appendChild(da);
+        }
+      } catch (e) { /* ignore download anchor */ }
 
       // If a provider receipt URL is present, surface a 'View receipt' button
       // before adding the Contact support CTA so users can quickly open the
