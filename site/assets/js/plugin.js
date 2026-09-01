@@ -359,3 +359,116 @@
 
                   // Notify other codepaths
                   try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+                } catch (e) { /* ignore */ }
+              }).catch(function () { /* ignore */ });
+
+            } catch (e) { /* ignore */ }
+          }); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+
+      if (hasCta) return wrapper;
+      return null;
+    } catch (e) { return null; }
+  }
+
+  // -----------------------------------------------------------------------
+  // initUrlOrderVerifyBanner
+  //
+  // Small, defensive entry that renders a lightweight banner on product pages
+  // returned from the payment provider with ?d8a_order=<id> when the local
+  // bought-summary has no Download CTA. The banner preserves the conservative
+  // user-initiated verify behaviour: clicking it calls window.groupStoreVerify,
+  // persists the paid order with window.soundshopPersistBought when present,
+  // and dispatches the existing group-store:paid event so UIs refresh.
+  //
+  // This implementation guards and initializes the two flags used to avoid
+  // ReferenceError in embedding contexts that do not declare them.
+  // -----------------------------------------------------------------------
+  function initUrlOrderVerifyBanner() {
+    try {
+      // Ensure the window-scoped flags exist; some embedding contexts may not
+      // declare them and reading an undeclared global can throw a ReferenceError
+      // in strict mode when accessed via an identifier. Use window.<name> so the
+      // property access is safe and well-defined.
+      if (typeof window._boughtAutoVerifyCalled === 'undefined') window._boughtAutoVerifyCalled = false;
+      if (typeof window._sspUrlOrderVerifyDone === 'undefined') window._sspUrlOrderVerifyDone = false;
+
+      // If we've already attempted this path on the page, do nothing.
+      if (window._sspUrlOrderVerifyDone) return;
+      // Mark done to ensure one-shot behaviour.
+      window._sspUrlOrderVerifyDone = true;
+
+      // Bail unless the URL explicitly contains a returned order id.
+      var orderId = (location.search.match(/[?&]d8a_order=([A-Za-z0-9_-]+)/) || [])[1];
+      if (!orderId) return;
+
+      // Need server-side verify helper to exist.
+      if (typeof window.groupStoreVerify !== 'function') return;
+
+      // If there's already a Download CTA inside the bought-summary, the
+      // banner is unnecessary.
+      try {
+        if (document.querySelector('[data-bought-summary] a.button.button--primary')) return;
+      } catch (e) { /* ignore */ }
+
+      // Find a host to attach the banner; prefer the bought-summary element.
+      var host = document.querySelector('[data-bought-summary]') || document.body;
+      if (!host) return;
+      if (bound(host, 'url-order-verify-banner')) return; // don't double-insert
+
+      // Build the banner
+      var banner = el('div', 'ssp-url-order-verify-banner');
+      banner.style.cssText = 'font:13px system-ui,sans-serif;color:#065f46;margin:8px 0;padding:10px;border:1px solid #d1fae5;background:#ecfdf5;border-radius:6px;';
+      var text = el('span', '', 'We detected a returned order on the URL. ');
+      var btn = el('button', 'button', 'Verify returned purchase');
+      btn.type = 'button';
+
+      btn.addEventListener('click', function () {
+        try {
+          if (btn.disabled) return;
+          btn.disabled = true;
+          var prev = btn.textContent;
+          btn.textContent = 'Checking…';
+
+          window.groupStoreVerify(orderId).then(function (o) {
+            try {
+              if (!o) {
+                btn.disabled = false;
+                btn.textContent = prev;
+                return;
+              }
+              if (typeof window.soundshopPersistBought === 'function') {
+                try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
+              }
+              try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+              btn.textContent = 'Verified';
+            } catch (e) {
+              btn.disabled = false;
+              btn.textContent = prev;
+            }
+          }).catch(function () {
+            btn.disabled = false;
+            btn.textContent = prev;
+          });
+
+        } catch (e) { /* ignore */ }
+      });
+
+      banner.appendChild(text);
+      banner.appendChild(btn);
+
+      // Insert the banner immediately before the host element so it is visible
+      // to users looking for their returned purchase.
+      try {
+        if (host.parentNode) host.parentNode.insertBefore(banner, host);
+        else host.appendChild(banner);
+      } catch (e) { /* ignore */ }
+
+    } catch (e) { /* swallow to remain safe in varied embedding contexts */ }
+  }
+
+  // Export the helper so tools/check-plugin-exports.js and consumers can find it
+  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
+
+})(window, document);
