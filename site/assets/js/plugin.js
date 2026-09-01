@@ -183,6 +183,10 @@
   // exist on a single document.
   var _boughtAutoVerifyCalled = false;
 
+  // One-shot guard for the URL-order verify banner/fetch path. Ensures we
+  // attempt the conservative fallback only once per page load.
+  var _sspUrlOrderVerifyDone = false;
+
   /* =======================================================================
      00  SMALL HELPERS  (mirrors SS.* when ui.js is present, works without it)
      ======================================================================= */
@@ -584,6 +588,114 @@
     });
   } catch (e) { /* ignore listener */ }
 
+  // Conservative, one-shot user-visible verify banner for URL-returned orders.
+  // This is intentionally conservative and only runs when the payments widget
+  // is absent, the URL contains ?d8a_order=<id>, and only once per page load.
+  function initUrlOrderVerifyBanner() {
+    try {
+      if (_sspUrlOrderVerifyDone) return;
+      _sspUrlOrderVerifyDone = true;
+
+      // Only run when payments widget is absent — we prefer the widget's
+      // own verification UI when it is present.
+      if (typeof window.groupStoreVerify === 'function') return;
+
+      var m = (window.location && window.location.search) ? String(window.location.search) : '';
+      var match = m.match(/[?&]d8a_order=([^&]+)/i);
+      if (!match) return;
+      var id = '';
+      try { id = decodeURIComponent(match[1] || ''); } catch (e) { id = match[1] || ''; }
+      if (!id) return;
+
+      // Build a small, non-invasive banner adjacent to <main>
+      var mainEl = document.querySelector('main') || document.body;
+      try {
+        var banner = el('div', 'ssp-url-order-verify');
+        banner.setAttribute('role', 'status');
+        banner.style.cssText = 'padding:12px;margin:12px 0;border:1px solid #e6e6e6;background:#fffefc;color:#111;font-size:14px;border-radius:6px;display:flex;align-items:center;justify-content:space-between;gap:12px';
+
+        var text = el('div', 'ssp-url-order-verify__text', 'This page was returned from a completed checkout. You can verify the order from the URL and restore any remembered purchase in this browser.');
+        text.style.flex = '1';
+        banner.appendChild(text);
+
+        var controls = el('div', 'ssp-url-order-verify__controls');
+        var btn = el('button', 'btn btn-ghost', 'Verify purchase');
+        try { btn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
+        controls.appendChild(btn);
+        banner.appendChild(controls);
+
+        // Insert banner before main's first child, or append to body as fallback
+        try {
+          if (mainEl && mainEl.parentNode) mainEl.parentNode.insertBefore(banner, mainEl.nextSibling);
+          else document.body.insertBefore(banner, document.body.firstChild);
+        } catch (e) { try { document.body.insertBefore(banner, document.body.firstChild); } catch (e) { /* ignore */ } }
+
+        var oneClick = false;
+        btn.addEventListener('click', function () {
+          try {
+            if (oneClick) return; oneClick = true;
+            btn.textContent = 'Verifying…';
+            btn.disabled = true;
+
+            var url = 'https://d8a.com/api/v1/store/orders/' + encodeURIComponent(id) + '?group=batch-synthshop';
+            fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, credentials: 'omit' }).then(function (res) {
+              if (!res || !res.ok) throw new Error('fetch-failed');
+              return res.json();
+            }).then(function (json) {
+              try {
+                if (!json) throw new Error('no-json');
+                var order = null;
+                // Accept either the object directly or a wrapper { order: ... }
+                if (typeof json === 'object' && json.paid === true) order = json;
+                else if (json && typeof json === 'object' && json.order && typeof json.order === 'object' && json.order.paid === true) order = json.order;
+                if (!order) throw new Error('not-paid-or-no-order');
+
+                try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
+
+                // Remove banner on success
+                try { if (banner && banner.parentNode) banner.parentNode.removeChild(banner); } catch (e) { /* ignore */ }
+
+              } catch (e) {
+                // Show a support hint inline, keep banner present
+                try {
+                  var hint = el('div', 'ssp-url-order-verify__hint');
+                  hint.style.cssText = 'margin-top:8px;font-size:13px;color:#6b7280';
+                  var a = document.createElement('a');
+                  a.setAttribute('href', 'docs.html#support');
+                  a.style.color = '#7c5cff';
+                  a.textContent = 'Verify failed — Contact Support';
+                  hint.appendChild(a);
+                  try { banner.appendChild(hint); } catch (e) { /* ignore */ }
+                } catch (e) { /* ignore */ }
+                try { btn.textContent = 'Verify purchase'; } catch (e) { /* ignore */ }
+                try { btn.disabled = false; } catch (e) { /* ignore */ }
+              }
+            }).catch(function () {
+              try {
+                var hint = el('div', 'ssp-url-order-verify__hint');
+                hint.style.cssText = 'margin-top:8px;font-size:13px;color:#6b7280';
+                var a = document.createElement('a');
+                a.setAttribute('href', 'docs.html#support');
+                a.style.color = '#7c5cff';
+                a.textContent = 'Verify failed — Contact Support';
+                hint.appendChild(a);
+                try { banner.appendChild(hint); } catch (e) { /* ignore */ }
+              } catch (e) { /* ignore */ }
+              try { btn.textContent = 'Verify purchase'; } catch (e) { /* ignore */ }
+              try { btn.disabled = false; } catch (e) { /* ignore */ }
+            });
+
+          } catch (e) { try { btn.textContent = 'Verify purchase'; } catch (e) { /* ignore */ } try { btn.disabled = false; } catch (e) { /* ignore */ } }
+        }, false);
+
+      } catch (e) { /* ignore banner build */ }
+
+    } catch (e) { /* swallow */ }
+  }
+  // Expose internally for tests or manual invocation
+  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
+
   // Public init: perform bought-note and bought-summary work (safe to call repeatedly)
   P.init = function () {
     try { P.initBoughtSummary(); } catch (e) { /* ignore */ }
@@ -620,13 +732,28 @@
                     try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
                     try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
                   } catch (e) { /* ignore */ }
-                }).catch(function () { /* ignore failures */ });
+                }).catch(function () { /* ignore */ });
               }
             } catch (e) { /* ignore */ }
           }
         }
       }
     } catch (e) { /* ignore */ }
+
+    // If the payments widget is absent, offer a conservative, user-initiated
+    // verification UI when the URL contains ?d8a_order=<id>. This is a one-shot
+    // per page load to keep traffic and privacy impact minimal.
+    try {
+      if (typeof window.groupStoreVerify !== 'function' && !_sspUrlOrderVerifyDone) {
+        try { initUrlOrderVerifyBanner(); } catch (e) { /* ignore */ }
+      }
+    } catch (e) { /* ignore */ }
   };
+
+  // Export public helpers that may be used externally
+  P.extractDownloadUrl = extractDownloadUrl;
+  P.readBoughtArray = readBoughtArray;
+  P.maskEmail = maskEmail;
+  P.createBoughtCta = createBoughtCta;
 
 }(window, document));
