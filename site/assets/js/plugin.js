@@ -240,19 +240,18 @@
     } catch (e) { return false; }
   }
 
-  // BOUGHT_MAX_AGE: 60 days in milliseconds. Hoisted so both the read and
-  // write paths in this file share the same retention policy and pruning logic.
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;
+  // -----------------------------------------------------------------------
+  // rest of helpers (maskEmail, maskRef, extractDownloadUrl, extractReceiptUrl,
+  // createBoughtCta, updateUrlOrderBanner, initUrlOrderVerifyBanner etc.)
+  // -----------------------------------------------------------------------
 
   function readBoughtArray() {
     try {
-      var raw = '';
-      try { raw = window.localStorage.getItem('soundshop:bought:v1') || ''; } catch (e) { raw = ''; }
+      var raw = window.localStorage.getItem('soundshop:bought:v1');
       if (!raw) return {};
       var parsed = null;
       try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-
       var now = Date.now();
       var changed = false;
       for (var k in parsed) {
@@ -447,6 +446,22 @@
             // Insert after the button if present, else append
             if (btn && btn.parentNode) btn.parentNode.insertBefore(a, btn.nextSibling);
             else banner.appendChild(a);
+
+            // Announce availability to assistive tech via the banner span. Keep
+            // the addition minimal and non-disruptive; do not modify focus or
+            // scrolling.
+            try {
+              var announce = 'Download available.';
+              if (textEl) {
+                var cur = String(textEl.textContent || '');
+                if (cur.indexOf(announce) === -1) {
+                  // Ensure a separating space between sentences
+                  if (cur && cur.charAt(cur.length - 1) !== ' ') cur += ' ';
+                  textEl.textContent = cur + announce;
+                }
+              }
+            } catch (e) { /* ignore */ }
+
           } else {
             // No download: consider exposing a validated receipt link next to the Verified button
             try {
@@ -458,6 +473,8 @@
                 ra.rel = 'noopener noreferrer';
                 if (btn && btn.parentNode) btn.parentNode.insertBefore(ra, btn.nextSibling);
                 else banner.appendChild(ra);
+
+                // When adding a receipt CTA, we do not change the banner text.
               }
             } catch (e) { /* ignore */ }
           }
@@ -516,41 +533,47 @@
       banner.style.cssText = 'font:13px system-ui,sans-serif;color:#065f46;margin:8px 0;padding:10px;border:1px solid #d1fae5;background:#ecfdf5;border-radius:6px;';
       var masked = maskRef(orderId);
       var text = el('span', '', 'We detected a returned order on the URL' + (masked ? ' (ref ' + masked + '). ' : '. '));
+
+      // Accessibility: ensure assistive tech is politely notified of banner
+      // text changes. Set attributes inline so embedding contexts without
+      // ui.js still receive the announcement behaviour.
+      try {
+        text.setAttribute('aria-live', 'polite');
+        text.setAttribute('role', 'status');
+      } catch (e) { /* ignore */ }
+
       var btn = el('button', 'button', 'Verify returned purchase');
       btn.type = 'button';
 
+      // Capture the previous label when user clicks so we can restore on error
       btn.addEventListener('click', function () {
         try {
           if (btn.disabled) return;
-          btn.disabled = true;
           var prev = btn.textContent;
-          btn.textContent = 'Checking…';
+          try {
+            btn.disabled = true;
+            btn.textContent = 'Checking…';
+            window.groupStoreVerify(orderId).then(function (o) {
+              try {
+                if (!o) return;
+                if (typeof window.soundshopPersistBought === 'function') {
+                  try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
+                }
 
-          window.groupStoreVerify(orderId).then(function (o) {
-            try {
-              if (!o) {
+                // Update the banner to reflect the verified order (name + download CTA)
+                try { updateUrlOrderBanner(banner, o); } catch (e) { /* ignore */ }
+
+                btn.textContent = 'Verified';
+              } catch (e) {
                 btn.disabled = false;
                 btn.textContent = prev;
-                return;
               }
-              if (typeof window.soundshopPersistBought === 'function') {
-                try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
-              }
-              try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
-
-              // Update the banner to reflect the verified order (name + download CTA)
-              try { updateUrlOrderBanner(banner, o); } catch (e) { /* ignore */ }
-
-              btn.textContent = 'Verified';
-            } catch (e) {
+            }).catch(function () {
               btn.disabled = false;
               btn.textContent = prev;
-            }
-          }).catch(function () {
-            btn.disabled = false;
-            btn.textContent = prev;
-          });
+            });
 
+          } catch (e) { /* ignore */ }
         } catch (e) { /* ignore */ }
       });
 
@@ -807,43 +830,26 @@
 
       // Re-run when a purchase/verify event fires
       try {
-        document.addEventListener('group-store:paid', function () {
-          try {
-            bought = readBoughtArray() || {};
-            for (var j = 0; j < notes.length; j++) {
-              try { handleNote(notes[j]); } catch (e) { /* ignore */ }
-            }
-          } catch (e) { /* ignore */ }
-        });
-        document.addEventListener('soundshop:verified-order', function () {
-          try {
-            bought = readBoughtArray() || {};
-            for (var j = 0; j < notes.length; j++) {
-              try { handleNote(notes[j]); } catch (e) { /* ignore */ }
-            }
-          } catch (e) { /* ignore */ }
-        });
+        document.addEventListener('group-store:paid', function () { try {
+          bought = readBoughtArray() || {};
+          for (var i = 0; i < notes.length; i++) try { handleNote(notes[i]); } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore */ } });
       } catch (e) { /* ignore */ }
-
     } catch (e) { /* ignore */ }
   }
 
-  // Export the helpers so tools/check-plugin-exports.js and consumers can find them
+  // -----------------------------------------------------------------------
+  // Exports
+  // -----------------------------------------------------------------------
   P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
   P.initUrlOrderAutoVerify = initUrlOrderAutoVerify;
   P.initBoughtSummary = initBoughtSummary;
   P.initBoughtNote = initBoughtNote;
+  P.createBoughtCta = createBoughtCta;
+  P.readBoughtArray = readBoughtArray;
+  P.maskEmail = maskEmail;
+  P.extractDownloadUrl = extractDownloadUrl;
+  P.extractReceiptUrl = extractReceiptUrl;
+  P.BOUGHT_MAX_AGE = typeof BOUGHT_MAX_AGE !== 'undefined' ? BOUGHT_MAX_AGE : 60 * 24 * 60 * 60 * 1000;
 
-  // Run the conservative auto-verify on DOM ready so it operates after any
-  // initial UI rendering. This mirrors other init semantics and is safe to
-  // call multiple times.
-  try {
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initUrlOrderAutoVerify);
-    } else {
-      // DOM already ready
-      try { initUrlOrderAutoVerify(); } catch (e) { /* ignore */ }
-    }
-  } catch (e) { /* ignore */ }
-
-})(window, document);
+}(window, document));
