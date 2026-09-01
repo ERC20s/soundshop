@@ -242,43 +242,8 @@
     try { return window.location.protocol === 'file:'; } catch (e) { return false; }
   }
 
-  // E
-
-  // Minimal, defensive helpers for bought-summary UI and URL-order verify.
-  // These are intentionally small and conservative: no wording, no innerHTML,
-  // only unprivileged DOM writes and guarded exports on P.
-
-  var BOUGHT_KEY = 'soundshop:bought:v1';
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
+  // Small constants used by helpers
   var MAX_DOWNLOAD_URL_LEN = 2000;
-
-  function readBoughtArray() {
-    var out = {};
-    try {
-      var raw = null;
-      try { raw = window.localStorage.getItem(BOUGHT_KEY); } catch (e) { raw = null; }
-      if (!raw) return out;
-      var parsed = null;
-      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
-      var now = Date.now();
-      for (var k in parsed) {
-        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
-        var r = parsed[k];
-        if (!r || typeof r !== 'object') continue;
-        var when = Number(r.t || 0);
-        if (!isFinite(when) || when <= 0) continue;
-        if ((now - when) > BOUGHT_MAX_AGE) continue; // expired
-        // Shallow copy of accepted fields
-        var rec = { t: when, ref: r.ref || '', state: r.state || 'paid' };
-        if (r.email && typeof r.email === 'string') rec.email = String(r.email);
-        if (r.downloadUrl && typeof r.downloadUrl === 'string') rec.downloadUrl = String(r.downloadUrl);
-        if (r.receiptUrl && typeof r.receiptUrl === 'string') rec.receiptUrl = String(r.receiptUrl);
-        out[k] = rec;
-      }
-    } catch (e) { /* ignore */ }
-    return out;
-  }
 
   function maskEmail(email) {
     try {
@@ -292,6 +257,33 @@
       else local = local.charAt(0) + '***' + local.charAt(local.length - 1);
       return local + '@' + domain;
     } catch (e) { return ''; }
+  }
+
+  function readBoughtArray() {
+    try {
+      var BOUGHT_KEY = 'soundshop:bought:v1';
+      var out = {};
+      try {
+        var raw = window.localStorage.getItem(BOUGHT_KEY);
+        if (!raw) return out;
+        var parsed = null;
+        try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          // Normalize: if values are timestamps, convert to objects with t
+          for (var k in parsed) {
+            if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
+            var v = parsed[k];
+            if (!v) continue;
+            if (typeof v === 'object' && !Array.isArray(v)) out[k] = v;
+            else {
+              var when = Number(v);
+              if (isFinite(when)) out[k] = { t: when };
+            }
+          }
+        }
+      } catch (e) { /* ignore */ }
+      return out;
+    } catch (e) { return {}; }
   }
 
   function extractDownloadUrl(detail) {
@@ -429,6 +421,142 @@
     } catch (e) { return null; }
   }
 
+  // Manual verification form for users who do not have a remembered buy in
+  // localStorage. This allows pasting a payment reference and calling the
+  // same platform verify endpoint used by the payments widget.
+  function createManualVerifyForm(hostEl) {
+    try {
+      if (!hostEl || !(hostEl instanceof Element)) return null;
+      if (bound(hostEl, 'manual-verify')) return hostEl;
+
+      var wrapper = el('div', 'bought-manual-verify');
+
+      // Input group
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'input input--sm';
+      input.placeholder = 'Paste order reference';
+      input.setAttribute('aria-label', 'Order reference');
+      input.style.marginRight = '8px';
+      input.style.minWidth = '180px';
+
+      var btn = el('button', 'btn btn-secondary btn--sm', 'Verify order reference');
+      btn.type = 'button';
+      btn.setAttribute('aria-label', 'Verify order reference');
+
+      var msg = el('div', 'manual-verify__msg', '');
+      msg.style.marginTop = '8px';
+      msg.style.fontSize = '13px';
+      msg.style.color = '#6b7280';
+
+      wrapper.appendChild(input);
+      wrapper.appendChild(btn);
+      wrapper.appendChild(msg);
+
+      // Rate limiting / debounce per form
+      var lastAttempt = 0;
+      var attempts = 0;
+      var ATTEMPT_WINDOW = 60 * 1000; // 1 minute window
+      var MAX_ATTEMPTS = 5;
+      var MIN_INTERVAL = 2000; // 2 seconds between attempts
+
+      function showMessage(text, isError) {
+        try {
+          msg.textContent = String(text || '');
+          msg.style.color = isError ? '#b91c1c' : '#6b7280';
+        } catch (e) { /* ignore */ }
+      }
+
+      function validateRef(ref) {
+        try {
+          if (!ref) return false;
+          if (typeof ref !== 'string') return false;
+          ref = ref.trim();
+          if (!ref) return false;
+          if (ref.length < 4 || ref.length > 128) return false;
+          // Conservative character set
+          if (!/^[A-Za-z0-9_-]+$/.test(ref)) return false;
+          return true;
+        } catch (e) { return false; }
+      }
+
+      btn.addEventListener('click', function () {
+        try {
+          var now = Date.now();
+          if (now - lastAttempt < MIN_INTERVAL) {
+            showMessage('Please wait a moment before trying again.', true);
+            return;
+          }
+          if (now - lastAttempt > ATTEMPT_WINDOW) {
+            // reset
+            attempts = 0;
+          }
+          if (attempts >= MAX_ATTEMPTS) {
+            showMessage('Too many attempts. Please try again later or contact Support.', true);
+            return;
+          }
+
+          var ref = (input.value || '').trim();
+          if (!validateRef(ref)) {
+            showMessage('Enter a short order reference (letters, numbers, - or _).', true);
+            return;
+          }
+
+          if (typeof window.groupStoreVerify !== 'function') {
+            showMessage('Verification is not available on this site.', true);
+            return;
+          }
+
+          // update rate counters and UI
+          lastAttempt = now; attempts += 1;
+          var original = btn.textContent;
+          btn.disabled = true; btn.textContent = 'Checking\u2026';
+          showMessage('Checking reference\u0000', false);
+
+          var p = null;
+          try { p = window.groupStoreVerify(ref); } catch (e) { p = null; }
+          if (!p || typeof p.then !== 'function') {
+            btn.disabled = false; btn.textContent = original;
+            showMessage('Verification is unavailable.', true);
+            return;
+          }
+
+          p.then(function (order) {
+            try {
+              if (!order) {
+                showMessage('Reference not found. Check the reference and try again or contact Support.', true);
+                return;
+              }
+
+              // Persist conservative data and inform existing consumers
+              try {
+                if (typeof window.soundshopPersistBought === 'function') {
+                  try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                }
+              } catch (e) { /* ignore */ }
+
+              try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: order })); } catch (e) { /* ignore */ }
+              try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
+
+              // Refresh UI
+              try { if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
+              try { if (window.SSPlugin && typeof window.SSPlugin.initBoughtNote === 'function') window.SSPlugin.initBoughtNote(); } catch (e) { /* ignore */ }
+
+              showMessage('Verified \u000214 — purchase recorded on this device.', false);
+
+            } catch (e) { showMessage('Verification failed; try again or contact Support.', true); }
+          }).catch(function () { showMessage('Verification failed; try again or contact Support.', true); }).finally(function () {
+            try { btn.disabled = false; btn.textContent = original; } catch (e) { /* ignore */ }
+          });
+
+        } catch (e) { /* swallow */ }
+      });
+
+      hostEl.appendChild(wrapper);
+      return wrapper;
+    } catch (e) { return null; }
+  }
+
   function initBoughtSummary(root) {
     try {
       var host = $("[data-bought-summary]", root || document);
@@ -460,7 +588,12 @@
 
       var bought = readBoughtArray();
       var keys = Object.keys(bought);
-      if (!keys.length) return;
+      if (!keys.length) {
+        // Insert a small manual verify form so users who cleared localStorage or
+        // moved devices can paste a platform order reference and verify it.
+        try { createManualVerifyForm(host); } catch (e) { /* ignore */ }
+        return;
+      }
 
       keys.forEach(function (token) {
         try {
@@ -528,7 +661,34 @@
         if (cover) cover.hidden = false;
         var date = $("[data-bought-date]", note);
         if (date) date.hidden = false;
+        return;
       }
+
+      // If we get here we have a bought-note on the page but the local store
+      // doesn't have a matching record. Add a small inline link to reveal the
+      // manual verify form so the visitor can paste a payment reference.
+      try {
+        var link = el('button', 'btn-link', 'Verify order reference');
+        link.type = 'button';
+        link.setAttribute('aria-label', 'Open manual verify form');
+        link.style.marginLeft = '8px';
+        link.addEventListener('click', function () {
+          try {
+            // Place the form under the note element itself so it's obvious
+            // which product the reference applies to.
+            var existing = note.querySelector('.bought-manual-verify');
+            if (existing) {
+              try { existing.style.display = existing.style.display === 'none' ? '' : 'none'; } catch (e) { /* ignore */ }
+              return;
+            }
+            try { createManualVerifyForm(note); } catch (e) { /* ignore */ }
+          } catch (e) { /* swallow */ }
+        });
+        // Append link to the note's action area if present, else to the note
+        var action = $('[data-bought-note-action]', note) || note;
+        action.appendChild(link);
+      } catch (e) { /* ignore */ }
+
     } catch (e) { /* ignore */ }
   }
 
@@ -566,6 +726,7 @@
   P.maskEmail = maskEmail;
   P.extractDownloadUrl = extractDownloadUrl;
   P.createBoughtCta = createBoughtCta;
+  P.createManualVerifyForm = createManualVerifyForm;
   P.initBoughtSummary = initBoughtSummary;
   P.initBoughtNote = initBoughtNote;
   P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
