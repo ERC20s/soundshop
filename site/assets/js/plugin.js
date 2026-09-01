@@ -182,8 +182,9 @@
 
   // Gate to ensure we only attempt an auto server-side verify once per page
   // load. This keeps the privacy/traffic impact minimal when multiple hosts
-  // exist on a single document.
-  var _boughtAutoVerifyCalled = false;
+  // exist on a single document. Embedding contexts may opt out by setting
+  // window._boughtAutoVerifyCalled = true before this script runs.
+  if (typeof window._boughtAutoVerifyCalled === 'undefined') window._boughtAutoVerifyCalled = false;
 
   // One-shot guard for the URL-order verify banner/fetch path. Ensures we
   // attempt the conservative fallback only once per page load.
@@ -240,163 +241,12 @@
     } catch (e) { return false; }
   }
 
-  // BOUGHT_MAX_AGE: 60 days in milliseconds. Hoisted so both the read and
-  // write paths in this file share the same retention policy and pruning logic.
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;
-
-  function readBoughtArray() {
-    try {
-      var raw = '';
-      try { raw = window.localStorage.getItem('soundshop:bought:v1') || ''; } catch (e) { raw = ''; }
-      if (!raw) return {};
-      var parsed = null;
-      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-
-      var now = Date.now();
-      var changed = false;
-      for (var k in parsed) {
-        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
-        var r = parsed[k];
-        var isObj = !!r && typeof r === 'object' && !Array.isArray(r);
-        var when = Number(isObj ? r.t : r);
-        if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
-          delete parsed[k];
-          changed = true;
-        }
-      }
-      if (changed) {
-        try { window.localStorage.setItem('soundshop:bought:v1', JSON.stringify(parsed)); } catch (e) { }
-      }
-      return parsed;
-    } catch (e) { return {}; }
-  }
-
-  function maskEmail(e) {
-    try {
-      if (!e || typeof e !== 'string') return '';
-      var p = String(e).split('@');
-      if (!p || p.length !== 2) return '';
-      var left = p[0] || '';
-      if (left.length <= 2) left = left[0] + '…'; else left = left[0] + '…' + left.slice(-1);
-      return left + '@' + p[1];
-    } catch (err) { return ''; }
-  }
-
-  function extractDownloadUrl(o) {
-    try {
-      if (!o || typeof o !== 'object') return '';
-      var u = o.downloadUrl || o.installerUrl || (o.installers && o.installers[0] && o.installers[0].url) || '';
-      if (typeof u !== 'string') return '';
-      u = u.trim();
-      if (!u) return '';
-      if (!/^https?:\/\//i.test(u)) return '';
-      return u;
-    } catch (e) { return ''; }
-  }
-
-  function createBoughtCta(hostEl, record) {
-    try {
-      if (!hostEl || !record || typeof record !== 'object') return null;
-
-      // One-shot guard: avoid appending duplicate CTA markup when callers
-      // may invoke createBoughtCta multiple times against the same hostEl.
-      if (bound(hostEl, 'bought-cta')) return null;
-
-      var wrapper = el('div', 'bought-summary__ctas__wrap');
-      var hasCta = false;
-
-      // If we have a download URL already, expose it
-      try {
-        if (record.downloadUrl) {
-          var a = el('a', 'button button--primary', 'Download');
-          a.href = String(record.downloadUrl);
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-          wrapper.appendChild(a);
-          hasCta = true;
-        }
-      } catch (e) { /* ignore */ }
-
-      // If we have a provider receipt URL, expose it as a muted CTA
-      try {
-        var r = record.receiptUrl || record.receipt || '';
-        if (typeof r === 'string') {
-          r = r.trim();
-          if (r && /^https?:\/\//i.test(r)) {
-            var receiptA = el('a', 'button button--muted', 'Receipt');
-            receiptA.href = String(r);
-            receiptA.target = '_blank';
-            receiptA.rel = 'noopener noreferrer';
-            wrapper.appendChild(receiptA);
-            hasCta = true;
-          }
-        }
-      } catch (e) { /* ignore */ }
-
-      // Show a Verify & reveal button when we have a reference but no URL
-      try {
-        var hasRef = !!record.ref;
-        var hasUrl = !!record.downloadUrl;
-        if (hasRef && !hasUrl && typeof window.groupStoreVerify === 'function') {
-          var verifyBtn = el('button', 'button', 'Verify & reveal');
-          verifyBtn.type = 'button';
-          try { verifyBtn.addEventListener('click', function () {
-            try {
-              var ref = String(record.ref || '').trim();
-              if (!ref) return;
-              if (verifyBtn.disabled) return;
-              verifyBtn.disabled = true;
-              var originalLabel = verifyBtn.textContent;
-              verifyBtn.textContent = 'Checking…';
-
-              window.groupStoreVerify(ref).then(function (o) {
-                try {
-                  if (!o) return;
-                  if (typeof window.soundshopPersistBought === 'function') {
-                    try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
-                  }
-
-                  // Notify other codepaths
-                  try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
-                } catch (e) { /* ignore */ }
-              }).catch(function () { /* ignore */ });
-
-            } catch (e) { /* ignore */ }
-          }); } catch (e) { /* ignore */ }
-        }
-      } catch (e) { /* ignore */ }
-
-      if (hasCta) return wrapper;
-      return null;
-    } catch (e) { return null; }
-  }
-
-  // -----------------------------------------------------------------------
   // initUrlOrderVerifyBanner
-  //
-  // Small, defensive entry that renders a lightweight banner on product pages
-  // returned from the payment provider with ?d8a_order=<id> when the local
-  // bought-summary has no Download CTA. The banner preserves the conservative
-  // user-initiated verify behaviour: clicking it calls window.groupStoreVerify,
-  // persists the paid order with window.soundshopPersistBought when present,
-  // and dispatches the existing group-store:paid event so UIs refresh.
-  //
-  // This implementation guards and initializes the two flags used to avoid
-  // ReferenceError in embedding contexts that do not declare them.
-  // -----------------------------------------------------------------------
   function initUrlOrderVerifyBanner() {
     try {
-      // Ensure the window-scoped flags exist; some embedding contexts may not
-      // declare them and reading an undeclared global can throw a ReferenceError
-      // in strict mode when accessed via an identifier. Use window.<name> so the
-      // property access is safe and well-defined.
-      if (typeof window._boughtAutoVerifyCalled === 'undefined') window._boughtAutoVerifyCalled = false;
-      if (typeof window._sspUrlOrderVerifyDone === 'undefined') window._sspUrlOrderVerifyDone = false;
-
-      // If we've already attempted this path on the page, do nothing.
-      if (window._sspUrlOrderVerifyDone) return;
-      // Mark done to ensure one-shot behaviour.
+      if (_sspUrlOrderVerifyDone) return;
+      // Mark done as early as possible so repeated calls are inert.
+      // This mirrors the previous behaviour and keeps the path one-shot.
       window._sspUrlOrderVerifyDone = true;
 
       // Bail unless the URL explicitly contains a returned order id.
@@ -417,53 +267,111 @@
       if (!host) return;
       if (bound(host, 'url-order-verify-banner')) return; // don't double-insert
 
-      // Build the banner
-      var banner = el('div', 'ssp-url-order-verify-banner');
-      banner.style.cssText = 'font:13px system-ui,sans-serif;color:#065f46;margin:8px 0;padding:10px;border:1px solid #d1fae5;background:#ecfdf5;border-radius:6px;';
-      var text = el('span', '', 'We detected a returned order on the URL. ');
-      var btn = el('button', 'button', 'Verify returned purchase');
-      btn.type = 'button';
-
-      btn.addEventListener('click', function () {
+      // Helper that builds and inserts the manual verify banner (exactly as
+      // present before this change). We call this if auto-verify is not run
+      // or fails/returns null so user can still perform manual verify.
+      function createBanner() {
         try {
-          if (btn.disabled) return;
-          btn.disabled = true;
-          var prev = btn.textContent;
-          btn.textContent = 'Checking…';
+          var banner = el('div', 'ssp-url-order-verify-banner');
+          banner.style.cssText = 'font:13px system-ui,sans-serif;color:#065f46;margin:8px 0;padding:10px;border:1px solid #d1fae5;background:#ecfdf5;border-radius:6px;';
+          var text = el('span', '', 'We detected a returned order on the URL. ');
+          var btn = el('button', 'button', 'Verify returned purchase');
+          btn.type = 'button';
 
-          window.groupStoreVerify(orderId).then(function (o) {
+          btn.addEventListener('click', function () {
             try {
-              if (!o) {
+              if (btn.disabled) return;
+              btn.disabled = true;
+              var prev = btn.textContent;
+              btn.textContent = 'Checking…';
+
+              window.groupStoreVerify(orderId).then(function (o) {
+                try {
+                  if (!o) {
+                    btn.disabled = false;
+                    btn.textContent = prev;
+                    return;
+                  }
+                  if (typeof window.soundshopPersistBought === 'function') {
+                    try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
+                  }
+                  try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+                  btn.textContent = 'Verified';
+                } catch (e) {
+                  btn.disabled = false;
+                  btn.textContent = prev;
+                }
+              }).catch(function () {
                 btn.disabled = false;
                 btn.textContent = prev;
-                return;
-              }
-              if (typeof window.soundshopPersistBought === 'function') {
-                try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
-              }
-              try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
-              btn.textContent = 'Verified';
-            } catch (e) {
-              btn.disabled = false;
-              btn.textContent = prev;
-            }
-          }).catch(function () {
-            btn.disabled = false;
-            btn.textContent = prev;
+              });
+
+            } catch (e) { /* ignore */ }
           });
 
+          banner.appendChild(text);
+          banner.appendChild(btn);
+
+          // Insert the banner immediately before the host element so it is visible
+          // to users looking for their returned purchase.
+          try {
+            if (host.parentNode) host.parentNode.insertBefore(banner, host);
+            else host.appendChild(banner);
+          } catch (e) { /* ignore */ }
         } catch (e) { /* ignore */ }
-      });
+      }
 
-      banner.appendChild(text);
-      banner.appendChild(btn);
-
-      // Insert the banner immediately before the host element so it is visible
-      // to users looking for their returned purchase.
+      // Attempt a conservative, one-shot automatic verify on page load. If the
+      // server confirms the order we persist the purchase and dispatch the
+      // existing event so the normal reveal path runs; if the verify fails or
+      // resolves to null we fall back to inserting the manual banner so the
+      // user can click to verify (behaviour unchanged from before for that
+      // case).
       try {
-        if (host.parentNode) host.parentNode.insertBefore(banner, host);
-        else host.appendChild(banner);
-      } catch (e) { /* ignore */ }
+        if (!window._boughtAutoVerifyCalled) {
+          // Respect embedding opt-out: a host page can set
+          // window._boughtAutoVerifyCalled = true before this script runs.
+          window._boughtAutoVerifyCalled = true;
+
+          // Perform the server-side verify. This returns a promise and is the
+          // same call the manual button would make; we only run it once.
+          try {
+            window.groupStoreVerify(orderId).then(function (o) {
+              try {
+                if (!o) {
+                  // Nothing found; show the manual banner so users can retry.
+                  createBanner();
+                  return;
+                }
+                // Persist and announce the returned order exactly as the
+                // manual path does; do not insert the banner in this case.
+                if (typeof window.soundshopPersistBought === 'function') {
+                  try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
+                }
+                try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+              } catch (e) {
+                // On unexpected error, fall back to manual banner.
+                createBanner();
+              }
+            }).catch(function () {
+              // Server call failed; fall back to manual banner.
+              createBanner();
+            });
+          } catch (e) {
+            // If the verify call itself throws synchronously, show banner.
+            createBanner();
+          }
+
+        } else {
+          // Already attempted by the embedding page or previous script run —
+          // just insert the manual banner so the UI remains available.
+          createBanner();
+        }
+      } catch (e) {
+        // Remain safe in varied embedding contexts by swallowing errors and
+        // ensuring the manual banner is available.
+        try { createBanner(); } catch (e2) { /* ignore */ }
+      }
 
     } catch (e) { /* swallow to remain safe in varied embedding contexts */ }
   }
