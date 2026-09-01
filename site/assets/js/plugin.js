@@ -244,42 +244,6 @@
 
   // E
 
-  // Minimal, defensive helpers for bought-summary UI and URL-order verify.
-  // These are intentionally small and conservative: no wording, no innerHTML,
-  // only unprivileged DOM writes and guarded exports on P.
-
-  var BOUGHT_KEY = 'soundshop:bought:v1';
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
-  var MAX_DOWNLOAD_URL_LEN = 2000;
-
-  function readBoughtArray() {
-    var out = {};
-    try {
-      var raw = null;
-      try { raw = window.localStorage.getItem(BOUGHT_KEY); } catch (e) { raw = null; }
-      if (!raw) return out;
-      var parsed = null;
-      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
-      var now = Date.now();
-      for (var k in parsed) {
-        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
-        var r = parsed[k];
-        if (!r || typeof r !== 'object') continue;
-        var when = Number(r.t || 0);
-        if (!isFinite(when) || when <= 0) continue;
-        if ((now - when) > BOUGHT_MAX_AGE) continue; // expired
-        // Shallow copy of accepted fields
-        var rec = { t: when, ref: r.ref || '', state: r.state || 'paid' };
-        if (r.email && typeof r.email === 'string') rec.email = String(r.email);
-        if (r.downloadUrl && typeof r.downloadUrl === 'string') rec.downloadUrl = String(r.downloadUrl);
-        if (r.receiptUrl && typeof r.receiptUrl === 'string') rec.receiptUrl = String(r.receiptUrl);
-        out[k] = rec;
-      }
-    } catch (e) { /* ignore */ }
-    return out;
-  }
-
   function maskEmail(email) {
     try {
       if (!email || typeof email !== 'string') return '';
@@ -363,6 +327,58 @@
           dl.rel = 'noopener noreferrer';
           dl.setAttribute('aria-label', 'Open download in a new tab');
           wrapper.appendChild(dl);
+        } catch (e) { /* ignore */ }
+      }
+
+      // Guarded: Verify & reveal button
+      // Only show when we have a payment reference, no download URL present,
+      // and the environment exposes a groupStoreVerify helper.
+      if (!durl && ref && typeof window.groupStoreVerify === 'function') {
+        try {
+          var verifyBtn = el('button', 'btn btn-ghost btn--sm', 'Verify & reveal');
+          verifyBtn.type = 'button';
+          verifyBtn.setAttribute('aria-label', 'Check payment reference and reveal download when available');
+
+          verifyBtn.addEventListener('click', function () {
+            try {
+              if (verifyBtn.disabled) return;
+              var originalText = verifyBtn.textContent;
+              verifyBtn.disabled = true;
+              verifyBtn.textContent = 'Checking…';
+
+              // Call the platform helper with the stored reference. This is an
+              // explicit, user-initiated verification only; keep failures
+              // non-throwing and restore button state on error.
+              Promise.resolve().then(function () { return window.groupStoreVerify(ref); }).then(function (order) {
+                try {
+                  if (!order) {
+                    verifyBtn.disabled = false;
+                    verifyBtn.textContent = originalText;
+                    return;
+                  }
+
+                  // Persist the returned order via canonical helper if present.
+                  if (typeof window.soundshopPersistBought === 'function') {
+                    try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                  }
+
+                  // Notify other codepaths and refresh UI to reveal any download
+                  try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: order })); } catch (e) { /* ignore */ }
+                  if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
+                    try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
+                  }
+
+                } catch (e) { /* ignore */ }
+              }).catch(function () {
+                // On any error, restore the button to allow retry.
+                try { verifyBtn.disabled = false; verifyBtn.textContent = originalText; } catch (e) { /* ignore */ }
+              });
+            } catch (e) {
+              try { verifyBtn.disabled = false; verifyBtn.textContent = 'Verify & reveal'; } catch (ee) { /* ignore */ }
+            }
+          });
+
+          wrapper.appendChild(verifyBtn);
         } catch (e) { /* ignore */ }
       }
 
