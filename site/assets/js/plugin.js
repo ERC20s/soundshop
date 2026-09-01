@@ -628,9 +628,211 @@
     } catch (e) { /* ignore to remain safe */ }
   }
 
+  // -----------------------------------------------------------------------
+  // initBoughtSummary
+  //
+  // Locate [data-bought-summary] and render every remembered purchase into
+  // [data-bought-summary-list]. The function is idempotent and guarded via
+  // bound(host, 'bought-summary'); it attaches listeners for the events
+  // 'group-store:paid' and 'soundshop:verified-order' so the UI refreshes when
+  // purchases change.
+  // -----------------------------------------------------------------------
+  function initBoughtSummary(root) {
+    try {
+      var host = root || document.querySelector('[data-bought-summary]');
+      if (!host) return;
+      if (bound(host, 'bought-summary')) return;
+
+      var list = host.querySelector('[data-bought-summary-list]');
+      if (!list) return;
+
+      var labelsEl = host.querySelector('[data-bought-summary-labels]') || document.querySelector('[data-bought-summary-labels]');
+
+      function render() {
+        try {
+          // Clear existing list children
+          try {
+            while (list.firstChild) list.removeChild(list.firstChild);
+          } catch (e) { /* ignore */ }
+
+          var bought = readBoughtArray() || {};
+          var order = ['vanta','drift','prism','anvil','bundle'];
+          var any = false;
+
+          for (var i = 0; i < order.length; i++) {
+            var token = order[i];
+            if (!Object.prototype.hasOwnProperty.call(bought, token)) continue;
+            var rec = bought[token];
+            if (!rec || typeof rec !== 'object') continue;
+
+            var li = el('li', 'bought-summary__item');
+
+            // Product label
+            var label = token;
+            try {
+              if (labelsEl) {
+                var attr = 'data-bought-label-' + token;
+                var v = labelsEl.getAttribute(attr);
+                if (v) label = v;
+              }
+            } catch (e) { /* ignore */ }
+            var lbl = el('span', 'bought-summary__label', label);
+            li.appendChild(lbl);
+
+            // Date
+            try {
+              var prefix = attr(host, 'data-bought-summary-date-prefix') || '';
+              var when = Number(rec.t || 0) || 0;
+              var dateText = '';
+              if (when) {
+                try { dateText = new Date(when).toLocaleDateString(); } catch (e) { dateText = String(when); }
+                var dateSpan = el('span', 'bought-summary__date', prefix + dateText);
+                li.appendChild(dateSpan);
+              }
+            } catch (e) { /* ignore */ }
+
+            // Reference / masked ref
+            try {
+              var refElText = '';
+              var ref = String(rec.ref || '').trim();
+              if (ref) {
+                var pre = attr(host, 'data-bought-summary-ref-prefix') || '';
+                var suf = attr(host, 'data-bought-summary-ref-suffix') || '';
+                refElText = pre + maskRef(ref) + suf;
+              } else {
+                refElText = attr(host, 'data-bought-summary-noref') || '';
+              }
+              if (refElText) {
+                var refSpan = el('span', 'bought-summary__ref', refElText);
+                li.appendChild(refSpan);
+              }
+            } catch (e) { /* ignore */ }
+
+            // CTAs
+            try {
+              var ctas = createBoughtCta(li, rec);
+              if (ctas) li.appendChild(ctas);
+            } catch (e) { /* ignore */ }
+
+            list.appendChild(li);
+            any = true;
+          }
+
+          // Unhide the host only when we actually rendered something
+          try {
+            if (any) {
+              try { host.removeAttribute('hidden'); } catch (e) { host.hidden = false; }
+            }
+          } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore render */ }
+      }
+
+      // Listen for purchases/verified events so the list refreshes
+      try {
+        document.addEventListener('group-store:paid', function () { try { render(); } catch (e) { /* ignore */ } });
+        // Some codepaths emit 'soundshop:verified-order' — reference it here
+        // so tools can statically detect support and consumers get refreshed.
+        document.addEventListener('soundshop:verified-order', function () { try { render(); } catch (e) { /* ignore */ } });
+      } catch (e) { /* ignore */ }
+
+      // Initial render
+      try { render(); } catch (e) { /* ignore */ }
+
+    } catch (e) { /* ignore */ }
+  }
+
+  // -----------------------------------------------------------------------
+  // initBoughtNote
+  //
+  // For product pages: reveal [data-bought-note] elements whose
+  // data-bought-item token matches a remembered purchase. Populate the
+  // internal spans and append CTAs. Guarded via bound(noteEl, 'bought-note').
+  // -----------------------------------------------------------------------
+  function initBoughtNote(root) {
+    try {
+      var scope = root || document;
+      var notes = Array.prototype.slice.call(scope.querySelectorAll('[data-bought-note]')) || [];
+      if (!notes || !notes.length) return;
+
+      var bought = readBoughtArray() || {};
+
+      function handleNote(noteEl) {
+        try {
+          if (!noteEl) return;
+          var token = attr(noteEl, 'data-bought-item') || '';
+          if (!token) return;
+          if (bound(noteEl, 'bought-note')) return;
+
+          var rec = bought[token] || null;
+          if (!rec) return;
+
+          // Unhide note
+          try { noteEl.removeAttribute('hidden'); } catch (e) { noteEl.hidden = false; }
+
+          // Cover span
+          try {
+            var cover = noteEl.querySelector('[data-bought-cover]');
+            if (cover) {
+              var email = String(rec.email || '');
+              cover.textContent = email ? maskEmail(email) : (attr(noteEl, 'data-bought-cover-default') || '');
+            }
+          } catch (e) { /* ignore */ }
+
+          // Date span
+          try {
+            var dateEl = noteEl.querySelector('[data-bought-date]');
+            if (dateEl) {
+              var prefix = attr(noteEl, 'data-bought-date-prefix') || '';
+              var when = Number(rec.t || 0) || 0;
+              var dtext = '';
+              if (when) {
+                try { dtext = new Date(when).toLocaleDateString(); } catch (e) { dtext = String(when); }
+                dateEl.textContent = prefix + dtext;
+              }
+            }
+          } catch (e) { /* ignore */ }
+
+          // CTAs
+          try {
+            var c = createBoughtCta(noteEl, rec);
+            if (c) noteEl.appendChild(c);
+          } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore note */ }
+      }
+
+      // Initial pass for existing notes
+      for (var i = 0; i < notes.length; i++) {
+        try { handleNote(notes[i]); } catch (e) { /* ignore */ }
+      }
+
+      // Re-run when a purchase/verify event fires
+      try {
+        document.addEventListener('group-store:paid', function () {
+          try {
+            bought = readBoughtArray() || {};
+            for (var j = 0; j < notes.length; j++) {
+              try { handleNote(notes[j]); } catch (e) { /* ignore */ }
+            }
+          } catch (e) { /* ignore */ }
+        });
+        document.addEventListener('soundshop:verified-order', function () {
+          try {
+            bought = readBoughtArray() || {};
+            for (var j = 0; j < notes.length; j++) {
+              try { handleNote(notes[j]); } catch (e) { /* ignore */ }
+            }
+          } catch (e) { /* ignore */ }
+        });
+      } catch (e) { /* ignore */ }
+
+    } catch (e) { /* ignore */ }
+  }
+
   // Export the helpers so tools/check-plugin-exports.js and consumers can find them
   P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
   P.initUrlOrderAutoVerify = initUrlOrderAutoVerify;
+  P.initBoughtSummary = initBoughtSummary;
+  P.initBoughtNote = initBoughtNote;
 
   // Run the conservative auto-verify on DOM ready so it operates after any
   // initial UI rendering. This mirrors other init semantics and is safe to
