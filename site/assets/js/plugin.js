@@ -43,7 +43,9 @@
           if (!order || typeof order !== 'object') return;
 
           var BOUGHT_KEY = 'soundshop:bought:v1';
-          var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
+          // BOUGHT_MAX_AGE is shared with readBoughtArray below; see the
+          // declaration near the helpers so both read and write paths agree on
+          // the 60-day local retention policy.
           var MAX_EMAIL_LEN = 128;
           var MAX_RECEIPT_LEN = 2000;
 
@@ -249,7 +251,7 @@
   // only unprivileged DOM writes and guarded exports on P.
 
   var BOUGHT_KEY = 'soundshop:bought:v1';
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
+  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days - shared local retention policy
   var MAX_DOWNLOAD_URL_LEN = 2000;
 
   function readBoughtArray() {
@@ -361,246 +363,243 @@
           dl.href = durl;
           dl.target = '_blank';
           dl.rel = 'noopener noreferrer';
-          dl.setAttribute('aria-label', 'Open download in a new tab');
           wrapper.appendChild(dl);
         } catch (e) { /* ignore */ }
       }
 
-      // Guarded "Verify & reveal" button: only when we have a reference, we
-      // do not already have a download URL, and a platform verify helper exists.
+      // Verify & reveal button (manual) — kept intentionally small and guarded
       try {
-        if (ref && !durl && typeof window.groupStoreVerify === 'function') {
-          var verifyBtn = el('button', 'btn btn-secondary btn--sm', 'Verify & reveal');
-          verifyBtn.type = 'button';
-          verifyBtn.setAttribute('aria-label', 'Verify payment reference and reveal missing download link');
-
-          verifyBtn.addEventListener('click', function () {
-            // Async handler but keep it defensive
-            try {
-              var originalLabel = verifyBtn.textContent;
-              verifyBtn.disabled = true;
-              verifyBtn.textContent = 'Checking\u2026';
-
-              // Call the platform verify helper
-              try {
-                var p = null;
-                try { p = window.groupStoreVerify(ref); } catch (e) { p = null; }
-                if (!p || typeof p.then !== 'function') {
-                  // Not a promise – restore and exit
-                  verifyBtn.disabled = false;
-                  verifyBtn.textContent = originalLabel;
-                  return;
-                }
-                p.then(function (order) {
-                  try {
-                    if (order) {
-                      try {
-                        if (typeof window.soundshopPersistBought === 'function') {
-                          try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-                        }
-                      } catch (e) { /* ignore */ }
-
-                      try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: order })); } catch (e) { /* ignore */ }
-
-                      try {
-                        if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
-                          try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
-                        }
-                      } catch (e) { /* ignore */ }
-                    }
-                  } catch (e) { /* ignore */ }
-                }).catch(function () { /* ignore verify failure */ }).finally(function () {
-                  try { verifyBtn.disabled = false; verifyBtn.textContent = originalLabel; } catch (e) { /* ignore */ }
-                });
-
-              } catch (e) {
-                try { verifyBtn.disabled = false; verifyBtn.textContent = originalLabel; } catch (e) { /* ignore */ }
-              }
-
-            } catch (e) { /* swallow */ }
-          });
-
-          wrapper.appendChild(verifyBtn);
-        }
-      } catch (e) { /* ignore guard */ }
-
-      hostEl.appendChild(wrapper);
-      return wrapper;
-    } catch (e) { return null; }
-  }
-
-  function initBoughtSummary(root) {
-    try {
-      var host = $("[data-bought-summary]", root || document);
-      if (!host) return;
-      if (bound(host, 'bought-summary')) return;
-      // Find the list element
-      var list = $("[data-bought-summary-list]", host) || host.querySelector('ul') || null;
-      if (!list) return;
-
-      // Labels
-      var labContainer = $("[data-bought-summary-labels]", host) || $("[data-bought-summary-labels]", document) || null;
-      var labels = {};
-      if (labContainer) {
-        var attrs = labContainer.attributes || [];
-        for (var i = 0; i < attrs.length; i++) {
-          var name = attrs[i].name;
-          var m = name.match(/^data-bought-label-(.+)$/);
-          if (m) labels[m[1]] = attrs[i].value;
-        }
-      }
-
-      var prefixDate = attr(host, 'data-bought-summary-date-prefix') || '';
-      var prefixRef = attr(host, 'data-bought-summary-ref-prefix') || '';
-      var suffixRef = attr(host, 'data-bought-summary-ref-suffix') || '';
-      var norefText = attr(host, 'data-bought-summary-noref') || '';
-
-      // Clear existing items (idempotent)
-      try { while (list.firstChild) list.removeChild(list.firstChild); } catch (e) { }
-
-      var bought = readBoughtArray();
-      var keys = Object.keys(bought);
-      if (!keys.length) return;
-
-      keys.forEach(function (token) {
-        try {
-          var d = bought[token];
-          if (!d) return;
-          var li = el('li', 'bought-summary__item');
-
-          // Label for the product
-          var labelText = (labels && labels[token]) ? labels[token] : token.toUpperCase();
-          var labelEl = el('div', 'bought-summary__label', labelText);
-          li.appendChild(labelEl);
-
-          // Date
-          if (d.t) {
-            var when = new Date(Number(d.t));
-            var dateEl = el('div', 'bought-summary__date', (prefixDate || '') + when.toLocaleString());
-            li.appendChild(dateEl);
-          }
-
-          // Reference or fallback
-          if (d.ref) {
-            var refEl = el('div', 'bought-summary__ref', (prefixRef || '') + d.ref + (suffixRef || ''));
-            li.appendChild(refEl);
-          } else if (norefText) {
-            var norefEl = el('div', 'bought-summary__noref', norefText);
-            li.appendChild(norefEl);
-          }
-
-          // Masked email if present
-          if (d.email) {
-            var e = maskEmail(d.email);
-            if (e) {
-              var em = el('div', 'bought-summary__email', e);
-              li.appendChild(em);
-            }
-          }
-
-          // CTAs
-          var ctnHost = el('div', 'bought-summary__ctas');
-          createBoughtCta(ctnHost, d);
-          li.appendChild(ctnHost);
-
-          list.appendChild(li);
-        } catch (e) { /* ignore per-record */ }
-      });
-
-    } catch (e) { /* ignore */ }
-  }
-
-  function initBoughtNote(root) {
-    try {
-      var note = $("[data-bought-note]", root || document);
-      if (!note) return;
-      if (bound(note, 'bought-note')) return;
-
-      var item = attr(note, 'data-bought-item') || '';
-      var covered = attr(note, 'data-bought-covered-by') || '';
-      if (!item) return;
-
-      var bought = readBoughtArray();
-      if (bought[item] || (covered && bought[covered])) {
-        try { note.hidden = false; } catch (e) { note.removeAttribute('hidden'); }
-        // reveal spans if present
-        var cover = $("[data-bought-cover]", note);
-        if (cover) cover.hidden = false;
-        var date = $("[data-bought-date]", note);
-        if (date) date.hidden = false;
-      }
-    } catch (e) { /* ignore */ }
-  }
-
-  function initUrlOrderVerifyBanner(root) {
-    try {
-      if (_sspUrlOrderVerifyDone) return;
-      _sspUrlOrderVerifyDone = true;
-      // Conservative: only attempt when a d8a_order query is present and when
-      // a platform helper is available. The canonical widget in .d8a already
-      // performs this verification; this function is a harmless no-op fallback.
-      try {
-        var match = (location.search || '').match(/[?&]d8a_order=([A-Za-z0-9_-]+)/);
-        var id = match && match[1] ? match[1] : '';
-        if (!id) return;
-        if (typeof window.groupStoreVerify === 'function') {
+        var verifyBtn = el('button', 'btn btn-ghost btn--sm', 'Verify & reveal');
+        verifyBtn.type = 'button';
+        verifyBtn.setAttribute('aria-label', 'Verify payment reference with the platform');
+        verifyBtn.addEventListener('click', function () {
           try {
-            window.groupStoreVerify(id).then(function (o) {
+            if (!verifyBtn || verifyBtn.disabled) return;
+            verifyBtn.disabled = true;
+            var originalLabel = verifyBtn.textContent;
+            verifyBtn.textContent = 'Verifying...';
+
+            var ref = (detail && detail.ref) ? String(detail.ref) : '';
+            if (!ref) throw new Error('no-ref');
+
+            if (typeof window.groupStoreVerify !== 'function') throw new Error('no-verify');
+
+            window.groupStoreVerify(ref).then(function (o) {
               try {
                 if (!o) return;
-                if (typeof window.soundshopPersistBought === 'function') {
-                  try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
-                }
-                // Notify other codepaths
-                try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+                // Persist if we learned something
+                try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
+
+                try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: o })); } catch (e) { /* ignore */ }
+
+                try {
+                  // If the platform returned an installer URL, refresh the UI so
+                  // the buyer can click through immediately.
+                  if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
+                    try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
+                  }
+                } catch (e) { /* ignore */ }
+
+                try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: order })); } catch (e) { /* ignore */ }
+
+                try {
+                  if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
+                    try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
+                  }
+                } catch (e) { /* ignore */ }
               } catch (e) { /* ignore */ }
-            }).catch(function () { /* ignore */ });
-          } catch (e) { /* ignore */ }
+            }).catch(function () { /* ignore verify failure */ }).finally(function () {
+              try { verifyBtn.disabled = false; verifyBtn.textContent = originalLabel; } catch (e) { /* ignore */ }
+            });
+
+          } catch (e) {
+            try { verifyBtn.disabled = false; verifyBtn.textContent = originalLabel; } catch (e) { /* ignore */ }
+          }
+
+        } catch (e) { /* swallow */ }
+      });
+
+      wrapper.appendChild(verifyBtn);
+    }
+  } catch (e) { /* ignore guard */ }
+
+  hostEl.appendChild(wrapper);
+  return wrapper;
+} catch (e) { return null; }
+}
+
+function initBoughtSummary(root) {
+  try {
+    var host = $("[data-bought-summary]", root || document);
+    if (!host) return;
+    if (bound(host, 'bought-summary')) return;
+    // Find the list element
+    var list = $("[data-bought-summary-list]", host) || host.querySelector('ul') || null;
+    if (!list) return;
+
+    // Labels
+    var labContainer = $("[data-bought-summary-labels]", host) || $("[data-bought-summary-labels]", document) || null;
+    var labels = {};
+    if (labContainer) {
+      var attrs = labContainer.attributes || [];
+      for (var i = 0; i < attrs.length; i++) {
+        var name = attrs[i].name;
+        var m = name.match(/^data-bought-label-(.+)$/);
+        if (m) labels[m[1]] = attrs[i].value;
+      }
+    }
+
+    var prefixDate = attr(host, 'data-bought-summary-date-prefix') || '';
+    var prefixRef = attr(host, 'data-bought-summary-ref-prefix') || '';
+    var suffixRef = attr(host, 'data-bought-summary-ref-suffix') || '';
+    var norefText = attr(host, 'data-bought-summary-noref') || '';
+
+    // Clear existing items (idempotent)
+    try { while (list.firstChild) list.removeChild(list.firstChild); } catch (e) { }
+
+    var bought = readBoughtArray();
+    var keys = Object.keys(bought);
+    if (!keys.length) return;
+
+    keys.forEach(function (token) {
+      try {
+        var d = bought[token];
+        if (!d) return;
+        var li = el('li', 'bought-summary__item');
+
+        // Label for the product
+        var labelText = (labels && labels[token]) ? labels[token] : token.toUpperCase();
+        var labelEl = el('div', 'bought-summary__label', labelText);
+        li.appendChild(labelEl);
+
+        // Date
+        if (d.t) {
+          var when = new Date(Number(d.t));
+          var dateEl = el('div', 'bought-summary__date', (prefixDate || '') + when.toLocaleString());
+          li.appendChild(dateEl);
+        }
+
+        // Reference or fallback
+        if (d.ref) {
+          var refEl = el('div', 'bought-summary__ref', (prefixRef || '') + d.ref + (suffixRef || ''));
+          li.appendChild(refEl);
+        } else if (norefText) {
+          var norefEl = el('div', 'bought-summary__noref', norefText);
+          li.appendChild(norefEl);
+        }
+
+        // Masked email if present
+        if (d.email) {
+          var e = maskEmail(d.email);
+          if (e) {
+            var em = el('div', 'bought-summary__email', e);
+            li.appendChild(em);
+          }
+        }
+
+        // CTAs
+        var ctnHost = el('div', 'bought-summary__ctas');
+        createBoughtCta(ctnHost, d);
+        li.appendChild(ctnHost);
+
+        list.appendChild(li);
+      } catch (e) { /* ignore per-record */ }
+    });
+
+  } catch (e) { /* ignore */ }
+}
+
+function initBoughtNote(root) {
+  try {
+    var note = $("[data-bought-note]", root || document);
+    if (!note) return;
+    if (bound(note, 'bought-note')) return;
+
+    var item = attr(note, 'data-bought-item') || '';
+    var covered = attr(note, 'data-bought-covered-by') || '';
+    if (!item) return;
+
+    var bought = readBoughtArray();
+    if (bought[item] || (covered && bought[covered])) {
+      try { note.hidden = false; } catch (e) { note.removeAttribute('hidden'); }
+      // reveal spans if present
+      var cover = $("[data-bought-cover]", note);
+      if (cover) cover.hidden = false;
+      var date = $("[data-bought-date]", note);
+      if (date) date.hidden = false;
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function initUrlOrderVerifyBanner(root) {
+  try {
+    if (_sspUrlOrderVerifyDone) return;
+    _sspUrlOrderVerifyDone = true;
+    // Conservative: only attempt when a d8a_order query is present and when
+    // a platform helper is available. The canonical widget in .d8a already
+    // performs this verification; this function is a harmless no-op fallback.
+    try {
+      var match = (location.search || '').match(/[?&]d8a_order=([A-Za-z0-9_-]+)/);
+      var id = match && match[1] ? match[1] : '';
+      if (!id) return;
+      if (typeof window.groupStoreVerify === 'function') {
+        try {
+          window.groupStoreVerify(id).then(function (o) {
+            try {
+              if (!o) return;
+              if (typeof window.soundshopPersistBought === 'function') {
+                try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
+              }
+              // Notify other codepaths
+              try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+            } catch (e) { /* ignore */ }
+          }).catch(function () { /* ignore */ });
+        } catch (e) { /* ignore */ }
+      }
+    } catch (e) { /* ignore */ }
+  } catch (e) { /* ignore */ }
+}
+
+// Export on the public object so other scripts (and tests) can call them.
+P.readBoughtArray = readBoughtArray;
+P.maskEmail = maskEmail;
+P.extractDownloadUrl = extractDownloadUrl;
+P.createBoughtCta = createBoughtCta;
+P.initBoughtSummary = initBoughtSummary;
+P.initBoughtNote = initBoughtNote;
+P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
+
+// Defensive listener: append-only addition to handle group-store:paid events
+// in pages that include the payments widget. This mirrors existing verify
+// flows but is intentionally small and guarded so it cannot break other code.
+try {
+  document.addEventListener('group-store:paid', function (evt) {
+    try {
+      var order = (evt && evt.detail) ? evt.detail : (window.groupStorePaid || null);
+      if (!order) return;
+
+      // Persist the bought record when the canonical helper is present
+      try {
+        if (typeof window.soundshopPersistBought === 'function') {
+          try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
         }
       } catch (e) { /* ignore */ }
-    } catch (e) { /* ignore */ }
-  }
 
-  // Export on the public object so other scripts (and tests) can call them.
-  P.readBoughtArray = readBoughtArray;
-  P.maskEmail = maskEmail;
-  P.extractDownloadUrl = extractDownloadUrl;
-  P.createBoughtCta = createBoughtCta;
-  P.initBoughtSummary = initBoughtSummary;
-  P.initBoughtNote = initBoughtNote;
-  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
+      // Re-emit the verified-order event so existing consumers keep working
+      try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
 
-  // Defensive listener: append-only addition to handle group-store:paid events
-  // in pages that include the payments widget. This mirrors existing verify
-  // flows but is intentionally small and guarded so it cannot break other code.
-  try {
-    document.addEventListener('group-store:paid', function (evt) {
+      // Refresh on-page bought UI helpers when available
       try {
-        var order = (evt && evt.detail) ? evt.detail : (window.groupStorePaid || null);
-        if (!order) return;
+        if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
+          try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
+        }
+        if (window.SSPlugin && typeof window.SSPlugin.initBoughtNote === 'function') {
+          try { window.SSPlugin.initBoughtNote(); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
 
-        // Persist the bought record when the canonical helper is present
-        try {
-          if (typeof window.soundshopPersistBought === 'function') {
-            try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-          }
-        } catch (e) { /* ignore */ }
-
-        // Re-emit the verified-order event so existing consumers keep working
-        try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
-
-        // Refresh on-page bought UI helpers when available
-        try {
-          if (window.SSPlugin && typeof window.SSPlugin.initBoughtSummary === 'function') {
-            try { window.SSPlugin.initBoughtSummary(); } catch (e) { /* ignore */ }
-          }
-          if (window.SSPlugin && typeof window.SSPlugin.initBoughtNote === 'function') {
-            try { window.SSPlugin.initBoughtNote(); } catch (e) { /* ignore */ }
-          }
-        } catch (e) { /* ignore */ }
-
-      } catch (e) { /* swallow to be defensive */ }
-    });
-  } catch (e) { /* ignore */ }
+    } catch (e) { /* swallow to be defensive */ }
+  });
+} catch (e) { /* ignore */ }
 
 })(window, document);
