@@ -457,134 +457,118 @@
     } catch (e) { /* swallow */ }
   }
 
-  /**
-   * Populate the product page "You have purchased" summary list from localStorage.
-   * This function is safe to call repeatedly and will avoid duplicate work.
-   * It writes into [data-bought-summary-list] within each [data-bought-summary].
-   */
-  P.initBoughtSummary = function (root) {
-    try {
-      var hostRoot = root || document;
-      var summaryEls = $$("[data-bought-summary]", hostRoot);
-      summaryEls.forEach(function (summary) {
+  // Add a delegated, defensive click handler for [data-bought-verify] buttons.
+  // This is intentionally non-invasive: it does not change any helper
+  // signatures and will gracefully no-op if the payments widget is absent.
+  try {
+    document.addEventListener('click', function (e) {
+      try {
+        var btn = e.target && e.target.closest ? e.target.closest('[data-bought-verify]') : null;
+        if (!btn) return;
+        // Ignore if element is not a button-like control
+        var tag = (btn.tagName || '').toLowerCase();
+        if (tag !== 'button' && tag !== 'a' && tag !== 'input') return;
+
+        e.preventDefault();
+
+        // One-shot guard to avoid double-submitting
+        if (btn.getAttribute('data-ssp-verifying') === 'on') return;
+        btn.setAttribute('data-ssp-verifying', 'on');
+
+        var origText = btn.textContent || '';
+        try { btn.disabled = true; } catch (err) { /* ignore */ }
+        try { btn.textContent = 'Verifying…'; } catch (err) { /* ignore */ }
+
+        var id = attr(btn, 'data-bought-verify') || '';
+
+        function failRestore(msg) {
+          try { btn.textContent = origText; } catch (e) { /* ignore */ }
+          try { btn.disabled = false; } catch (e) { /* ignore */ }
+          try { btn.removeAttribute('data-ssp-verifying'); } catch (e) { /* ignore */ }
+          try {
+            // brief inline support hint adjacent to the button
+            var hint = document.createElement('span');
+            hint.className = 'bought__verify-hint';
+            hint.style.cssText = 'margin-left:8px;font-size:13px;color:#6b7280';
+            var a = document.createElement('a');
+            a.setAttribute('href', 'docs.html#support');
+            a.style.color = '#7c5cff';
+            a.textContent = msg || 'Need help? Contact Support';
+            hint.appendChild(a);
+            // insert after button
+            if (btn.parentNode) {
+              try { btn.parentNode.insertBefore(hint, btn.nextSibling); } catch (e) { /* ignore */ }
+              // remove hint after a short timeout
+              setTimeout(function () { try { if (hint && hint.parentNode) hint.parentNode.removeChild(hint); } catch (e) { /* ignore */ } }, 6000);
+            }
+          } catch (e) { /* ignore */ }
+        }
+
+        // If the payments widget does not expose groupStoreVerify, bail gracefully
+        if (typeof window.groupStoreVerify !== 'function') {
+          failRestore('Verify unavailable — Contact Support');
+          return;
+        }
+
+        // Call the platform verifier provided by the payments widget
         try {
-          if (bound(summary, 'bought-summary')) return;
-          var list = summary.querySelector('[data-bought-summary-list]');
-          if (!list) return;
-          // Clear any existing content first
-          while (list.firstChild) list.removeChild(list.firstChild);
-
-          var items = readBoughtArray(summary);
-          if (!items || !items.length) {
-            // nothing remembered; keep it hidden
-            try { summary.hidden = true; } catch (e) { /* ignore */ }
-            return;
+          var p = null;
+          try { p = window.groupStoreVerify(id); } catch (err) { p = null; }
+          if (!p || typeof p.then !== 'function') {
+            // Not a Promise; treat as failure if falsy, otherwise wrap
+            if (!p) { failRestore('Verify failed — Contact Support'); return; }
+            p = Promise.resolve(p);
           }
-
-          items.forEach(function (it) {
+          p.then(function (order) {
             try {
-              var li = el('li', 'bought__item');
-              var title = el('strong', 'bought__name', it.name || it.itemName || '');
-              li.appendChild(title);
+              if (!order) {
+                failRestore('No order found — Contact Support');
+                return;
+              }
 
-              var meta = document.createElement('div');
-              meta.className = 'bought__meta';
+              // Persist the discovered order into localStorage using the
+              // defensive soundshopPersistBought helper if present.
+              try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
 
-              if (it.t) {
-                var datePrefix = attr(summary, 'data-bought-summary-date-prefix') || '';
-                var d = new Date(Number(it.t));
-                var ds = isFinite(d.getTime()) ? d.toLocaleDateString() : '';
-                if (ds) {
-                  meta.appendChild(el('span', 'bought__date', (datePrefix || '') + ds));
+              // Dispatch an in-page event so existing UI refresh logic runs.
+              try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
+
+              // Attempt to update the nearby CTA: prefer calling createBoughtCta
+              // on a sensible host (note element, list item, or nearest parent)
+              try {
+                var host = btn.closest('[data-bought-note]') || btn.closest('li.bought__item') || btn.closest('[data-bought-summary]') || btn.parentNode || document;
+                if (host && typeof createBoughtCta === 'function') {
+                  try { createBoughtCta(host, order); } catch (e) { /* ignore */ }
                 }
-              }
+              } catch (e) { /* ignore */ }
 
-              if (it.ref) {
-                var refPrefix = attr(summary, 'data-bought-summary-ref-prefix') || '';
-                var refSuffix = attr(summary, 'data-bought-summary-ref-suffix') || '';
-                var refText = (refPrefix || '') + it.ref + (refSuffix || '');
-                meta.appendChild(el('span', 'bought__ref', refText));
-              } else {
-                var noref = attr(summary, 'data-bought-summary-noref') || '';
-                if (noref) meta.appendChild(el('span', 'bought__noref', noref));
-              }
+              // Final button state: if we can detect a download URL, prefer to
+              // leave the CTA area to show a Download anchor; still update text.
+              try {
+                var d = extractDownloadUrl(order);
+                if (d) {
+                  try { btn.textContent = 'Verified'; } catch (e) { /* ignore */ }
+                  try { btn.disabled = false; } catch (e) { /* ignore */ }
+                  try { btn.removeAttribute('data-ssp-verifying'); } catch (e) { /* ignore */ }
+                  return;
+                }
+              } catch (e) { /* ignore */ }
 
-              if (it.email) {
-                meta.appendChild(el('span', 'bought__email', maskEmail(it.email)));
-              }
+              try { btn.textContent = 'Verified'; } catch (e) { /* ignore */ }
+              try { btn.disabled = false; } catch (e) { /* ignore */ }
+              try { btn.removeAttribute('data-ssp-verifying'); } catch (e) { /* ignore */ }
 
-              li.appendChild(meta);
+            } catch (e) {
+              failRestore('Verify failed — Contact Support');
+            }
+          }).catch(function () { failRestore('Verify failed — Contact Support'); });
+        } catch (e) {
+          failRestore('Verify failed — Contact Support');
+        }
 
-              // Append CTA area; createBoughtCta will be defensive/idempotent
-              try { createBoughtCta(li, it); } catch (e) { /* ignore */ }
-
-              list.appendChild(li);
-            } catch (e) { /* ignore item */ }
-          });
-
-          // Unhide the summary now that we have content
-          try { summary.hidden = false; } catch (e) { /* ignore */ }
-        } catch (e) { /* ignore per-summary */ }
-      });
-    } catch (e) { /* swallow */ }
-  };
-
-  /**
-   * Unhide and adjust the per-product "Already bought on this device" note
-   * when the browser remembers a purchase that covers this product.
-   */
-  P.initBoughtNote = function (root) {
-    try {
-      var hostRoot = root || document;
-      var notes = $$("[data-bought-note]", hostRoot);
-      if (!notes || !notes.length) return;
-      var items = readBoughtArray(document);
-      notes.forEach(function (note) {
-        try {
-          if (bound(note, 'bought-note')) return;
-          var want = attr(note, 'data-bought-item') || '';
-          var coveredBy = attr(note, 'data-bought-covered-by') || '';
-          var matched = items.some(function (it) {
-            try {
-              if (!it || !it.itemName) return false;
-              var name = String(it.itemName).trim().toLowerCase();
-              if (!name) return false;
-              if (want && name === String(want).trim().toLowerCase()) return true;
-              if (coveredBy && name === String(coveredBy).trim().toLowerCase()) return true;
-              return false;
-            } catch (e) { return false; }
-          });
-
-          if (matched) {
-            // If the bundle covers it, reveal the cover span
-            try {
-              var coverEl = note.querySelector('[data-bought-cover]');
-              if (coverEl && coveredBy) {
-                coverEl.hidden = false;
-              }
-            } catch (e) { /* ignore */ }
-            try { note.hidden = false; } catch (e) { /* ignore */ }
-
-            // Ensure CTA inside note reflects any stored downloadUrl
-            try {
-              // Build a detail from stored records and call createBoughtCta on the note
-              var recs = readBoughtArray(note);
-              var found = null;
-              for (var i = 0; i < recs.length; i++) {
-                var r = recs[i];
-                if (!r) continue;
-                var nm = (r.itemName || r.name || '').toLowerCase();
-                if (nm && want && nm === want.toLowerCase()) { found = r; break; }
-                if (coveredBy && nm === coveredBy.toLowerCase()) { found = r; break; }
-              }
-              if (found) createBoughtCta(note, found);
-            } catch (e) { /* ignore */ }
-          }
-
-        } catch (e) { /* ignore per-note */ }
-      });
-    } catch (e) { /* swallow */ }
-  };
+      } catch (e) { /* ignore handler errors */ }
+    });
+  } catch (e) { /* ignore binding */ }
 
   // Listen for in-page verification events so a later discovery of a
   // verified download URL can update CTAs and summaries without a full page reload.
