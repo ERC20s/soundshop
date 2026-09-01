@@ -242,79 +242,48 @@
     try { return window.location.protocol === 'file:'; } catch (e) { return false; }
   }
 
-  // Ensure a small, conservative reveal-and-focus behaviour for discovered
-  // product Download anchors. This keeps the UI actionable after verification
-  // without causing navigation or automatic download. The function is careful
-  // to only act on visible elements and to respect reduced-motion preferences.
-  function focusAndReveal(elm) {
+  // Copy-to-clipboard helper with a DOM fallback. Calls done(cb) when copy
+  // completed or failed; feedback is handled by caller.
+  function copyToClipboard(text, done) {
     try {
-      if (!elm || !elm.getClientRects) return;
-      var rects = elm.getClientRects();
-      if (!rects || rects.length === 0) return;
-
-      // Ensure the element is focusable (but avoid stomping existing tabindex)
-      var tag = (elm.tagName || '').toLowerCase();
-      var isNaturalFocusable = false;
-      try {
-        if (tag === 'a' && elm.hasAttribute('href')) isNaturalFocusable = true;
-        if (tag === 'button' || tag === 'input' || tag === 'select' || tag === 'textarea') isNaturalFocusable = true;
-        if (elm.hasAttribute && elm.hasAttribute('tabindex')) isNaturalFocusable = true;
-      } catch (e) { /* ignore */ }
-      if (!isNaturalFocusable) {
-        try { elm.setAttribute('tabindex', '-1'); } catch (e) { /* ignore */ }
+      if (!text) { if (done) done(false); return; }
+      if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          navigator.clipboard.writeText(String(text)).then(function () { if (done) done(true); }).catch(function () { fallback(); });
+        } catch (e) { fallback(); }
+        return;
       }
+    } catch (e) { /* fall through to fallback */ }
 
-      // Scroll into view respecting reduced-motion
+    function fallback() {
       try {
-        if (typeof elm.scrollIntoView === 'function') {
-          try {
-            elm.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'center', inline: 'nearest' });
-          } catch (e) {
-            try { elm.scrollIntoView(); } catch (e) { /* ignore */ }
-          }
-        }
-      } catch (e) { /* ignore */ }
-
-      // Focus the element
-      try { elm.focus && elm.focus({ preventScroll: true }); } catch (e) { try { elm.focus && elm.focus(); } catch (e) { /* ignore */ } }
-
-    } catch (e) { /* ignore any error to keep callers safe */ }
+        var ta = document.createElement('textarea');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.top = '0';
+        ta.setAttribute('aria-hidden', 'true');
+        ta.value = String(text);
+        document.body.appendChild(ta);
+        ta.select();
+        try { var ok = document.execCommand('copy'); } catch (ex) { ok = false; }
+        try { if (ta && ta.parentNode) ta.parentNode.removeChild(ta); } catch (ex) { /* ignore */ }
+        if (done) done(!!ok);
+      } catch (e) { if (done) done(false); }
+    }
   }
-
-  /* =======================================================================
-     01  CORE HELPERS
-     ======================================================================= */
 
   function maskEmail(email) {
     try {
       if (!email || typeof email !== 'string') return '';
-      var parts = email.split('@');
-      if (parts.length !== 2) return '';
-      var left = parts[0];
-      var right = parts[1];
-      if (left.length <= 2) left = left[0] + '…';
-      else left = left.slice(0, 2) + '…';
-      return left + '@' + right;
+      var at = email.indexOf('@');
+      if (at <= 1) return email;
+      return email.slice(0, 1) + '…' + email.slice(at - 1);
     } catch (e) { return ''; }
   }
 
-  function readBoughtArray(root) {
-    try {
-      var out = [];
-      var raw = window.localStorage.getItem('soundshop:bought:v1');
-      if (!raw) return out;
-      var parsed = null;
-      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-      if (!parsed || typeof parsed !== 'object') return out;
-      for (var k in parsed) {
-        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
-        var v = parsed[k];
-        if (!v) continue;
-        out.push(v);
-      }
-      return out;
-    } catch (e) { return []; }
-  }
+  /* =======================================================================
+     01  DOWNLOAD / CTA HELPERS
+     ======================================================================= */
 
   function extractDownloadUrl(order) {
     try {
@@ -337,6 +306,21 @@
       try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
       try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
       a.textContent = 'Download installers';
+      return a;
+    } catch (e) { return null; }
+  }
+
+  // Make a conservative receipt anchor that opens in a new tab. Kept separate
+  // so callers can defensively try to append when appropriate.
+  function makeReceiptAnchor(url) {
+    try {
+      if (!url || typeof url !== 'string') return null;
+      var a = document.createElement('a');
+      a.className = 'bought__receipt';
+      try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
+      try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+      try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+      a.textContent = 'View receipt';
       return a;
     } catch (e) { return null; }
   }
@@ -397,6 +381,38 @@
           li.appendChild(span);
           li.setAttribute('data-bought-item', it.ref || '');
 
+          // If we have a payment reference, add a small Copy reference button
+          try {
+            var ref = it.ref || it.reference || '';
+            if (ref) {
+              var cb = document.createElement('button');
+              cb.className = 'btn btn-ghost bought__copy';
+              cb.setAttribute('type', 'button');
+              cb.setAttribute('aria-label', 'Copy payment reference');
+              cb.textContent = 'Copy reference';
+              // Delegate click to perform copy with brief feedback
+              cb.addEventListener('click', (function (r, btn) {
+                return function (e) {
+                  try {
+                    e.preventDefault();
+                    // Guard against double clicks
+                    if (btn.getAttribute('data-ssp-copying') === 'on') return;
+                    btn.setAttribute('data-ssp-copying', 'on');
+                    var orig = btn.textContent || '';
+                    btn.textContent = 'Copying…';
+                    copyToClipboard(r, function (ok) {
+                      try {
+                        btn.textContent = ok ? 'Copied!' : 'Copy failed';
+                        setTimeout(function () { try { btn.textContent = orig; btn.removeAttribute('data-ssp-copying'); } catch (e) { /* ignore */ } }, 1800);
+                      } catch (e) { try { btn.removeAttribute('data-ssp-copying'); } catch (ex) { /* ignore */ } }
+                    });
+                  } catch (e) { /* ignore */ }
+                };
+              }(ref, cb)), false);
+              li.appendChild(cb);
+            }
+          } catch (e) { /* ignore */ }
+
           // let createBoughtCta populate CTA area
           try { createBoughtCta(li, it); } catch (e) { /* ignore */ }
 
@@ -435,7 +451,26 @@
                 try { host.appendChild(a2); } catch (e) { /* ignore */ }
               }
             } catch (e) { /* ignore update */ }
+            return;
           }
+
+          // If we are already created but no downloadUrl exists, consider adding
+          // a View receipt anchor if one is available in the detail payload.
+          try {
+            var rurl = detail && (detail.receiptUrl || detail.receipt) ? (detail.receiptUrl || detail.receipt) : '';
+            if (rurl && typeof rurl === 'string') {
+              rurl = rurl.trim();
+              if (rurl) {
+                // Only append if not already present
+                var existReceipt = host.querySelector('.bought__receipt');
+                if (!existReceipt) {
+                  var ar = makeReceiptAnchor(rurl);
+                  if (ar) try { host.appendChild(ar); } catch (e) { /* ignore */ }
+                }
+              }
+            }
+          } catch (e) { /* ignore */ }
+
           return;
         }
       } catch (e) { /* ignore */ }
@@ -470,6 +505,22 @@
             vb.setAttribute('data-bought-verify', detail.id || detail.ref || '');
             wrapper.appendChild(vb);
           }
+
+          // If the stored record includes a provider receipt URL, append a
+          // conservative "View receipt" anchor so users can open the provider
+          // page and retrieve their official receipt. The receipt URL is only
+          // surfaced when it was previously stored by soundshopPersistBought
+          // after conservative validation.
+          try {
+            var r2 = detail && (detail.receiptUrl || detail.receipt) ? (detail.receiptUrl || detail.receipt) : '';
+            if (r2 && typeof r2 === 'string') {
+              r2 = r2.trim();
+              if (r2) {
+                var ra = makeReceiptAnchor(r2);
+                if (ra) wrapper.appendChild(ra);
+              }
+            }
+          } catch (e) { /* ignore */ }
         }
         try { host.appendChild(wrapper); } catch (e) { /* ignore */ }
       } catch (e) { /* ignore create */ }
@@ -631,181 +682,16 @@
 
       } catch (e) { /* ignore */ }
     });
-  } catch (e) { /* ignore listener */ }
+  } catch (e) { /* ignore binding */ }
 
-  // Conservative, one-shot user-visible verify banner for URL-returned orders.
-  // This is intentionally conservative and only runs when the payments widget
-  // is absent, the URL contains ?d8a_order=<id>, and only once per page load.
-  function initUrlOrderVerifyBanner() {
-    try {
-      if (_sspUrlOrderVerifyDone) return;
-      _sspUrlOrderVerifyDone = true;
-
-      // Only run when payments widget is absent — we prefer the widget's
-      // own verification UI when it is present.
-      if (typeof window.groupStoreVerify === 'function') return;
-
-      var m = (window.location && window.location.search) ? String(window.location.search) : '';
-      var match = m.match(/[?&]d8a_order=([^&]+)/i);
-      if (!match) return;
-      var id = '';
-      try { id = decodeURIComponent(match[1] || ''); } catch (e) { id = match[1] || ''; }
-      if (!id) return;
-
-      // Build a small, non-invasive banner adjacent to <main>
-      var mainEl = document.querySelector('main') || document.body;
-      try {
-        var banner = el('div', 'ssp-url-order-verify');
-        banner.setAttribute('role', 'status');
-        banner.style.cssText = 'padding:12px;margin:12px 0;border:1px solid #e6e6e6;background:#fffefc;color:#111;font-size:14px;border-radius:6px;display:flex;align-items:center;justify-content:space-between;gap:12px';
-
-        var text = el('div', 'ssp-url-order-verify__text', 'This page was returned from a completed checkout. You can verify the order from the URL and restore any remembered purchase in this browser.');
-        text.style.flex = '1';
-        banner.appendChild(text);
-
-        var controls = el('div', 'ssp-url-order-verify__controls');
-        var btn = el('button', 'btn btn-ghost', 'Verify purchase');
-        try { btn.setAttribute('type', 'button'); } catch (e) { /* ignore */ }
-        controls.appendChild(btn);
-        banner.appendChild(controls);
-
-        // Insert banner before main's first child, or append to body as fallback
-        try {
-          if (mainEl && mainEl.parentNode) mainEl.parentNode.insertBefore(banner, mainEl.nextSibling);
-          else document.body.insertBefore(banner, document.body.firstChild);
-        } catch (e) { try { document.body.insertBefore(banner, document.body.firstChild); } catch (e) { /* ignore */ } }
-
-        var oneClick = false;
-        btn.addEventListener('click', function () {
-          try {
-            if (oneClick) return; oneClick = true;
-            btn.textContent = 'Verifying…';
-            btn.disabled = true;
-
-            var url = 'https://d8a.com/api/v1/store/orders/' + encodeURIComponent(id) + '?group=batch-synthshop';
-            fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, credentials: 'omit' }).then(function (res) {
-              if (!res || !res.ok) throw new Error('fetch-failed');
-              return res.json();
-            }).then(function (json) {
-              try {
-                if (!json) throw new Error('no-json');
-                var order = null;
-                // Accept either the object directly or a wrapper { order: ... }
-                if (typeof json === 'object' && json.paid === true) order = json;
-                else if (json && typeof json === 'object' && json.order && typeof json.order === 'object' && json.order.paid === true) order = json.order;
-                if (!order) throw new Error('not-paid-or-no-order');
-
-                try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-                try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
-
-                // Remove banner on success
-                try { if (banner && banner.parentNode) banner.parentNode.removeChild(banner); } catch (e) { /* ignore */ }
-
-                // Reveal and focus the Download CTA if present for this order
-                try {
-                  var d = extractDownloadUrl(order);
-                  if (d) {
-                    var cand = null;
-                    try { cand = document.querySelector('.bought__cta[href]'); } catch (e) { cand = null; }
-                    if (cand && cand.getAttribute && String(cand.getAttribute('href')).trim() === d) {
-                      try { focusAndReveal(cand); } catch (e) { /* ignore */ }
-                    }
-                  }
-                } catch (e) { /* ignore */ }
-
-              } catch (e) {
-                // Show a support hint inline, keep banner present
-                try {
-                  var hint = el('div', 'ssp-url-order-verify__hint');
-                  hint.style.cssText = 'margin-top:8px;font-size:13px;color:#6b7280';
-                  var a = document.createElement('a');
-                  a.setAttribute('href', 'docs.html#support');
-                  a.style.color = '#7c5cff';
-                  a.textContent = 'Verify failed — Contact Support';
-                  hint.appendChild(a);
-                  try { banner.appendChild(hint); } catch (e) { /* ignore */ }
-                } catch (e) { /* ignore */ }
-                try { btn.textContent = 'Verify purchase'; } catch (e) { /* ignore */ }
-                try { btn.disabled = false; } catch (e) { /* ignore */ }
-              }
-            }).catch(function () {
-              try {
-                var hint = el('div', 'ssp-url-order-verify__hint');
-                hint.style.cssText = 'margin-top:8px;font-size:13px;color:#6b7280';
-                var a = document.createElement('a');
-                a.setAttribute('href', 'docs.html#support');
-                a.style.color = '#7c5cff';
-                a.textContent = 'Verify failed — Contact Support';
-                hint.appendChild(a);
-                try { banner.appendChild(hint); } catch (e) { /* ignore */ }
-              } catch (e) { /* ignore */ }
-              try { btn.textContent = 'Verify purchase'; } catch (e) { /* ignore */ }
-              try { btn.disabled = false; } catch (e) { /* ignore */ }
-            });
-
-          } catch (e) { try { btn.textContent = 'Verify purchase'; } catch (e) { /* ignore */ } try { btn.disabled = false; } catch (e) { /* ignore */ } }
-        }, false);
-
-      } catch (e) { /* ignore banner build */ }
-
-    } catch (e) { /* swallow */ }
-  }
-  // Expose internally for tests or manual invocation
-  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
-
-  // Public init: perform bought-note and bought-summary work (safe to call repeatedly)
-  P.init = function () {
-    try { P.initBoughtSummary(); } catch (e) { /* ignore */ }
-    try { P.initBoughtNote(); } catch (e) { /* ignore */ }
-
-    // Conservative, one-shot auto-verify pass for remembered purchases that
-    // have an order id but no verified downloadUrl. This only runs when the
-    // platform verifier (window.groupStoreVerify) is available and only once
-    // per page load to keep privacy and server load minimal.
-    try {
-      if (!_boughtAutoVerifyCalled && typeof window.groupStoreVerify === 'function') {
-        var arr = [];
-        try { arr = readBoughtArray(document); } catch (e) { arr = []; }
-        if (arr && arr.length) {
-          var toVerify = null;
-          for (var i = 0; i < arr.length; i++) {
-            var it = arr[i];
-            if (!it) continue;
-            if ((it.id || it.ref) && !it.downloadUrl) { toVerify = it; break; }
-          }
-          if (toVerify) {
-            _boughtAutoVerifyCalled = true;
-            try {
-              var vid = toVerify.id || toVerify.ref || '';
-              var p = null;
-              try { p = window.groupStoreVerify(vid); } catch (e) { p = null; }
-              if (p && typeof p.then === 'function') {
-                p.then(function (order) {
-                  try {
-                    if (!order) return;
-                    // Only persist and broadcast when a conservative https download URL exists
-                    var d = extractDownloadUrl(order);
-                    if (!d) return;
-                    try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-                    try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
-                  } catch (e) { /* ignore */ }
-                }).catch(function () { /* ignore */ });
-              }
-            } catch (e) { /* ignore */ }
-          }
-        }
-      }
-    } catch (e) { /* ignore */ }
-
-    // If the payments widget is absent, offer a conservative, user-initiated
-    // verification UI when the URL contains ?d8a_order=<id>. This is a one-shot
-    // per page load to keep traffic and privacy impact minimal.
-    try {
-      if (typeof window.groupStoreVerify !== 'function' && !_sspUrlOrderVerifyDone) {
-        try { initUrlOrderVerifyBanner(); } catch (e) { /* ignore */ }
-      }
-    } catch (e) { /* ignore */ }
-  };
+  // If the payments widget is absent, offer a conservative, user-initiated
+  // verification UI when the URL contains ?d8a_order=<id>. This is a one-shot
+  // per page load to keep traffic and privacy impact minimal.
+  try {
+    if (typeof window.groupStoreVerify !== 'function' && !_sspUrlOrderVerifyDone) {
+      try { initUrlOrderVerifyBanner(); } catch (e) { /* ignore */ }
+    }
+  } catch (e) { /* ignore */ }
 
   // Export public helpers that may be used externally
   P.extractDownloadUrl = extractDownloadUrl;
