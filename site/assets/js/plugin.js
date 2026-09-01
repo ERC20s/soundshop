@@ -359,3 +359,115 @@
 
                   // Notify other codepaths
                   try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+                } catch (e) { /* ignore result handling */ }
+              }).catch(function () { /* ignore network errors */ });
+
+            } catch (e) { /* ignore click handler */ }
+          }); } catch (e) { /* ignore event binding */ }
+        }
+      } catch (e) { /* ignore */ }
+
+      return wrapper;
+    } catch (e) { return null; }
+  }
+
+  // New public helper: show a small, conservative banner when the page URL
+  // contains ?d8a_order=<id> and the bought-summary UI currently lacks a
+  // download link. The banner offers the user a single "Verify & reveal"
+  // button that runs window.groupStoreVerify(id) and, on a paid response,
+  // persists the returned order via window.soundshopPersistBought and
+  // dispatches the existing group-store:paid event so the UI can refresh.
+  function initUrlOrderVerifyBanner() {
+    try {
+      // If we've already inserted or attempted this path on this page load,
+      // don't insert another banner.
+      // Note: bound(host, ...) will guard per-host; the _sspUrlOrderVerifyDone
+      // flag prevents repeated network calls once the user clicks.
+
+      var m = (location.search || '').match(/[?&]d8a_order=([A-Za-z0-9_-]+)/);
+      var orderId = m && m[1];
+      if (!orderId) return;
+
+      var host = document.querySelector('[data-bought-summary]');
+      if (!host) host = document.querySelector('main') || document.body;
+      if (!host) return;
+
+      // Avoid adding the banner twice against the same host
+      if (bound(host, 'url-order-verify-banner')) return;
+
+      // Build banner
+      var banner = el('div', 'ssp-url-order-verify');
+      banner.style.cssText = 'border:1px solid #e6e6e6;padding:10px;margin:0 0 12px;background:#fff;font:13px system-ui,sans-serif;display:flex;align-items:center;gap:12px';
+      var text = el('div', '', 'We detected an order reference in the URL. Click to verify and reveal any downloads.');
+      text.style.flex = '1';
+      var btn = el('button', 'button', 'Verify & reveal');
+      btn.type = 'button';
+
+      // If no verifier is present, disable the control
+      if (typeof window.groupStoreVerify !== 'function') {
+        btn.disabled = true;
+        btn.title = 'Verification unavailable';
+      }
+
+      btn.addEventListener('click', function () {
+        try {
+          if (!orderId) return;
+          if (btn.disabled) return;
+          if (_boughtAutoVerifyCalled || _sspUrlOrderVerifyDone) return;
+          _boughtAutoVerifyCalled = true;
+          _sspUrlOrderVerifyDone = true;
+
+          btn.disabled = true;
+          var orig = btn.textContent;
+          btn.textContent = 'Checking…';
+
+          window.groupStoreVerify(orderId).then(function (o) {
+            try {
+              if (!o) {
+                btn.textContent = 'Not found';
+                setTimeout(function () { try { btn.textContent = orig; btn.disabled = false; _sspUrlOrderVerifyDone = false; _boughtAutoVerifyCalled = false; } catch (e) {} }, 2500);
+                return;
+              }
+
+              if (typeof window.soundshopPersistBought === 'function') {
+                try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
+              }
+
+              try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+
+              // Indicate success and remove the banner after a moment
+              btn.textContent = 'Verified';
+              setTimeout(function () { try { if (banner && banner.parentNode) banner.parentNode.removeChild(banner); } catch (e) {} }, 800);
+
+            } catch (e) {
+              // On unexpected error, re-enable so user may retry
+              try { btn.textContent = orig; btn.disabled = false; _sspUrlOrderVerifyDone = false; _boughtAutoVerifyCalled = false; } catch (ee) {}
+            }
+          }).catch(function () {
+            try { btn.textContent = 'Try again'; btn.disabled = false; _sspUrlOrderVerifyDone = false; _boughtAutoVerifyCalled = false; } catch (e) {}
+          });
+
+        } catch (e) { /* ignore click */ }
+      });
+
+      banner.appendChild(text);
+      banner.appendChild(btn);
+
+      // Insert the banner at the start of the host
+      try {
+        if (host.firstChild) host.insertBefore(banner, host.firstChild); else host.appendChild(banner);
+      } catch (e) { /* ignore DOM insertion */ }
+
+    } catch (e) { /* safe no-op */ }
+  }
+
+  // Export the helper
+  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
+
+  // Expose helpers used elsewhere
+  P.extractDownloadUrl = extractDownloadUrl;
+  P.readBoughtArray = readBoughtArray;
+  P.maskEmail = maskEmail;
+  P.createBoughtCta = createBoughtCta;
+
+})(window, document);
