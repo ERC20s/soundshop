@@ -357,75 +357,72 @@
       // If a provider receipt URL is present, surface a 'View receipt' button
       // before adding the Contact support CTA so users can quickly open the
       // payment provider's receipt page. Use extractReceiptUrl when available
-      // for validation; otherwise fall back to rec.receiptUrl.
+      // for validation; otherwise fall back to rec.receiptUrl. 
       try {
         var receiptUrl = '';
         try {
           if (typeof extractReceiptUrl === 'function') {
             try { receiptUrl = extractReceiptUrl(rec) || ''; } catch (e) { receiptUrl = ''; }
           } else {
-            receiptUrl = (rec && rec.receiptUrl) ? String(rec.receiptUrl) : '';
+            receiptUrl = (rec && rec.receiptUrl) ? String(rec.receiptUrl).trim() : '';
+            if (receiptUrl && !/^https?:\/\//i.test(receiptUrl)) receiptUrl = '';
           }
         } catch (e) { receiptUrl = ''; }
-
         if (receiptUrl) {
           var ra = el('a', 'button', 'View receipt');
           try { ra.setAttribute('href', receiptUrl); } catch (e) { /* ignore */ }
           try { ra.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
           try { ra.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
-          try { ra.setAttribute('aria-label', 'View payment receipt'); } catch (e) { /* ignore */ }
+          try {
+            var prodLabel2 = token || '';
+            try {
+              var lblEl2 = host.querySelector('.bought-summary__label');
+              if (lblEl2 && lblEl2.textContent) prodLabel2 = (lblEl2.textContent || '').trim();
+            } catch (e) { /* ignore */ }
+            try { ra.setAttribute('aria-label', 'View receipt for ' + (prodLabel2 || 'your') + ' purchase'); } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore */ }
           container.appendChild(ra);
         }
       } catch (e) { /* ignore receipt anchor */ }
 
-      // If we have a download, the normal page may already offer a Download
-      // CTA; only add a Contact support CTA when no download is present.
-      if (!hasDownload) {
-        // Find the summary host to read configuration
-        var summaryHost = (host && typeof host.closest === 'function') ? host.closest('[data-bought-summary]') : document.querySelector('[data-bought-summary]');
-        var base = '';
-        try { base = attr(summaryHost, 'data-bought-summary-support-href') || ''; } catch (e) { base = ''; }
-        if (!base) base = '../docs.html#support';
-
-        // Mask the reference and build query parameters. Use maskRef when
-        // available to avoid leaking full payment refs.
+      // Contact support CTA (always available)
+      try {
         var masked = '';
-        try { if (rec && rec.ref && typeof maskRef === 'function') masked = maskRef(String(rec.ref)); else if (rec && rec.ref) masked = String(rec.ref); } catch (e) { masked = String(rec && rec.ref ? rec.ref : ''); }
+        try { masked = maskRef(rec.ref); } catch (e) { masked = ''; }
         var prod = token || '';
-
-        // Insert query parameters before any hash fragment
-        var hash = '';
-        var qbase = base;
         try {
-          var idx = base.indexOf('#');
-          if (idx !== -1) {
-            qbase = base.slice(0, idx);
-            hash = base.slice(idx);
-          }
-        } catch (e) { qbase = base; hash = ''; }
+          var a = el('a', 'button', 'Contact support');
+          var base = attr(document.querySelector('[data-bought-support-url]') || document.body, 'data-bought-support-url') || '';
+          var qbase = base;
+          var hash = '';
+          try {
+            var idx = base.indexOf('#');
+            if (idx !== -1) {
+              qbase = base.slice(0, idx);
+              hash = base.slice(idx);
+            }
+          } catch (e) { qbase = base; hash = ''; }
 
-        var sep = qbase.indexOf('?') !== -1 ? '&' : '?';
-        var params = [];
-        if (masked) params.push('ref=' + encodeURIComponent(masked));
-        if (prod) params.push('product=' + encodeURIComponent(prod));
-        var href = qbase + (params.length ? (sep + params.join('&')) : '') + (hash || '');
+          var sep = qbase.indexOf('?') !== -1 ? '&' : '?';
+          var params = [];
+          if (masked) params.push('ref=' + encodeURIComponent(masked));
+          if (prod) params.push('product=' + encodeURIComponent(prod));
+          var href = qbase + (params.length ? (sep + params.join('&')) : '') + (hash || '');
 
-        // Build link
-        var a = el('a', 'button', 'Contact support');
-        try { a.setAttribute('href', href); } catch (e) { /* ignore */ }
-        try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
-        try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+          try { a.setAttribute('href', href); } catch (e) { /* ignore */ }
+          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
 
-        // Build an accessible label referencing the product when available
-        var prodLabel = prod || '';
-        try {
-          var lblEl = host.querySelector('.bought-summary__label');
-          if (lblEl && lblEl.textContent) prodLabel = (lblEl.textContent || '').trim();
+          var prodLabel = prod || '';
+          try {
+            var lblEl = host.querySelector('.bought-summary__label');
+            if (lblEl && lblEl.textContent) prodLabel = (lblEl.textContent || '').trim();
+          } catch (e) { /* ignore */ }
+          try { a.setAttribute('aria-label', 'Contact support about ' + (prodLabel || 'your') + ' purchase'); } catch (e) { /* ignore */ }
+
+          container.appendChild(a);
         } catch (e) { /* ignore */ }
-        try { a.setAttribute('aria-label', 'Contact support about ' + (prodLabel || 'your') + ' purchase'); } catch (e) { /* ignore */ }
-
-        container.appendChild(a);
-      }
+      } catch (e) { /* ignore */ }
 
       return container;
     } catch (e) { return null; }
@@ -475,42 +472,72 @@
 
             // Reference
             try {
-              var refSpan = el('span', 'bought-summary__ref', String(rec.ref || ''));
-              try { li.appendChild(refSpan); } catch (e) { /* ignore */ }
+              var rawRef = String(rec.ref || '');
+              var maskedRef = '';
+              try { maskedRef = maskRef(rec.ref); } catch (e) { maskedRef = ''; }
+              var refText = maskedRef || rawRef;
+              var refSpan = el('span', 'bought-summary__ref', refText);
+              try {
+                if (maskedRef) {
+                  try { refSpan.setAttribute('data-full-ref', rawRef); } catch (e) { /* ignore */ }
+                  try { refSpan.setAttribute('title', rawRef); } catch (e) { /* ignore */ }
+                  try { refSpan.setAttribute('aria-label', 'Payment reference ' + refText); } catch (e) { /* ignore */ }
+                } else {
+                  try { refSpan.setAttribute('aria-label', 'Payment reference ' + rawRef); } catch (e) { /* ignore */ }
+                }
+                try { li.appendChild(refSpan); } catch (e) { /* ignore */ }
+              } catch (e) { /* ignore */ }
             } catch (e) { /* ignore */ }
 
             // Copy button
             try {
-              var ref = String(rec.ref || '');
-              if (ref) {
+              var fullRef = String(rec.ref || '');
+              if (fullRef) {
                 var copyBtn = el('button', 'button button--mono', 'Copy');
                 try { copyBtn.type = 'button'; } catch (e) { /* ignore */ }
                 try { copyBtn.setAttribute('aria-label', 'Copy payment reference'); } catch (e) { /* ignore */ }
 
-                copyBtn.addEventListener('click', function () {
+                copyBtn.addEventListener('click', function (ev) {
                   try {
-                    if (copyBtn.disabled) return;
-                    copyBtn.disabled = true;
-                    var prev = copyBtn.textContent;
+                    var btn = ev && ev.currentTarget ? ev.currentTarget : this;
+                    if (!btn) return;
+                    if (btn.disabled) return;
+                    btn.disabled = true;
+                    var prev = btn.textContent;
                     // Local helper to show success feedback
                     function showSuccess() {
                       try {
                         if (SS && typeof SS.toast === 'function') {
                           try { SS.toast('Reference copied'); } catch (e) { /* ignore */ }
                         } else {
-                          try { copyBtn.textContent = 'Copied'; } catch (e) { /* ignore */ }
-                          try { setTimeout(function () { try { copyBtn.textContent = prev; } catch (e) { /* ignore */ } }, 1500); } catch (e) { /* ignore */ }
+                          try { btn.textContent = 'Copied'; } catch (e) { /* ignore */ }
+                          try { setTimeout(function () { try { btn.textContent = prev; } catch (e) { /* ignore */ } }, 1500); } catch (e) { /* ignore */ }
                         }
                       } catch (e) { /* ignore */ }
                     }
+
+                    // Determine the reference to copy by locating the nearest ref element
+                    var toCopy = '';
+                    try {
+                      var container = btn.parentNode || null;
+                      var refEl = null;
+                      try { if (container && container.querySelector) refEl = container.querySelector('.bought-summary__ref'); } catch (e) { refEl = null; }
+                      if (refEl && refEl.getAttribute) {
+                        try { toCopy = refEl.getAttribute('data-full-ref') || refEl.textContent || ''; } catch (e) { toCopy = refEl.textContent || ''; }
+                      }
+                      if (!toCopy) {
+                        // Fallback: use button's closest li record via DOM dataset/attributes
+                        try { toCopy = fullRef || ''; } catch (e) { toCopy = ''; }
+                      }
+                    } catch (e) { toCopy = fullRef || ''; }
 
                     // Try SS.copyText when available
                     try {
                       if (SS && typeof SS.copyText === 'function') {
                         try {
-                          SS.copyText(ref);
+                          SS.copyText(toCopy);
                           try { showSuccess(); } catch (e) { /* ignore */ }
-                          try { copyBtn.disabled = false; } catch (e) { /* ignore */ }
+                          try { btn.disabled = false; } catch (e) { /* ignore */ }
                           return;
                         } catch (e) { /* fall through to fallback */ }
                       }
@@ -519,7 +546,7 @@
                     // Fallback: create a temporary textarea and use execCommand
                     try {
                       var ta = document.createElement('textarea');
-                      ta.value = ref;
+                      ta.value = toCopy;
                       // Keep it out of view
                       ta.style.position = 'absolute';
                       ta.style.left = '-9999px';
@@ -548,16 +575,16 @@
                       } catch (e) { /* ignore */ }
                     }
 
-                    try { copyBtn.disabled = false; } catch (e) { /* ignore */ }
+                    try { btn.disabled = false; } catch (e) { /* ignore */ }
 
                   } catch (e) { try { if (SS && typeof SS.toast === 'function') SS.toast('Copy failed'); } catch (err) { /* ignore */ } }
                 });
 
                 // Append button after the ref span
                 try {
-                  if (refSpan.parentNode) refSpan.parentNode.insertBefore(copyBtn, refSpan.nextSibling);
+                  if (refSpan && refSpan.parentNode) refSpan.parentNode.insertBefore(copyBtn, refSpan.nextSibling);
                   else li.appendChild(copyBtn);
-                } catch (e) { /* ignore */ }
+                } catch (e) { try { li.appendChild(copyBtn); } catch (err) { /* ignore */ } }
               }
             } catch (e) { /* ignore copy button */ }
 
