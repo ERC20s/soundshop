@@ -240,15 +240,18 @@
     } catch (e) { return false; }
   }
 
+  // BOUGHT_MAX_AGE is the same conservative 60-day window used elsewhere in
+  // the project. Keep it in one place so read and write paths agree.
+  var BOUGHT_MAX_AGE = 1000 * 60 * 60 * 24 * 60;
+
   function readBoughtArray() {
     try {
-      var BOUGHT_MAX_AGE = 1000 * 60 * 60 * 24 * 60; // 60 days in ms
-      var BOUGHT_KEY = 'soundshop:bought:v1';
-      var raw = window.localStorage.getItem(BOUGHT_KEY);
+      var raw = window.localStorage.getItem('soundshop:bought:v1');
       if (!raw) return {};
       var parsed = null;
       try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+
       var now = Date.now();
       var changed = false;
       for (var k in parsed) {
@@ -330,9 +333,85 @@
         }
       } catch (e) { /* ignore */ }
 
-      // Show a Verify & reveal button when we have a reference but no URL
+      // Add a Copy reference CTA when a stored reference exists. This is a
+      // small, local convenience that copies the payment reference to the
+      // clipboard on user click. It uses navigator.clipboard when available and
+      // falls back to a temporary textarea + execCommand('copy'). The handler
+      // is defensive and provides transient "Copied!" feedback.
       try {
         var hasRef = !!record.ref;
+        if (hasRef) {
+          var copyBtn = el('button', 'button button--muted', 'Copy reference');
+          copyBtn.type = 'button';
+          try {
+            copyBtn.addEventListener('click', function () {
+              try {
+                if (copyBtn.disabled) return;
+                var ref = String(record.ref || '').trim();
+                if (!ref) return;
+                copyBtn.disabled = true;
+                var originalLabel = copyBtn.textContent;
+
+                // Helper to restore label and state
+                function finish(success) {
+                  try {
+                    copyBtn.textContent = success ? 'Copied!' : 'Copy failed';
+                  } catch (e) { /* ignore */ }
+                  try { setTimeout(function () { try { copyBtn.textContent = originalLabel; } catch (e) { } copyBtn.disabled = false; }, 2000); } catch (e) { try { copyBtn.disabled = false; } catch (e) { } }
+                }
+
+                // Try navigator.clipboard first
+                try {
+                  if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                    navigator.clipboard.writeText(ref).then(function () { finish(true); }).catch(function () {
+                      // Fallback to textarea method on failure
+                      try {
+                        var ta = document.createElement('textarea');
+                        ta.value = ref;
+                        // Avoid scrolling to bottom
+                        ta.style.position = 'fixed';
+                        ta.style.left = '-9999px';
+                        ta.style.top = '0';
+                        document.body.appendChild(ta);
+                        ta.focus();
+                        ta.select();
+                        var ok = false;
+                        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+                        try { document.body.removeChild(ta); } catch (e) { }
+                        finish(!!ok);
+                      } catch (e) { finish(false); }
+                    }).finally(function () { /* nothing */ });
+                    return;
+                  }
+                } catch (e) { /* fall through to textarea fallback */ }
+
+                // Navigator.clipboard not available: fallback
+                try {
+                  var ta2 = document.createElement('textarea');
+                  ta2.value = ref;
+                  ta2.style.position = 'fixed';
+                  ta2.style.left = '-9999px';
+                  ta2.style.top = '0';
+                  document.body.appendChild(ta2);
+                  ta2.focus();
+                  ta2.select();
+                  var ok2 = false;
+                  try { ok2 = document.execCommand('copy'); } catch (e) { ok2 = false; }
+                  try { document.body.removeChild(ta2); } catch (e) { }
+                  finish(!!ok2);
+                } catch (e) { finish(false); }
+
+              } catch (e) { try { copyBtn.disabled = false; } catch (ex) { } }
+            });
+          } catch (e) { /* ignore handler attach */ }
+
+          wrapper.appendChild(copyBtn);
+          hasCta = true;
+        }
+      } catch (e) { /* ignore copy guard */ }
+
+      // Show a Verify & reveal button when we have a reference but no URL
+      try {
         var hasUrl = !!record.downloadUrl;
         if (hasRef && !hasUrl && typeof window.groupStoreVerify === 'function') {
           var verifyBtn = el('button', 'button', 'Verify & reveal');
