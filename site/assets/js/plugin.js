@@ -242,8 +242,9 @@
 
   function readBoughtArray() {
     try {
-      var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
-      var raw = window.localStorage.getItem('soundshop:bought:v1');
+      var BOUGHT_MAX_AGE = 1000 * 60 * 60 * 24 * 60; // 60 days in ms
+      var BOUGHT_KEY = 'soundshop:bought:v1';
+      var raw = window.localStorage.getItem(BOUGHT_KEY);
       if (!raw) return {};
       var parsed = null;
       try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
@@ -255,7 +256,10 @@
         var r = parsed[k];
         var isObj = !!r && typeof r === 'object' && !Array.isArray(r);
         var when = Number(isObj ? r.t : r);
-        if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) { delete parsed[k]; changed = true; }
+        if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
+          delete parsed[k];
+          changed = true;
+        }
       }
       if (changed) {
         try { window.localStorage.setItem('soundshop:bought:v1', JSON.stringify(parsed)); } catch (e) { }
@@ -296,6 +300,7 @@
       if (bound(hostEl, 'bought-cta')) return null;
 
       var wrapper = el('div', 'bought-summary__ctas__wrap');
+      var hasCta = false;
 
       // If we have a download URL already, expose it
       try {
@@ -305,6 +310,7 @@
           a.target = '_blank';
           a.rel = 'noopener noreferrer';
           wrapper.appendChild(a);
+          hasCta = true;
         }
       } catch (e) { /* ignore */ }
 
@@ -319,6 +325,7 @@
             receiptA.target = '_blank';
             receiptA.rel = 'noopener noreferrer';
             wrapper.appendChild(receiptA);
+            hasCta = true;
           }
         }
       } catch (e) { /* ignore */ }
@@ -367,8 +374,46 @@
         });
 
         wrapper.appendChild(verifyBtn);
+        hasCta = true;
       }
     } catch (e) { /* ignore guard */ }
+
+    // Fallback: when no other CTA was added, look for a support URL on the
+    // nearest [data-bought-summary] ancestor and show a muted "Get help" link.
+    try {
+      if (!hasCta) {
+        var host = null;
+        try { host = hostEl && hostEl.closest ? hostEl.closest('[data-bought-summary]') : null; } catch (e) { host = null; }
+        var supportHref = attr(host, 'data-bought-summary-support-href') || '';
+        if (supportHref) {
+          var href = String(supportHref);
+          // If a reference exists, try to communicate it without breaking any
+          // existing fragment anchor. If the href already contains a '#', add
+          // the ref as a query parameter before the fragment; otherwise append
+          // the fragment as #ref=...
+          try {
+            if (record.ref) {
+              var enc = encodeURIComponent(String(record.ref || ''));
+              var hidx = href.indexOf('#');
+              if (hidx === -1) {
+                href = href + '#ref=' + enc;
+              } else {
+                var before = href.slice(0, hidx);
+                var after = href.slice(hidx);
+                if (before.indexOf('?') === -1) before = before + '?ref=' + enc; else before = before + '&ref=' + enc;
+                href = before + after;
+              }
+            }
+          } catch (e) { /* ignore encoding */ }
+
+          var helpA = el('a', 'button button--muted', 'Get help');
+          helpA.href = href;
+          helpA.target = '_blank';
+          helpA.rel = 'noopener noreferrer';
+          wrapper.appendChild(helpA);
+        }
+      }
+    } catch (e) { /* ignore fallback */ }
 
     hostEl.appendChild(wrapper);
     return wrapper;
