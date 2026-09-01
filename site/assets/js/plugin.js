@@ -240,63 +240,6 @@
     } catch (e) { return false; }
   }
 
-  // BOUGHT_MAX_AGE: 60 days in milliseconds. Hoisted so both the read and
-  // write paths in this file share the same retention policy and pruning logic.
-  var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000;
-
-  function readBoughtArray() {
-    try {
-      var raw = '';
-      try { raw = window.localStorage.getItem('soundshop:bought:v1') || ''; } catch (e) { raw = ''; }
-      if (!raw) return {};
-      var parsed = null;
-      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-
-      var now = Date.now();
-      var changed = false;
-      for (var k in parsed) {
-        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
-        var r = parsed[k];
-        var isObj = !!r && typeof r === 'object' && !Array.isArray(r);
-        var when = Number(isObj ? r.t : r);
-        if (!isFinite(when) || when <= 0 || (now - when) > BOUGHT_MAX_AGE) {
-          delete parsed[k];
-          changed = true;
-        }
-      }
-      if (changed) {
-        try { window.localStorage.setItem('soundshop:bought:v1', JSON.stringify(parsed)); } catch (e) { }
-      }
-      return parsed;
-    } catch (e) { return {}; }
-  }
-
-  function maskEmail(e) {
-    try {
-      if (!e || typeof e !== 'string') return '';
-      var p = String(e).split('@');
-      if (!p || p.length !== 2) return '';
-      var left = p[0] || '';
-      if (left.length <= 2) left = left[0] + '…'; else left = left[0] + '…' + left.slice(-1);
-      return left + '@' + p[1];
-    } catch (err) { return ''; }
-  }
-
-  // Mask a payment/reference id conservatively so the banner can show a short
-  // fragment without exposing the whole token. Example: abcdef123456 -> abcdef…3456
-  function maskRef(r) {
-    try {
-      if (!r || typeof r !== 'string') return '';
-      var s = String(r).trim();
-      if (!s) return '';
-      if (s.length <= 10) return s.slice(0, 3) + '…' + s.slice(-2);
-      var front = s.slice(0, 6);
-      var back = s.slice(-4);
-      return front + '…' + back;
-    } catch (e) { return ''; }
-  }
-
   function extractDownloadUrl(o) {
     try {
       if (!o || typeof o !== 'object') return '';
@@ -337,6 +280,7 @@
 
       var wrapper = el('div', 'bought-summary__ctas__wrap');
       var hasCta = false;
+      var verifyBtn = null;
 
       // If we have a validated download URL already, expose it
       try {
@@ -367,7 +311,24 @@
         }
       } catch (e) { /* ignore */ }
 
-      try { verifyBtn.addEventListener('click', function () {
+      // Create a per-item Verify button when the stored record carries a reference
+      try {
+        var ref = String(record.ref || '').trim();
+        if (ref) {
+          verifyBtn = el('button', 'button', 'Verify');
+          verifyBtn.type = 'button';
+          // Place verify button alongside other CTAs so layout is consistent
+          wrapper.appendChild(verifyBtn);
+        }
+      } catch (e) { /* ignore */ }
+
+      // Wire the verify button if present. The listener uses the same
+      // conservative behaviour as the URL-returned banner: disable while
+      // checking, call the server-side verify helper, persist on success and
+      // dispatch the existing group-store:paid event so other UI refreshes.
+      try {
+        if (verifyBtn) {
+          verifyBtn.addEventListener('click', function () {
             try {
               var ref = String(record.ref || '').trim();
               if (!ref) return;
@@ -386,12 +347,17 @@
                   // Notify other codepaths
                   try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
                 } catch (e) { /* ignore */ }
-              }).catch(function () { /* ignore */ });
+              }).catch(function () { /* ignore */ }).finally(function () {
+                // Restore label and state even if verify failed or threw
+                try { verifyBtn.disabled = false; verifyBtn.textContent = originalLabel; } catch (e) { /* ignore */ }
+              });
 
             } catch (e) { /* ignore */ }
-          }); } catch (e) { /* ignore */ }
+          });
+        }
+      } catch (e) { /* ignore */ }
 
-      if (hasCta) return wrapper;
+      if (hasCta || verifyBtn) return wrapper;
       return null;
     } catch (e) { return null; }
   }
