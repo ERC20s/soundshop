@@ -119,6 +119,23 @@
   }
 
   /**
+   * Extract an explicit provider receipt URL from order-like objects. Mirrors
+   * extractDownloadUrl but checks common receipt fields and validates only
+   * explicit http(s) URLs. Returns string or null.
+   */
+  function extractReceiptUrl(obj) {
+    try {
+      if (!obj || typeof obj !== 'object') return null;
+      var cand = obj.receiptUrl || obj.receipt || obj.receipt_url || obj.receiptLink || '';
+      if (typeof cand !== 'string') return null;
+      cand = cand.trim();
+      if (!cand) return null;
+      if (/^https?:\/\//i.test(cand)) return cand;
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  /**
    * Read remembered purchases from localStorage and present them as an Array
    * of item-like objects that the rest of plugin.js expects. Behaviour:
    *  - If the host has an explicit data-* key (attr name provided) use that.
@@ -183,6 +200,12 @@
               try {
                 var durl = extractDownloadUrl(rec);
                 if (durl) item.downloadUrl = durl;
+              } catch (e) { /* ignore */ }
+
+              // Preserve any explicit receipt URL stored in the record
+              try {
+                var rurl = extractReceiptUrl(rec);
+                if (rurl) item.receiptUrl = rurl;
               } catch (e) { /* ignore */ }
 
               out.push(item);
@@ -253,6 +276,22 @@
               try { makeDownloadAnchor(url); } catch (e) { /* ignore */ }
             } catch (e) { /* ignore */ }
           }
+          // If we have no download URL but a receipt URL, update any existing
+          // anchor to point at the receipt instead and label appropriately.
+          if (detail && extractReceiptUrl(detail)) {
+            var rurl = extractReceiptUrl(detail);
+            try {
+              var existingR = host.querySelector('.bought__cta');
+              if (existingR && existingR.tagName && existingR.tagName.toLowerCase() === 'a') {
+                try { existingR.setAttribute('href', rurl); } catch (e) { /* ignore */ }
+                try { existingR.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+                try { existingR.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+                try { existingR.textContent = 'View receipt'; } catch (e) { /* ignore */ }
+                return;
+              }
+              try { makeReceiptAnchor(rurl); } catch (e) { /* ignore */ }
+            } catch (e) { /* ignore */ }
+          }
           return;
         }
       } catch (e) { /* ignore */ }
@@ -274,10 +313,27 @@
         } catch (e) { /* ignore */ }
       }
 
+      function makeReceiptAnchor(url) {
+        try {
+          var a = document.createElement('a');
+          a.className = 'bought__cta';
+          try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
+          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+          try { a.textContent = 'View receipt'; } catch (e) { /* ignore */ }
+          try { wrapper.appendChild(a); } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore */ }
+      }
+
       // If we already have a verified download URL, render it now.
       try {
         if (detail && extractDownloadUrl(detail)) {
           try { makeDownloadAnchor(extractDownloadUrl(detail)); } catch (e) { /* ignore */ }
+        } else if (detail && extractReceiptUrl(detail)) {
+          // Conservative fallback: when no download URL is available, but a
+          // provider receipt URL exists, offer a single external "View receipt"
+          // anchor. This does not replace installers when they exist.
+          try { makeReceiptAnchor(extractReceiptUrl(detail)); } catch (e) { /* ignore */ }
         } else {
           // Otherwise render the fallback controls: Check order / Contact Support
           var btn = document.createElement('button');
@@ -303,12 +359,51 @@
                     if (v.downloadUrl) {
                       try { detail.downloadUrl = v.downloadUrl; } catch (e) { /* ignore */ }
 
+                      // Persist canonical storage so remembered purchases keep the
+                      // verified installer URL and other pages can reflect it too.
+                      try {
+                        if (typeof window.soundshopPersistBought === 'function') {
+                          try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
+
                       // Update any bought-summary list item for this paid id
                       try {
                         var paidEl = null;
                         try { paidEl = document.querySelector('[data-ssp-paid-id="' + String(id) + '"]'); } catch (e) { paidEl = null; }
                         if (paidEl) {
                           try { createBoughtCta(paidEl, detail); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
+
+                      // Update any visible bought-note hosts too
+                      try {
+                        $$('[data-bought-note]').forEach(function (host) {
+                          try {
+                            var ref = (detail && (detail.ref || detail.id)) || '';
+                            try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
+                            try { createBoughtCta(host, detail); } catch (e) { /* ignore */ }
+                          } catch (e) { /* ignore per-host */ }
+                        });
+                      } catch (e) { /* ignore */ }
+
+                    } else if (v.receiptUrl) {
+                      try { detail.receiptUrl = v.receiptUrl; } catch (e) { /* ignore */ }
+
+                      // Persist canonical storage so remembered purchases keep the
+                      // discovered receipt URL for later display.
+                      try {
+                        if (typeof window.soundshopPersistBought === 'function') {
+                          try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
+
+                      // Update any bought-summary list item for this paid id
+                      try {
+                        var paidEl2 = null;
+                        try { paidEl2 = document.querySelector('[data-ssp-paid-id="' + String(id) + '"]'); } catch (e) { paidEl2 = null; }
+                        if (paidEl2) {
+                          try { createBoughtCta(paidEl2, detail); } catch (e) { /* ignore */ }
                         }
                       } catch (e) { /* ignore */ }
 
@@ -339,6 +434,11 @@
     } catch (e) { /* ignore */ }
   }
 
+  // Expose a small helper that reads the canonical bought storage and returns
+  // the normalised array shape. This is used by bought-note and bought-summary
+  // initialisers elsewhere in this file.
+  P._readBoughtArray = readBoughtArray;
+
   /**
    * Normalise a platform-supplied order object into the record shape used
    * by the rest of plugin.js. This is intentionally defensive and shallow.
@@ -353,6 +453,7 @@
       out.email = o.email || o.deliveryEmail || o.buyerEmail || o.customerEmail || '';
       out.t = o.t || o.time || o.date || null;
       try { var d = extractDownloadUrl(o); if (d) out.downloadUrl = d; } catch (e) { /* ignore */ }
+      try { var r = extractReceiptUrl(o); if (r) out.receiptUrl = r; } catch (e) { /* ignore */ }
       return out;
     } catch (e) { return null; }
   };
@@ -500,6 +601,45 @@
                     });
                   } catch (e) { /* ignore */ }
 
+                  // Persist canonical storage so remembered purchases keep the
+                  // verified installer URL and other pages can reflect it too.
+                  try {
+                    if (typeof window.soundshopPersistBought === 'function') {
+                      try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                    }
+                  } catch (e) { /* ignore */ }
+
+                } else if (vdet && vdet.receiptUrl) {
+                  try { det.receiptUrl = vdet.receiptUrl; } catch (e) { /* ignore */ }
+
+                  // Persist canonical storage so remembered purchases keep the
+                  // discovered receipt URL for later display.
+                  try {
+                    if (typeof window.soundshopPersistBought === 'function') {
+                      try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                    }
+                  } catch (e) { /* ignore */ }
+
+                  // Update any bought-summary list item for this paid id
+                  try {
+                    var paidElR = null;
+                    try { paidElR = document.querySelector('[data-ssp-paid-id="' + String(idToVerify) + '"]'); } catch (e) { paidElR = null; }
+                    if (paidElR) {
+                      try { createBoughtCta(paidElR, det); } catch (e) { /* ignore */ }
+                    }
+                  } catch (e) { /* ignore */ }
+
+                  // Update any visible bought-note hosts too
+                  try {
+                    $$('[data-bought-note]').forEach(function (host) {
+                      try {
+                        var ref = (det && (det.ref || det.id)) || '';
+                        try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
+                        try { createBoughtCta(host, det); } catch (e) { /* ignore */ }
+                      } catch (e) { /* ignore per-host */ }
+                    });
+                  } catch (e) { /* ignore */ }
+
                 }
               } catch (e) { /* ignore then */ }
             }).catch(function () { /* ignore */ });
@@ -509,11 +649,6 @@
 
     } catch (e) { /* ignore */ }
   };
-
-  // Expose a small helper that reads the canonical bought storage and returns
-  // the normalised array shape. This is used by bought-note and bought-summary
-  // initialisers elsewhere in this file.
-  P._readBoughtArray = readBoughtArray;
 
   /**
    * Initialise any [data-bought-note] hosts to show the first remembered
@@ -674,6 +809,57 @@
                   try { paidEl = document.querySelector('[data-ssp-paid-id="' + String(id) + '"]'); } catch (e) { paidEl = null; }
                   if (paidEl) {
                     try { createBoughtCta(paidEl, it); } catch (e) { /* ignore */ }
+                  }
+                } catch (e) { /* ignore */ }
+
+                // Update any visible bought-note hosts too
+                try {
+                  $$('[data-bought-note]').forEach(function (host) {
+                    try {
+                      var ref = (it && (it.ref || it.id)) || '';
+                      try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
+                      try { createBoughtCta(host, it); } catch (e) { /* ignore */ }
+                    } catch (e) { /* ignore per-host */ }
+                  });
+                } catch (e) { /* ignore */ }
+
+                // Clear per-host guard attributes so initialisers can re-run
+                try {
+                  $$('[data-bought-summary]').forEach(function (h) {
+                    try {
+                      var items = h.querySelectorAll('[data-ssp-paid-id]');
+                      Array.prototype.slice.call(items).forEach(function (itm) { try { itm.removeAttribute('data-ssp-paid-id'); } catch (e) { /* ignore */ } });
+                      try { h.removeAttribute('data-ssp-bought-cta'); } catch (e) { /* ignore */ }
+                      try { h.removeAttribute('data-ssp-bought-summary'); } catch (e) { /* ignore */ }
+                    } catch (e) { /* ignore per-host */ }
+                  });
+                  $$('[data-bought-note]').forEach(function (h) {
+                    try { h.removeAttribute('data-ssp-bought-cta'); } catch (e) { /* ignore */ }
+                    try { h.removeAttribute('data-ssp-paid-ref'); } catch (e) { /* ignore */ }
+                  });
+                } catch (e) { /* ignore */ }
+
+                // Re-run initialisers where available to refresh UI immediately
+                try { if (typeof P.initBoughtSummary === 'function') { try { P.initBoughtSummary(); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
+                try { if (typeof P.initBoughtNote === 'function') { try { P.initBoughtNote(); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
+
+              } else if (v.receiptUrl) {
+                try { it.receiptUrl = v.receiptUrl; } catch (e) { /* ignore */ }
+
+                // Persist canonical storage so remembered purchases keep the
+                // discovered receipt URL for later display.
+                try {
+                  if (typeof window.soundshopPersistBought === 'function') {
+                    try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                  }
+                } catch (e) { /* ignore */ }
+
+                // Update any bought-summary list item for this paid id (in-place)
+                try {
+                  var paidElR2 = null;
+                  try { paidElR2 = document.querySelector('[data-ssp-paid-id="' + String(id) + '"]'); } catch (e) { paidElR2 = null; }
+                  if (paidElR2) {
+                    try { createBoughtCta(paidElR2, it); } catch (e) { /* ignore */ }
                   }
                 } catch (e) { /* ignore */ }
 
