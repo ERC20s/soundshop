@@ -119,6 +119,22 @@
   }
 
   /**
+   * Extract a best-effort provider receipt URL from an order-like object
+   * and validate it. Returns a string URL when valid, otherwise null.
+   */
+  function extractReceiptUrl(obj) {
+    try {
+      if (!obj || typeof obj !== 'object') return null;
+      var cand = obj.receiptUrl || obj.receipt || obj.receipt_url || '';
+      if (typeof cand !== 'string') return null;
+      cand = cand.trim();
+      if (!cand) return null;
+      if (/^https?:\/\//i.test(cand)) return cand;
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  /**
    * Read remembered purchases from localStorage and present them as an Array
    * of item-like objects that the rest of plugin.js expects. Behaviour:
    *  - If the host has an explicit data-* key (attr name provided) use that.
@@ -183,6 +199,12 @@
               try {
                 var durl = extractDownloadUrl(rec);
                 if (durl) item.downloadUrl = durl;
+              } catch (e) { /* ignore */ }
+
+              // Preserve any provider receipt URL already stored in the record
+              try {
+                var rurl = extractReceiptUrl(rec);
+                if (rurl) item.receiptUrl = rurl;
               } catch (e) { /* ignore */ }
 
               out.push(item);
@@ -252,10 +274,26 @@
               // If existing CTA exists but is not an anchor, append a proper link
               try { makeDownloadAnchor(url); } catch (e) { /* ignore */ }
             } catch (e) { /* ignore */ }
+          } else if (detail && extractReceiptUrl(detail)) {
+            // No download URL, but a provider receipt URL is available — update
+            // or add a "View receipt" anchor instead.
+            var rurl = extractReceiptUrl(detail);
+            if (rurl) {
+              try {
+                var existing2 = host.querySelector('.bought__cta');
+                if (existing2 && existing2.tagName && existing2.tagName.toLowerCase() === 'a') {
+                  try { existing2.setAttribute('href', rurl); } catch (e) { /* ignore */ }
+                  try { existing2.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+                  try { existing2.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+                  try { existing2.textContent = 'View receipt'; } catch (e) { /* ignore */ }
+                  return;
+                }
+                try { makeReceiptAnchor(rurl); } catch (e) { /* ignore */ }
+              } catch (e) { /* ignore */ }
+            }
           }
-          return;
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore per-host */ }
 
       try { host.setAttribute('data-ssp-bought-cta', 'on'); } catch (e) { /* ignore */ }
 
@@ -274,10 +312,24 @@
         } catch (e) { /* ignore */ }
       }
 
+      function makeReceiptAnchor(url) {
+        try {
+          var a = document.createElement('a');
+          a.className = 'bought__cta';
+          try { a.setAttribute('href', url); } catch (e) { /* ignore */ }
+          try { a.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+          try { a.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+          try { a.textContent = 'View receipt'; } catch (e) { /* ignore */ }
+          try { wrapper.appendChild(a); } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore */ }
+      }
+
       // If we already have a verified download URL, render it now.
       try {
         if (detail && extractDownloadUrl(detail)) {
           try { makeDownloadAnchor(extractDownloadUrl(detail)); } catch (e) { /* ignore */ }
+        } else if (detail && extractReceiptUrl(detail)) {
+          try { makeReceiptAnchor(extractReceiptUrl(detail)); } catch (e) { /* ignore */ }
         } else {
           // Otherwise render the fallback controls: Check order / Contact Support
           var btn = document.createElement('button');
@@ -303,6 +355,14 @@
                     if (v.downloadUrl) {
                       try { detail.downloadUrl = v.downloadUrl; } catch (e) { /* ignore */ }
 
+                      // Persist canonical storage so remembered purchases keep the
+                      // verified installer URL and other pages can reflect it too.
+                      try {
+                        if (typeof window.soundshopPersistBought === 'function') {
+                          try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
+
                       // Update any bought-summary list item for this paid id
                       try {
                         var paidEl = null;
@@ -313,6 +373,36 @@
                       } catch (e) { /* ignore */ }
 
                       // Update any visible bought-note hosts too
+                      try {
+                        $$('[data-bought-note]').forEach(function (host) {
+                          try {
+                            var ref = (detail && (detail.ref || detail.id)) || '';
+                            try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
+                            try { createBoughtCta(host, detail); } catch (e) { /* ignore */ }
+                          } catch (e) { /* ignore per-host */ }
+                        });
+                      } catch (e) { /* ignore */ }
+
+                    } else if (v.receiptUrl) {
+                      // No direct download, but the verify returned a provider
+                      // receipt URL — persist it and update UI to show a single
+                      // "View receipt" anchor.
+                      try { detail.receiptUrl = v.receiptUrl; } catch (e) { /* ignore */ }
+
+                      try {
+                        if (typeof window.soundshopPersistBought === 'function') {
+                          try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
+
+                      try {
+                        var paidEl2 = null;
+                        try { paidEl2 = document.querySelector('[data-ssp-paid-id="' + String(id) + '"]'); } catch (e) { paidEl2 = null; }
+                        if (paidEl2) {
+                          try { createBoughtCta(paidEl2, detail); } catch (e) { /* ignore */ }
+                        }
+                      } catch (e) { /* ignore */ }
+
                       try {
                         $$('[data-bought-note]').forEach(function (host) {
                           try {
@@ -353,6 +443,7 @@
       out.email = o.email || o.deliveryEmail || o.buyerEmail || o.customerEmail || '';
       out.t = o.t || o.time || o.date || null;
       try { var d = extractDownloadUrl(o); if (d) out.downloadUrl = d; } catch (e) { /* ignore */ }
+      try { var r = extractReceiptUrl(o); if (r) out.receiptUrl = r; } catch (e) { /* ignore */ }
       return out;
     } catch (e) { return null; }
   };
@@ -500,6 +591,33 @@
                     });
                   } catch (e) { /* ignore */ }
 
+                } else if (vdet && vdet.receiptUrl && !vdet.downloadUrl) {
+                  // If verification returned only a provider receipt URL, persist
+                  // it so the fallback UI can show "View receipt".
+                  try { det.receiptUrl = vdet.receiptUrl; } catch (e) { /* ignore */ }
+                  try {
+                    if (typeof window.soundshopPersistBought === 'function') {
+                      try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                    }
+                  } catch (e) { /* ignore */ }
+
+                  try {
+                    var paidEl2 = null;
+                    try { paidEl2 = document.querySelector('[data-ssp-paid-id="' + String(idToVerify) + '"]'); } catch (e) { paidEl2 = null; }
+                    if (paidEl2) {
+                      try { createBoughtCta(paidEl2, det); } catch (e) { /* ignore */ }
+                    }
+                  } catch (e) { /* ignore */ }
+
+                  try {
+                    $$('[data-bought-note]').forEach(function (host) {
+                      try {
+                        var ref = (det && (det.ref || det.id)) || '';
+                        try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
+                        try { createBoughtCta(host, det); } catch (e) { /* ignore */ }
+                      } catch (e) { /* ignore per-host */ }
+                    });
+                  } catch (e) { /* ignore */ }
                 }
               } catch (e) { /* ignore then */ }
             }).catch(function () { /* ignore */ });
@@ -705,6 +823,36 @@
                 } catch (e) { /* ignore */ }
 
                 // Re-run initialisers where available to refresh UI immediately
+                try { if (typeof P.initBoughtSummary === 'function') { try { P.initBoughtSummary(); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
+                try { if (typeof P.initBoughtNote === 'function') { try { P.initBoughtNote(); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
+
+              } else if (v.receiptUrl && !v.downloadUrl) {
+                // Persist a provider receipt URL if that's all the verify returned
+                try { it.receiptUrl = v.receiptUrl; } catch (e) { /* ignore */ }
+                try {
+                  if (typeof window.soundshopPersistBought === 'function') {
+                    try { window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
+                  }
+                } catch (e) { /* ignore */ }
+
+                try {
+                  var paidEl3 = null;
+                  try { paidEl3 = document.querySelector('[data-ssp-paid-id="' + String(id) + '"]'); } catch (e) { paidEl3 = null; }
+                  if (paidEl3) {
+                    try { createBoughtCta(paidEl3, it); } catch (e) { /* ignore */ }
+                  }
+                } catch (e) { /* ignore */ }
+
+                try {
+                  $$('[data-bought-note]').forEach(function (host) {
+                    try {
+                      var ref = (it && (it.ref || it.id)) || '';
+                      try { host.setAttribute('data-ssp-paid-ref', String(ref)); } catch (e) { /* ignore */ }
+                      try { createBoughtCta(host, it); } catch (e) { /* ignore */ }
+                    } catch (e) { /* ignore per-host */ }
+                  });
+                } catch (e) { /* ignore */ }
+
                 try { if (typeof P.initBoughtSummary === 'function') { try { P.initBoughtSummary(); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
                 try { if (typeof P.initBoughtNote === 'function') { try { P.initBoughtNote(); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
 
