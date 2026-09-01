@@ -430,9 +430,6 @@ html[data-standalone] .demo [data-frameless] { display: inline-flex; }
       </div>
     </section>
 
-    <!-- the rack itself, rendered from SSSynth.PARAM_SPEC -->
-    <div class="demo-rack" id="rack" data-rack></div>
-
     <!-- keyboard -->
     <section class="panel demo-keys" id="keys">
       <div class="panel__head demo-keys__head">
@@ -457,6 +454,9 @@ html[data-standalone] .demo [data-frameless] { display: inline-flex; }
         </p>
       </div>
     </section>
+
+    <!-- the rack itself, rendered from SSSynth.PARAM_SPEC -->
+    <div class="demo-rack" id="rack" data-rack></div>
 
   </main>
 
@@ -518,40 +518,27 @@ html[data-standalone] .demo [data-frameless] { display: inline-flex; }
   if (main) behind.push(main);
   if (bar) behind.push(bar);
   if (foot) behind.push(foot);
-
-  var focused = false;
-
-  function blocked() {
-    return !root.hasAttribute('data-on') && !root.hasAttribute('data-unsupported');
+  if (!overlay.hasAttribute('data-inerted')) {
+    overlay.setAttribute('data-inerted', '');
+    behind.forEach(function (el) {
+      el.setAttribute('aria-hidden', 'true');
+      el.setAttribute('inert', '');
+    });
   }
 
-  function apply() {
-    var off = blocked();
-    for (var i = 0; i < behind.length; i++) {
-      if (off) {
-        behind[i].setAttribute('inert', '');
-        behind[i].setAttribute('aria-hidden', 'true');
-      } else {
-        behind[i].removeAttribute('inert');
-        behind[i].removeAttribute('aria-hidden');
-      }
-    }
-    if (off && !focused) {
-      var btn = overlay.querySelector('[data-power-btn]');
-      var idle = !document.activeElement || document.activeElement === document.body;
-      if (btn && idle && document.hasFocus()) {
-        focused = true;
-        try { btn.focus({ preventScroll: true }); } catch (e) { btn.focus(); }
-      }
-    }
-  }
-
-  try {
-    new MutationObserver(apply).observe(root, { attributes: true, attributeFilter: ['data-on', 'data-unsupported'] });
-  } catch (e) { /* no observer: the initial state below still applies */ }
-
-  apply();
+  var btn = document.querySelector('[data-power-btn]');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    root.setAttribute('data-on', '');
+    behind.forEach(function (el) {
+      el.removeAttribute('aria-hidden');
+      el.removeAttribute('inert');
+    });
+    overlay.removeAttribute('data-inerted');
+    btn.focus();
+  });
 })();
 </script>
+
 </body>
 </html>
