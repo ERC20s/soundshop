@@ -367,29 +367,49 @@
         }
       } catch (e) { /* ignore */ }
 
-      try { verifyBtn.addEventListener('click', function () {
-            try {
-              var ref = String(record.ref || '').trim();
-              if (!ref) return;
-              if (verifyBtn.disabled) return;
-              verifyBtn.disabled = true;
-              var originalLabel = verifyBtn.textContent;
-              verifyBtn.textContent = 'Checking…';
+      // Add a per-item Verify button when the record carries a provider ref
+      try {
+        var ref = String(record.ref || '').trim();
+        if (ref) {
+          var verifyBtn = el('button', 'button', 'Verify');
+          verifyBtn.type = 'button';
+          // Capture the original label immediately so we can restore it later
+          var originalLabel = verifyBtn.textContent;
 
-              window.groupStoreVerify(ref).then(function (o) {
+          try {
+            verifyBtn.addEventListener('click', function () {
+              try {
+                if (!ref) return;
+                if (verifyBtn.disabled) return;
+                verifyBtn.disabled = true;
+                verifyBtn.textContent = 'Checking…';
+
+                // Attempt server-side verify; persist and notify on success.
+                // Restore the button state and label when the request settles.
                 try {
-                  if (!o) return;
-                  if (typeof window.soundshopPersistBought === 'function') {
-                    try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
-                  }
+                  window.groupStoreVerify(ref).then(function (o) {
+                    try {
+                      if (!o) return;
+                      if (typeof window.soundshopPersistBought === 'function') {
+                        try { window.soundshopPersistBought(o); } catch (e) { /* ignore */ }
+                      }
 
-                  // Notify other codepaths
-                  try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
-                } catch (e) { /* ignore */ }
-              }).catch(function () { /* ignore */ });
+                      // Notify other codepaths
+                      try { document.dispatchEvent(new CustomEvent('group-store:paid', { detail: o })); } catch (e) { /* ignore */ }
+                    } catch (e) { /* ignore */ }
+                  }).catch(function () { /* ignore */ }).finally(function () {
+                    try { verifyBtn.disabled = false; verifyBtn.textContent = originalLabel; } catch (e) { /* ignore */ }
+                  });
+                } catch (e) { try { verifyBtn.disabled = false; verifyBtn.textContent = originalLabel; } catch (err) { /* ignore */ } }
 
-            } catch (e) { /* ignore */ }
-          }); } catch (e) { /* ignore */ }
+              } catch (e) { /* ignore */ }
+            });
+          } catch (e) { /* ignore */ }
+
+          wrapper.appendChild(verifyBtn);
+          hasCta = true;
+        }
+      } catch (e) { /* ignore */ }
 
       if (hasCta) return wrapper;
       return null;
