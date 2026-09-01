@@ -242,79 +242,7 @@
     try { return window.location.protocol === 'file:'; } catch (e) { return false; }
   }
 
-  // Ensure a small, conservative reveal-and-focus behaviour for discovered
-  // product Download anchors. This keeps the UI actionable after verification
-  // without causing navigation or automatic download. The function is careful
-  // to only act on visible elements and to respect reduced-motion preferences.
-  function focusAndReveal(elm) {
-    try {
-      if (!elm || !elm.getClientRects) return;
-      var rects = elm.getClientRects();
-      if (!rects || rects.length === 0) return;
-
-      // Ensure the element is focusable (but avoid stomping existing tabindex)
-      var tag = (elm.tagName || '').toLowerCase();
-      var isNaturalFocusable = false;
-      try {
-        if (tag === 'a' && elm.hasAttribute('href')) isNaturalFocusable = true;
-        if (tag === 'button' || tag === 'input' || tag === 'select' || tag === 'textarea') isNaturalFocusable = true;
-        if (elm.hasAttribute && elm.hasAttribute('tabindex')) isNaturalFocusable = true;
-      } catch (e) { /* ignore */ }
-      if (!isNaturalFocusable) {
-        try { elm.setAttribute('tabindex', '-1'); } catch (e) { /* ignore */ }
-      }
-
-      // Scroll into view respecting reduced-motion
-      try {
-        if (typeof elm.scrollIntoView === 'function') {
-          try {
-            elm.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'center', inline: 'nearest' });
-          } catch (e) {
-            try { elm.scrollIntoView(); } catch (e) { /* ignore */ }
-          }
-        }
-      } catch (e) { /* ignore */ }
-
-      // Focus the element
-      try { elm.focus && elm.focus({ preventScroll: true }); } catch (e) { try { elm.focus && elm.focus(); } catch (e) { /* ignore */ } }
-
-    } catch (e) { /* ignore any error to keep callers safe */ }
-  }
-
-  /* =======================================================================
-     01  CORE HELPERS
-     ======================================================================= */
-
-  function maskEmail(email) {
-    try {
-      if (!email || typeof email !== 'string') return '';
-      var parts = email.split('@');
-      if (parts.length !== 2) return '';
-      var left = parts[0];
-      var right = parts[1];
-      if (left.length <= 2) left = left[0] + '…';
-      else left = left.slice(0, 2) + '…';
-      return left + '@' + right;
-    } catch (e) { return ''; }
-  }
-
-  function readBoughtArray(root) {
-    try {
-      var out = [];
-      var raw = window.localStorage.getItem('soundshop:bought:v1');
-      if (!raw) return out;
-      var parsed = null;
-      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-      if (!parsed || typeof parsed !== 'object') return out;
-      for (var k in parsed) {
-        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
-        var v = parsed[k];
-        if (!v) continue;
-        out.push(v);
-      }
-      return out;
-    } catch (e) { return []; }
-  }
+  // E
 
   function extractDownloadUrl(order) {
     try {
@@ -636,38 +564,50 @@
           }
           p.then(function (order) {
             try {
-              if (!order) {
-                failRestore('No order found — Contact Support');
-                return;
-              }
+              if (!order) throw new Error('no-order');
 
-              // Persist the discovered order into localStorage using the
-              // defensive soundshopPersistBought helper if present.
-              try { if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order); } catch (e) { /* ignore */ }
-
-              // Dispatch an in-page event so existing UI refresh logic runs.
-              try { document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order })); } catch (e) { /* ignore */ }
-
-              // Attempt to update the nearby CTA: prefer calling createBoughtCta
-              // on a sensible host (note element, list item, or nearest parent)
+              // If a conservative download URL exists, update the CTA in-place
               try {
-                var host = btn.closest('[data-bought-note]') || btn.closest('li.bought__item') || btn.closest('[data-bought-summary]') || btn.parentNode || document;
-                if (host && typeof createBoughtCta === 'function') {
-                  try { createBoughtCta(host, order); } catch (e) { /* ignore */ }
-
-                  // After creating/updating the CTA, reveal and focus the Download anchor if present
+                var durl = extractDownloadUrl(order);
+                if (durl) {
                   try {
-                    var durl = extractDownloadUrl(order);
-                    if (durl) {
-                      var candidate = null;
-                      try { candidate = host.querySelector('.bought__cta[href]'); } catch (e) { candidate = null; }
-                      if (!candidate) {
-                        try { candidate = document.querySelector('.bought__cta[href]'); } catch (e) { candidate = null; }
-                      }
-                      if (candidate && candidate.getAttribute && String(candidate.getAttribute('href')).trim() === durl) {
-                        try { focusAndReveal(candidate); } catch (e) { /* ignore */ }
-                      }
+                    var host = null;
+                    try { host = btn && btn.parentNode ? btn.parentNode : null; } catch (e) { host = null; }
+                    if (!host) host = document;
+                    var candidate = null;
+                    try { candidate = host.querySelector('.bought__cta'); } catch (e) { candidate = null; }
+                    if (!candidate) {
+                      try { candidate = document.querySelector('.bought__cta'); } catch (e) { candidate = null; }
                     }
+                    if (candidate && candidate.tagName && candidate.tagName.toLowerCase() === 'a') {
+                      try { candidate.setAttribute('href', durl); } catch (e) { /* ignore */ }
+                      try { candidate.setAttribute('target', '_blank'); } catch (e) { /* ignore */ }
+                      try { candidate.setAttribute('rel', 'noopener noreferrer'); } catch (e) { /* ignore */ }
+                      try { candidate.textContent = 'Download installers'; } catch (e) { /* ignore */ }
+                    }
+
+                    // If the host contains a copy button, update its reference
+                    try {
+                      var copyBtn = host.querySelector('[data-ssp-bought-copy]');
+                      if (copyBtn) {
+                        try { copyBtn.setAttribute('data-ssp-bought-copy', order.ref || order.reference || order.id || ''); } catch (e) { /* ignore */ }
+                      }
+                    } catch (e) { /* ignore */ }
+
+                    // Reveal and focus matching candidate if its href matches
+                    try {
+                      if (durl) {
+                        var candidate2 = null;
+                        try { candidate2 = host.querySelector('.bought__cta[href]'); } catch (e) { candidate2 = null; }
+                        if (!candidate2) {
+                          try { candidate2 = document.querySelector('.bought__cta[href]'); } catch (e) { candidate2 = null; }
+                        }
+                        if (candidate2 && candidate2.getAttribute && String(candidate2.getAttribute('href')).trim() === durl) {
+                          try { focusAndReveal(candidate2); } catch (e) { /* ignore */ }
+                        }
+                      }
+                    } catch (e) { /* ignore */ }
+
                   } catch (e) { /* ignore */ }
                 }
               } catch (e) { /* ignore */ }
@@ -889,6 +829,75 @@
     } catch (e) { /* ignore */ }
   }
 
+  // Lightweight helper: read the canonical bought map and convert to an array
+  function readBoughtArray(doc) {
+    try {
+      var BOUGHT_KEY = 'soundshop:bought:v1';
+      var raw = null;
+      try { raw = (doc && doc.defaultView && doc.defaultView.localStorage) ? doc.defaultView.localStorage.getItem(BOUGHT_KEY) : window.localStorage.getItem(BOUGHT_KEY); } catch (e) { raw = null; }
+      if (!raw) return [];
+      var parsed = null;
+      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+      if (!parsed || typeof parsed !== 'object') return [];
+      var out = [];
+      for (var k in parsed) {
+        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
+        var it = parsed[k];
+        if (!it) continue;
+        try {
+          var obj = {};
+          obj.tok = k;
+          obj.t = it.t || 0;
+          obj.ref = it.ref || it.reference || it.id || '';
+          obj.id = it.id || obj.ref;
+          obj.state = it.state || '';
+          if (it.downloadUrl) obj.downloadUrl = it.downloadUrl;
+          if (it.receiptUrl) obj.receiptUrl = it.receiptUrl;
+          if (it.email) obj.email = it.email;
+          out.push(obj);
+        } catch (e) { /* ignore */ }
+      }
+      // sort by most recent first
+      out.sort(function (a, b) { return (b.t || 0) - (a.t || 0); });
+      return out;
+    } catch (e) { return []; }
+  }
+
+  // Conservative masking for email addresses used in the bought summary
+  function maskEmail(email) {
+    try {
+      if (!email || typeof email !== 'string') return '';
+      var s = String(email).trim();
+      var parts = s.split('@');
+      if (parts.length !== 2) return '';
+      var local = parts[0];
+      var domain = parts[1];
+      if (!local) return '';
+      var l = local.length;
+      var showLocal = local.charAt(0) + (l > 1 ? (l > 3 ? local.slice(1, 3) + '…' : '…') : '');
+      var dparts = domain.split('.');
+      var d0 = dparts[0] || '';
+      var showDomain = d0.charAt(0) + (d0.length > 1 ? '…' : '');
+      return showLocal + '@' + showDomain;
+    } catch (e) { return ''; }
+  }
+
+  // Small focus+reveal helper used when a Download CTA is exposed
+  function focusAndReveal(node) {
+    try {
+      if (!node) return;
+      try { node.setAttribute('tabindex', '-1'); } catch (e) { /* ignore */ }
+      try { node.focus && node.focus(); } catch (e) { /* ignore */ }
+      try { node.scrollIntoView && node.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* ignore */ }
+      // add a temporary visual hint
+      try {
+        var prev = node.style && node.style.outline;
+        if (node.style) node.style.outline = '3px solid #fbbf24';
+        setTimeout(function () { try { if (node && node.style) node.style.outline = prev || ''; } catch (e) { /* ignore */ } }, 2200);
+      } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
+  }
+
   // Conservative, one-shot auto-verify pass for remembered purchases that
   // have an order id but no verified downloadUrl. This only runs when the
   // platform verifier (window.groupStoreVerify) is available and only once
@@ -943,5 +952,8 @@
   P.maskEmail = maskEmail;
   P.createBoughtCta = createBoughtCta;
   P.copyToClipboard = copyToClipboard;
+  P.initBoughtSummary = initBoughtSummary;
+  P.initBoughtNote = initBoughtNote;
+  P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
 
 }(window, document));
