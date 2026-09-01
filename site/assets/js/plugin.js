@@ -265,6 +265,43 @@
     } catch (e) { return {}; }
   }
 
+  // Mask a payment reference for use in support links and UI. Returns a
+  // short, human-meaningful representation: keep the last 6 characters and
+  // replace the preceding characters with an ellipsis. Fail closed: return
+  // the empty string for missing/invalid input.
+  function maskRef(ref) {
+    try {
+      if (!ref && ref !== 0) return '';
+      var s = String(ref).trim();
+      if (!s) return '';
+      var keep = 6;
+      if (s.length <= keep) return s;
+      var tail = s.slice(-keep);
+      return '…' + tail;
+    } catch (e) { return ''; }
+  }
+
+  // Mask an email address for display/query use: preserve the domain and show
+  // only a small hint of the local part. Return empty string for invalid
+  // inputs. This is intentionally conservative and does not attempt perfect
+  // RFC compliance; it mirrors the conservative validation above.
+  function maskEmail(email) {
+    try {
+      if (!email || typeof email !== 'string') return '';
+      var s = email.trim();
+      var EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+      if (!s || !EMAIL_RE.test(s)) return '';
+      var parts = s.split('@');
+      var local = parts[0] || '';
+      var domain = parts[1] || '';
+      if (!domain) return '';
+      if (!local) return '•••@' + domain;
+      var first = local.charAt(0) || '';
+      if (local.length === 1) return first + '•••@' + domain;
+      return first + '•••@' + domain;
+    } catch (e) { return ''; }
+  }
+
   // -----------------------------------------------------------------------
   // (many functions omitted here in edits — preserved in original)
   // -----------------------------------------------------------------------
@@ -562,6 +599,8 @@
   P.initBoughtSummary = initBoughtSummary;
   P.initBoughtNote = initBoughtNote;
   P.createBoughtCta = createBoughtCta;
+  P.maskRef = maskRef;
+  P.maskEmail = maskEmail;
 
   // Run the conservative auto-verify on DOM ready so it operates after any
   // initial UI rendering. This mirrors other init semantics and is safe to
