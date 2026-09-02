@@ -130,6 +130,22 @@ function extractGroupFromCanonicalBlock(block) {
   return m ? m[1] : null;
 }
 
+async function extractGroupFromD8a() {
+  try {
+    const p = path.resolve(process.cwd(), '.d8a');
+    const txt = await fs.readFile(p, 'utf8');
+    // Capture the indented payments: block (lines that start with whitespace)
+    const paymentsBlockRe = /^payments:\n((?:^[ \t].*\n)*)/m;
+    const m = paymentsBlockRe.exec(txt);
+    const block = m ? m[1] : txt; // fall back to whole file if payments: not matched
+    const groupAssignRe = /\bGROUP\b\s*=\s*['"]([^'"]+)['"]/;
+    const mm = groupAssignRe.exec(block);
+    return mm ? mm[1] : null;
+  } catch (err) {
+    return null;
+  }
+}
+
 async function main() {
   const root = path.resolve(process.cwd(), 'site');
   let htmlFiles = [];
@@ -148,19 +164,24 @@ async function main() {
   const scriptTagRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
   const attrSrcRe = /\bsrc\b\s*=\s*/i;
   const moduleTypeRe = /\btype\b\s*=\s*["']?\s*module\s*["']?/i;
-  const groupAssignRe = /\bGROUP\b\s*=\s*['"]([^\'"]+)['"]/g;
+  const groupAssignRe = /\bGROUP\b\s*=\s*['"]([^\'\"]+)['"]/g;
 
-  // Derive the expected GROUP from the plugins page, then canonical block, then fallback
+  // Derive the expected GROUP from .d8a payments block, then plugins page, then canonical block, then fallback
   let expectedGroup = null;
   try {
-    const fromPlugins = await extractGroupFromPluginsPage(root);
-    const fromCanonical = extractGroupFromCanonicalBlock(canonicalPaymentsBlock);
-    expectedGroup = fromPlugins || fromCanonical || 'soundshop';
+    const fromD8a = await extractGroupFromD8a();
+    if (fromD8a) {
+      expectedGroup = fromD8a;
+      console.log('Resolved expected GROUP from .d8a payments block:', expectedGroup);
+    } else {
+      const fromPlugins = await extractGroupFromPluginsPage(root);
+      const fromCanonical = extractGroupFromCanonicalBlock(canonicalPaymentsBlock);
+      expectedGroup = fromPlugins || fromCanonical || 'soundshop';
+      console.log('Resolved expected GROUP (plugins/canonical/fallback):', expectedGroup);
+    }
   } catch (err) {
     expectedGroup = 'soundshop';
   }
-
-  console.log('Resolved expected GROUP:', expectedGroup);
 
   const problems = [];
   let filesScanned = 0;
