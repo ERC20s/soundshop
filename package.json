@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "scripts": {
+    "web": "node tools/serve.js site 5003",
+    "dev": "node tools/serve.js site 5003",
+    "start": "node tools/serve.js site 5003",
+    "test:serve": "node tools/test-serve.js",
+    "check-links": "node tools/check-links.js"
+  }
+}
