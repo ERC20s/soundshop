@@ -14,15 +14,22 @@
        point is wrapped so a missing element can never throw.
      - Fetched data is written with textContent only. Never innerHTML.
 
-   Public API (all idempotent, all safe to call with nothing on the page):
-     SSPlugin.init()               run everything below, on DOM ready
-     SSPlugin.initDemoSlot(root)   probe [data-demo-src], embed on 200 OK
-     SSPlugin.initPresetTeaser(r)  load [data-presets-src], render preset rows
-     SSPlugin.initSectionNav(root) sticky in-page nav + scroll spy
-     SSPlugin.initTabs(root)       ARIA tablist panels (spec sheets)
-     SSPlugin.initCounters(root)   count-up for [data-count-to] figures
-     SSPlugin.initBoughtNote(r)    unhide [data-bought-note] for a remembered buy
-     SSPlugin.initBoughtSummary(r) list every remembered buy into [data-bought-summary]
+   Public API (all idempotent, all safe to call with nothing on the page).
+   This list is the API this file actually ships — keep it in step with the
+   P.* exports at the bottom:
+     SSPlugin.init(root)              run everything below, on DOM ready
+     SSPlugin.initBoughtNote(root)    unhide [data-bought-note] for a remembered buy
+     SSPlugin.initBoughtSummary(root) list every remembered buy into [data-bought-summary]
+     SSPlugin.initPaidBannerCtas()    add Download / receipt / support CTAs to
+                                      the payments widget's <p data-paid> banner
+     SSPlugin.initUrlOrderVerifyBanner()  verify ?d8a_order= once, remember it
+     SSPlugin.initUrlOrderAutoVerify()    the one-shot DOM-ready wrapper above
+     SSPlugin.createBoughtCta(host, rec, token)  CTAs for one summary row
+     SSPlugin.extractDownloadUrl(rec) validated http(s) download URL, or ''
+     SSPlugin.extractReceiptUrl(rec)  validated http(s) receipt URL, or ''
+     SSPlugin.readBoughtArray()       the pruned soundshop:bought:v1 map
+     SSPlugin.maskRef(ref)            masked payment reference for display
+     SSPlugin.maskEmail(email)        masked email for display
    ========================================================================= */
 
 (function (window, document) {
@@ -303,8 +310,198 @@
   }
 
   // -----------------------------------------------------------------------
-  // (many functions omitted here in edits — preserved in original)
+  // URL / record helpers. Every URL that reaches the DOM passes through one
+  // of these two: trimmed, length-capped and http(s) only. They are named
+  // functions (not inline logic) so createBoughtCta, initBoughtSummary and
+  // tools/check-plugin-exports.js all agree on one definition.
   // -----------------------------------------------------------------------
+
+  // The longest URL we will ever accept from a stored record.
+  var MAX_URL_LEN = 2000;
+
+  function safeUrl(value) {
+    try {
+      if (typeof value !== 'string') return '';
+      var s = value.trim();
+      if (!s || s.length > MAX_URL_LEN) return '';
+      if (!/^https?:\/\//i.test(s)) return '';
+      return s;
+    } catch (e) { return ''; }
+  }
+
+  function extractDownloadUrl(rec) {
+    try {
+      if (!rec || typeof rec !== 'object') return '';
+      var raw = rec.downloadUrl || rec.installerUrl ||
+        (rec.installers && rec.installers[0] && rec.installers[0].url) || '';
+      return safeUrl(raw);
+    } catch (e) { return ''; }
+  }
+
+  function extractReceiptUrl(rec) {
+    try {
+      if (!rec || typeof rec !== 'object') return '';
+      return safeUrl(rec.receiptUrl || rec.receipt || '');
+    } catch (e) { return ''; }
+  }
+
+  // The support link is never a literal in this file: it is read from
+  // data-bought-summary-support-href on the [data-bought-summary] host that
+  // owns the row, exactly as the product pages already declare it. No
+  // attribute, no link — the row simply shows nothing extra.
+  function supportHref(host) {
+    try {
+      var owner = null;
+      try { owner = (host && host.closest) ? host.closest('[data-bought-summary]') : null; } catch (e) { owner = null; }
+      if (!owner) owner = $('[data-bought-summary]');
+      return attr(owner, 'data-bought-summary-support-href');
+    } catch (e) { return ''; }
+  }
+
+  // Contact-support CTA for one bought-summary row. Offered only when the
+  // buyer has neither a download nor a receipt to fall back on, so a working
+  // product never gets a "something went wrong" link next to it.
+  function createBoughtContactCta(host, rec) {
+    try {
+      if (extractDownloadUrl(rec) || extractReceiptUrl(rec)) return null;
+      var href = supportHref(host);
+      if (!href) return null;
+      var a = el('a', 'bought-summary__support', 'Contact support');
+      try { a.setAttribute('href', href); } catch (e) { return null; }
+      try {
+        var masked = maskRef(rec && rec.ref);
+        if (masked) a.setAttribute('data-ref', masked);
+      } catch (e) { /* ignore */ }
+      return a;
+    } catch (e) { return null; }
+  }
+
+  // Format a stored timestamp the same way the aria-live status does, so the
+  // page never shows two spellings of the same date.
+  function formatBoughtDate(ms) {
+    try {
+      var n = Number(ms) || 0;
+      if (n <= 0) return '';
+      var d = new Date(n);
+      var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return d.getUTCDate() + ' ' + (months[d.getUTCMonth()] || '') + ' ' + d.getUTCFullYear();
+    } catch (e) { return ''; }
+  }
+
+  // Unhide [data-bought-note] on a product page when this device remembers a
+  // buy of that page's product (data-bought-item="vanta" and friends). Fills
+  // [data-bought-date] when the note carries one; every other child is the
+  // page's own static markup and is left alone.
+  function initBoughtNote(root) {
+    try {
+      var notes;
+      if (root && root.getAttribute && root.getAttribute('data-bought-note') !== null) {
+        notes = [root];
+      } else {
+        notes = $$('[data-bought-note]', root || document);
+      }
+      if (!notes.length) return;
+
+      var bought = readBoughtArray() || {};
+
+      for (var i = 0; i < notes.length; i++) {
+        var note = notes[i];
+        try {
+          var token = attr(note, 'data-bought-item').toLowerCase();
+          if (!token) continue;
+          if (!Object.prototype.hasOwnProperty.call(bought, token)) continue;
+          var rec = bought[token];
+          if (!rec) continue;
+          if (bound(note, 'bought-note')) continue;
+
+          try {
+            var when = (typeof rec === 'object') ? rec.t : rec;
+            var dateEl = note.querySelector('[data-bought-date]');
+            if (dateEl) {
+              var text = formatBoughtDate(when);
+              if (text) dateEl.textContent = text;
+            }
+          } catch (e) { /* ignore date */ }
+
+          try { note.removeAttribute('hidden'); } catch (e) { note.hidden = false; }
+        } catch (e) { /* ignore this note */ }
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // -----------------------------------------------------------------------
+  // Returned-checkout handshake. The payments widget verifies ?d8a_order= and
+  // sets window.groupStorePaid; this is the conservative fallback for a page
+  // where the widget markup is absent or has not answered yet. It never
+  // invents an order: nothing is remembered unless the platform says paid.
+  // -----------------------------------------------------------------------
+
+  function urlOrderId() {
+    try {
+      var m = String(window.location.search || '').match(/[?&]d8a_order=([A-Za-z0-9_-]+)/);
+      return m ? m[1] : '';
+    } catch (e) { return ''; }
+  }
+
+  function rememberVerifiedOrder(order) {
+    try {
+      if (!order || typeof order !== 'object') return;
+      try { if (!window.groupStorePaid) window.groupStorePaid = order; } catch (e) { /* ignore */ }
+      try {
+        if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order);
+      } catch (e) { /* ignore */ }
+      try {
+        document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order }));
+      } catch (e) { /* ignore */ }
+      try { initPaidBannerCtas(); } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
+  }
+
+  function initUrlOrderVerifyBanner() {
+    try {
+      if (_sspUrlOrderVerifyDone) return;
+      var id = urlOrderId();
+      if (!id) return;
+      _sspUrlOrderVerifyDone = true;
+
+      if (window.groupStorePaid && typeof window.groupStorePaid === 'object') {
+        rememberVerifiedOrder(window.groupStorePaid);
+        return;
+      }
+      if (typeof window.groupStoreVerify !== 'function') return;
+
+      var p = null;
+      try { p = window.groupStoreVerify(id); } catch (e) { p = null; }
+      if (!p || typeof p.then !== 'function') return;
+
+      p.then(function (res) {
+        try {
+          // groupStoreVerify resolves to the order itself; tolerate the
+          // {paid, order} envelope the platform returns on the wire too.
+          var order = (res && typeof res === 'object' && res.order && res.paid) ? res.order : res;
+          if (order && typeof order === 'object' && (order.id || order.itemName)) rememberVerifiedOrder(order);
+        } catch (e) { /* ignore */ }
+      }).catch(function () { /* ignore */ });
+    } catch (e) { /* ignore */ }
+  }
+
+  // One attempt per page load, whoever calls it.
+  function initUrlOrderAutoVerify() {
+    try {
+      if (_boughtAutoVerifyCalled) return;
+      _boughtAutoVerifyCalled = true;
+      try { initUrlOrderVerifyBanner(); } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
+  }
+
+  // Run everything. Safe on a page that carries none of the markup.
+  function init(root) {
+    var scope = (root && root.querySelector) ? root : document;
+    try { initBoughtNote(scope); } catch (e) { /* ignore */ }
+    try { initBoughtSummary(scope.querySelector('[data-bought-summary]') || null); } catch (e) { /* ignore */ }
+    try { initUrlOrderAutoVerify(); } catch (e) { /* ignore */ }
+    try { initPaidBannerCtas(); } catch (e) { /* ignore */ }
+  }
 
   // Create CTAs for a bought-summary list item. Returns a container element
   // or null. This helper is idempotent and guarded by data-ssp-bought-cta so
@@ -898,7 +1095,10 @@
     } catch (e) { /* ignore overall */ }
   }
 
-  // Export the helpers so tools/check-plugin-exports.js and consumers can find them
+  // Export the helpers so tools/check-plugin-exports.js and consumers can find
+  // them. Every name below must be a function defined in this file — the
+  // static check fails the build when one is not.
+  P.init = init;
   P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
   P.initUrlOrderAutoVerify = initUrlOrderAutoVerify;
   P.initBoughtSummary = initBoughtSummary;
@@ -907,18 +1107,19 @@
   P.maskRef = maskRef;
   P.maskEmail = maskEmail;
   P.initPaidBannerCtas = initPaidBannerCtas;
+  P.extractDownloadUrl = extractDownloadUrl;
+  P.extractReceiptUrl = extractReceiptUrl;
+  P.readBoughtArray = readBoughtArray;
 
-  // Run the conservative auto-verify on DOM ready so it operates after any
-  // initial UI rendering. This mirrors other init semantics and is safe to
-  // call multiple times.
+  // Run everything on DOM ready — the bought note, the bought summary, the
+  // conservative auto-verify and the paid-banner CTAs. init() is idempotent,
+  // so a page that also calls SSPlugin.init() itself changes nothing.
   try {
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initUrlOrderAutoVerify);
-      document.addEventListener('DOMContentLoaded', initPaidBannerCtas);
+      document.addEventListener('DOMContentLoaded', function () { try { init(); } catch (e) { /* ignore */ } });
     } else {
       // DOM already ready
-      try { initUrlOrderAutoVerify(); } catch (e) { /* ignore */ }
-      try { initPaidBannerCtas(); } catch (e) { /* ignore */ }
+      try { init(); } catch (e) { /* ignore */ }
     }
   } catch (e) { /* ignore */ }
 
