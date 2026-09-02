@@ -19,12 +19,12 @@ Serve **either** the repository root **or** `site/` over http — both layouts w
 ```sh
 # from the repository root  →  http://localhost:8000/site/index.html
 python -m http.server 8000
-npx serve .
+npm run web
 
 # from site/                →  http://localhost:8000/index.html
 cd site
 python -m http.server 8000
-npx serve .
+npm run web
 ```
 
 Then check the internal links:
@@ -115,7 +115,6 @@ site/
       synth.js                     window.SSSynth — the VANTA browser audio engine
       home.js                      page script for index.html (hero canvas, mini-instrument)
       plugin.js                    window.SSPlugin — shared behaviour for the four
-                                   product pages
       demo.js                      page script for demo/flagship-demo.html (the rack)
       presets.js                   page script for presets/index.html (the gallery)
       changelog.js                 renderer for changelog.html
@@ -125,7 +124,7 @@ tools/
 
 Every page loads `assets/style.css` in `<head>` and `assets/js/ui.js` before `</body>`;
 pages that make sound load `assets/js/synth.js` before their own page script. Page-specific
-CSS lives in a `<style>` block inside the page that needs it — `assets/style.css` is shared
+CSS lives in a `<style` block inside the page that needs it — `assets/style.css` is shared
 and is never forked per page.
 
 ---
@@ -238,80 +237,3 @@ defensively by date anyway, but the file reads newest-first):
   colour and the timeline dot.
 - `links` is optional. **Values that point at a site page must start with `/`**, which means
   "relative to `site/`" — `/plugins/drift.html`, `/demo/flagship-demo.html`, `/docs.html`.
-  The renderer rewrites them to page-relative URLs, and `tools/check-links.js` verifies that
-  every one of them exists on disk. The object key is the visible link label.
-- Everything is rendered with `createElement` and `textContent`, so nothing in this file can
-  inject markup into the page. Write plain text; no HTML in `title` or `notes`.
-
-`site/assets/js/changelog.js` looks for the data at `data/changelog.json` and then at
-`../data/changelog.json`. Both are resolved against the *page* that loaded the script —
-`site/changelog.html` — not against the script itself, so the first candidate is
-`site/data/changelog.json`, which is where the file lives. That one path resolves under
-either web root. Nothing outside the served tree can ever be reached: with `site/` as the
-web root, `../` cannot climb above the server root, so a copy kept at the repository root
-would be unreachable there. If neither candidate resolves, the page shows an honest error
-naming both paths rather than an empty page.
-
-If a copy also exists at the repository root (`data/changelog.json`), it is a legacy mirror
-that no page loads. Edit `site/data/changelog.json`.
-
----
-
-## The link checker
-
-`tools/check-links.js` is the only tooling in the repository. Zero dependencies, Node 18+,
-run it from anywhere in the tree:
-
-```sh
-node tools/check-links.js
-```
-
-It walks every `.html`, `.js` and `.css` file under `site/` and collects:
-
-- `href="…"` and `src="…"` attributes,
-- `fetch('…')` string literals,
-- arrays of two or more quoted paths, treated as **fallback lists** — the check passes when
-  at least one candidate exists (this is what `JSON_PATHS` in `changelog.js` relies on),
-- `url(…)` references and `@import` targets, from `.css` files and from `<style>` blocks
-  inside HTML.
-
-It then walks every `.json` file under `site/data/` and under a repository-root `data/`
-directory if one is present, finds any `"links": { … }` object at any depth, and checks
-those values too.
-
-Each target is resolved against the directory of the file it appears in — a leading `/`
-resolves against `site/` — and a relative target inside a `.js` file is additionally tried
-against every directory under `site/` that holds an HTML document, because a shared script
-resolves its `fetch()` paths against the page that loaded it, not against itself. Anything
-that does not exist on disk is printed as `file:line  target -> resolved` and the process
-exits `1`.
-
-**Deliberately skipped**, and relied on:
-
-- `data-*` attributes. A path a page probes at runtime, or hands to a script, belongs in a
-  `data-*` attribute (`data-src`, `data-demo-src`) — the checker ignores those, so a page may
-  reference something optional without failing the build.
-- `http(s):`, `mailto:`, `data:` and protocol-relative `//host` values, and bare `#fragment`
-  values. That is why inline `data:` URIs and `url(#filter)` SVG references never trip it.
-- Whether a `#fragment` on an otherwise-valid target actually exists in the target file.
-  Only file existence is verified.
-
-Consequences worth internalising before you write a line: **never write an `href`/`src` to a
-file that is not in the repository**, and **never put a real relative path in a quoted string
-in JS** — including inside a template literal that builds markup — unless the file exists.
-Optional or runtime-built paths go in a `data-*` attribute.
-
----
-
-## Products
-
-| Instrument | What it is | Version | Price |
-| --- | --- | --- | --- |
-| VANTA | 8-voice virtual-analog polysynth | 1.4.0 | $149 |
-| DRIFT | Tape-modelled delay & pitch-warping echo | 1.1.0 | $79 |
-| PRISM | 4-band spectral filter / formant morpher | 0.9.0 public beta | $69 |
-| ANVIL | Transient shaper + saturating bus compressor | 2.0.1 | $89 |
-
-All four ship in **The Full Shop** bundle at $299. Formats: VST3, AU, AAX, CLAP —
-macOS 11+ (Universal), Windows 10+ (x64), Linux (x64, VST3/CLAP). VANTA is the instrument
-the in-browser demo actually implements.
