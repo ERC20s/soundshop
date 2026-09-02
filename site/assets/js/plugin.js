@@ -28,6 +28,8 @@
      SSPlugin.extractDownloadUrl(rec) validated http(s) download URL, or ''
      SSPlugin.extractReceiptUrl(rec)  validated http(s) receipt URL, or ''
      SSPlugin.readBoughtArray()       the pruned soundshop:bought:v1 map
+     SSPlugin.normalizeVerifiedOrder(res)  the order behind a groupStoreVerify
+                                      result (bare order or {paid, order}), or null
      SSPlugin.maskRef(ref)            masked payment reference for display
      SSPlugin.maskEmail(email)        masked email for display
    ========================================================================= */
@@ -457,6 +459,35 @@
     } catch (e) { /* ignore */ }
   }
 
+  // What groupStoreVerify actually hands back.
+  //
+  // The payments widget in the root .d8a defines the verifier so that it has
+  // ALREADY unwrapped the platform's envelope:
+  //
+  //   .then(function (d) { return d && d.paid ? d.order : null; })
+  //   window.groupStoreVerify = verify;
+  //
+  // so the promise resolves to the ORDER object itself, or to null — never to
+  // a {paid, order} wrapper. Code that read `res.paid ? res.order : null` could
+  // therefore never succeed. This one helper accepts BOTH shapes (the bare
+  // order, and the on-the-wire {paid, order} envelope, in case a host wires the
+  // raw response) and returns the order object, or null when there is none.
+  function normalizeVerifiedOrder(res) {
+    try {
+      if (!res || typeof res !== 'object') return null;
+      // The on-the-wire envelope: only trust it when paid is true.
+      if (res.order && typeof res.order === 'object') {
+        if (res.paid !== true) return null;
+        var inner = res.order;
+        return (inner.id || inner.itemName) ? inner : null;
+      }
+      if (res.paid === false) return null;
+      // A bare order object: it must look like one.
+      if (res.id || res.itemName) return res;
+      return null;
+    } catch (e) { return null; }
+  }
+
   function initUrlOrderVerifyBanner() {
     try {
       if (_sspUrlOrderVerifyDone) return;
@@ -476,10 +507,9 @@
 
       p.then(function (res) {
         try {
-          // groupStoreVerify resolves to the order itself; tolerate the
-          // {paid, order} envelope the platform returns on the wire too.
-          var order = (res && typeof res === 'object' && res.order && res.paid) ? res.order : res;
-          if (order && typeof order === 'object' && (order.id || order.itemName)) rememberVerifiedOrder(order);
+          // One shared reader for both verify paths — see normalizeVerifiedOrder.
+          var order = normalizeVerifiedOrder(res);
+          if (order) rememberVerifiedOrder(order);
         } catch (e) { /* ignore */ }
       }).catch(function () { /* ignore */ });
     } catch (e) { /* ignore */ }
@@ -938,7 +968,9 @@
                         var ref = String(entry.ref || '');
                         if (!ref) return Promise.resolve(null);
                         return window.groupStoreVerify(ref).then(function (res) {
-                          try { return res && res.paid ? res.order || null : null; } catch (e) { return null; }
+                          // groupStoreVerify resolves to the order itself, so the
+                          // envelope must not be assumed here — see the helper.
+                          try { return normalizeVerifiedOrder(res); } catch (e) { return null; }
                         }).catch(function () { return null; });
                       } catch (e) { return Promise.resolve(null); }
                     });
@@ -974,6 +1006,11 @@
                             }
                           } catch (e) { /* ignore */ }
 
+                        } else {
+                          // Say so rather than leaving the click silent: the
+                          // button re-enabling with nothing changed used to be
+                          // the only feedback a buyer got.
+                          try { if (SS && typeof SS.toast === 'function') SS.toast('Nothing new to re-verify yet'); } catch (e) { /* ignore */ }
                         }
                         try { reBtn.disabled = false; } catch (e) { /* ignore */ }
                       } catch (e) { /* ignore results handling */ }
@@ -1110,6 +1147,7 @@
   P.extractDownloadUrl = extractDownloadUrl;
   P.extractReceiptUrl = extractReceiptUrl;
   P.readBoughtArray = readBoughtArray;
+  P.normalizeVerifiedOrder = normalizeVerifiedOrder;
 
   // Run everything on DOM ready — the bought note, the bought summary, the
   // conservative auto-verify and the paid-banner CTAs. init() is idempotent,
