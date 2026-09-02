@@ -52,8 +52,48 @@
 
         var contact = document.createElement('a');
         var subj = 'Buy ' + (it.name || 'product');
+        // Compute support href using same lookup as plugin.js
+        var href = (function () {
+          try {
+            var v = '';
+            try { v = (el && el.getAttribute) ? (el.getAttribute('data-bought-summary-support-href') || '') : ''; } catch (e) { v = ''; }
+            if (v) return v;
+            try {
+              var pageHost = document.querySelector('[data-bought-summary]');
+              if (pageHost && pageHost.getAttribute) {
+                v = pageHost.getAttribute('data-bought-summary-support-href') || '';
+                if (v) return String(v).trim();
+              }
+            } catch (e) { /* ignore */ }
+            try {
+              var link = document.querySelector('link[rel="help"]');
+              if (link && link.getAttribute) {
+                v = link.getAttribute('href') || '';
+                if (v) return String(v).trim();
+              }
+            } catch (e) { /* ignore */ }
+            try {
+              var meta = document.querySelector('meta[name="soundshop-support"]');
+              if (meta && meta.getAttribute) {
+                v = meta.getAttribute('content') || '';
+                if (v) return String(v).trim();
+              }
+            } catch (e) { /* ignore */ }
+            return '/docs.html#support';
+          } catch (e) { return '/docs.html#support'; }
+        }());
+
+        var mailto = false;
+        try { mailto = /^mailto:/i.test(String(href)); } catch (e) { mailto = false; }
+        if (mailto) {
+          try {
+            var sep = href.indexOf('?') === -1 ? '?' : '&';
+            href = href + sep + 'subject=' + encodeURIComponent(subj);
+          } catch (e) { /* ignore */ }
+        }
+
         contact.textContent = 'Contact to buy';
-        contact.href = 'mailto:support@soundshop.example?subject=' + encodeURIComponent(subj);
+        contact.href = href || 'mailto:support@soundshop.example?subject=' + encodeURIComponent(subj);
         contact.style.color = '#7c5cff';
         contact.style.textDecoration = 'none';
 
