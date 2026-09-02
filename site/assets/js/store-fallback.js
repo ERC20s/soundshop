@@ -53,7 +53,10 @@
         var contact = document.createElement('a');
         var subj = 'Buy ' + (it.name || 'product');
         contact.textContent = 'Contact to buy';
-        contact.href = 'mailto:support@soundshop.example?subject=' + encodeURIComponent(subj);
+        // Link to the docs Support anchor instead of a placeholder mailto to
+        // give buyers a stable place with instructions; pages under /plugins/
+        // resolve ../docs.html#support correctly.
+        contact.href = '../docs.html#support';
         contact.style.color = '#7c5cff';
         contact.style.textDecoration = 'none';
 
