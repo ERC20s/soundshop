@@ -129,7 +129,7 @@ items:
   DRIFT = $79.00 — Tape delay with correlated wow and flutter, head-gap loss on repeats and a record path that saturates before it distorts.
   PRISM = $69.00 — Four spectral bands you can move, tilt and resonate independently. Public beta — the 1.0 release is a free update.
   The Full Shop = $299.00 — All four plugins in every format we ship, on one licence file for three machines. Bought separately they come to $386.
-  VANTA = $149.00 — Flagship eight-voice synth: two oscillators per voice, a resonant ladder filter and a 24-slot modulation matrix. The instrument the playable
+  VANTA = $149.00 — Flagship eight-voice synth: two oscillators per voice, a resonant ladder filter and a 24-slot modulation matrix. Playable in-browser demo, presets and full docs included.
 
 keys:
   PORT
