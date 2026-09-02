@@ -23,6 +23,13 @@
      SSPlugin.initCounters(root)   count-up for [data-count-to] figures
      SSPlugin.initBoughtNote(r)    unhide [data-bought-note] for a remembered buy
      SSPlugin.initBoughtSummary(r) list every remembered buy into [data-bought-summary]
+     SSPlugin.extractDownloadUrl(rec) / extractReceiptUrl(rec) — '' unless the
+                                   record carries a plain, short https URL
+     SSPlugin.readBoughtArray()    the pruned local record map, never null
+
+   NOTE: initDemoSlot / initPresetTeaser / initSectionNav / initTabs /
+   initCounters are not implemented in this file yet. SSPlugin.init() runs only
+   what exists here, so nothing it calls can be undefined.
    ========================================================================= */
 
 (function (window, document) {
@@ -243,6 +250,9 @@
   // BOUGHT_MAX_AGE: how long we keep the local note (ms)
   var BOUGHT_MAX_AGE = 60 * 24 * 60 * 60 * 1000; // 60 days
 
+  // Longest URL we are willing to copy out of a stored record into the DOM.
+  var MAX_URL_LEN = 2000;
+
   function readBoughtArray() {
     try {
       var raw = window.localStorage.getItem('soundshop:bought:v1');
@@ -303,8 +313,230 @@
   }
 
   // -----------------------------------------------------------------------
-  // (many functions omitted here in edits — preserved in original)
+  // URL / RECORD EXTRACTION
+  //
+  // Both helpers fail closed: anything that is not a plain, reasonably short
+  // https URL comes back as the empty string, so a caller can treat a truthy
+  // result as safe to put in an href. They are the single definition of the
+  // conservative extraction that the bought-summary paths call.
   // -----------------------------------------------------------------------
+
+  function safeUrl(value) {
+    try {
+      if (typeof value !== 'string') return '';
+      var u = value.trim();
+      if (!u) return '';
+      if (u.length > MAX_URL_LEN) return '';
+      if (!/^https:\/\//i.test(u)) return '';
+      if (/[\s<>"']/.test(u)) return '';
+      return u;
+    } catch (e) { return ''; }
+  }
+
+  function extractDownloadUrl(rec) {
+    try {
+      if (!rec || typeof rec !== 'object') return '';
+      var u = rec.downloadUrl || rec.installerUrl ||
+        (rec.installers && rec.installers[0] && rec.installers[0].url) || '';
+      return safeUrl(u);
+    } catch (e) { return ''; }
+  }
+
+  function extractReceiptUrl(rec) {
+    try {
+      if (!rec || typeof rec !== 'object') return '';
+      return safeUrl(rec.receiptUrl || rec.receipt || '');
+    } catch (e) { return ''; }
+  }
+
+  // Format a stored timestamp the same way the bought-summary status does, so
+  // the note and the summary never disagree about a date. Empty when unknown.
+  function formatBoughtDate(t) {
+    try {
+      var when = Number(t);
+      if (!isFinite(when) || when <= 0) return '';
+      var d = new Date(when);
+      var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return d.getUTCDate() + ' ' + (months[d.getUTCMonth()] || '') + ' ' + d.getUTCFullYear();
+    } catch (e) { return ''; }
+  }
+
+  // Read a product label out of the page's [data-bought-summary-labels] hint
+  // span, falling back to the token itself. No label text lives in this file.
+  function boughtLabel(token, scope) {
+    try {
+      if (!token) return '';
+      var labelsEl = (scope && scope.querySelector ? scope.querySelector('[data-bought-summary-labels]') : null) ||
+        document.querySelector('[data-bought-summary-labels]');
+      if (labelsEl && labelsEl.getAttribute) {
+        var v = labelsEl.getAttribute('data-bought-label-' + token);
+        if (v) return v;
+      }
+      return token;
+    } catch (e) { return token || ''; }
+  }
+
+  // A "Contact support" link for one remembered purchase. The href is read
+  // from the page (data-bought-summary-support-href), never written here, and
+  // the masked reference / address ride along as data-* so support tooling can
+  // pick them up without the full values ever reaching the DOM text.
+  function createBoughtContactCta(host, rec) {
+    try {
+      var scope = null;
+      try { scope = host && host.closest ? host.closest('[data-bought-summary]') : null; } catch (e) { scope = null; }
+      if (!scope) scope = document.querySelector('[data-bought-summary]');
+      var href = '';
+      try { if (scope && scope.getAttribute) href = scope.getAttribute('data-bought-summary-support-href') || ''; } catch (e) { href = ''; }
+      if (!href) return null;
+
+      var a = el('a', 'bought-summary__support', 'Contact support');
+      try { a.setAttribute('href', href); } catch (e) { /* ignore */ }
+      try { var mr = maskRef(rec && rec.ref); if (mr) a.setAttribute('data-masked-ref', mr); } catch (e) { /* ignore */ }
+      try { var me = maskEmail(rec && rec.email); if (me) a.setAttribute('data-masked-email', me); } catch (e) { /* ignore */ }
+      return a;
+    } catch (e) { return null; }
+  }
+
+  // -----------------------------------------------------------------------
+  // BOUGHT NOTE — the small "you already own this" line on one product page.
+  // The page carries [data-bought-note][data-bought-item="vanta"] with a
+  // [data-bought-cover] and a [data-bought-date] span inside it; a page
+  // without that markup simply has nothing to unhide.
+  // -----------------------------------------------------------------------
+
+  function initBoughtNote(root) {
+    try {
+      var nodes = [];
+      if (root && root.getAttribute && root.hasAttribute && root.hasAttribute('data-bought-note')) nodes = [root];
+      else nodes = $$('[data-bought-note]', root || document);
+      if (!nodes.length) return;
+
+      var bought = readBoughtArray() || {};
+
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        try {
+          if (!node) continue;
+          if (bound(node, 'bought-note')) continue;
+
+          var token = attr(node, 'data-bought-item').toLowerCase();
+          if (!token) continue;
+
+          var has = Object.prototype.hasOwnProperty;
+          var direct = has.call(bought, token) ? bought[token] : null;
+          if (!direct || typeof direct !== 'object' || Array.isArray(direct)) direct = null;
+          var viaBundle = null;
+          if (!direct && has.call(bought, 'bundle') && bought.bundle && typeof bought.bundle === 'object') viaBundle = bought.bundle;
+
+          var rec = direct || viaBundle;
+          if (!rec) continue;
+
+          // Which purchase covers this product: the product itself, or the bundle.
+          try {
+            var cover = node.querySelector('[data-bought-cover]');
+            if (cover) cover.textContent = boughtLabel(direct ? token : 'bundle', null);
+          } catch (e) { /* ignore */ }
+
+          try {
+            var dateEl = node.querySelector('[data-bought-date]');
+            if (dateEl) dateEl.textContent = formatBoughtDate(rec.t);
+          } catch (e) { /* ignore */ }
+
+          try { node.removeAttribute('hidden'); } catch (e) { node.hidden = false; }
+        } catch (e) { /* ignore this note */ }
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // -----------------------------------------------------------------------
+  // RETURNED CHECKOUT — ?d8a_order=<id> on the URL.
+  //
+  // The payments widget already verifies the order it finds on the URL and
+  // fires "group-store:paid". These two entry points are the fallback for a
+  // page that loads this file without the widget having resolved yet: they
+  // ask the widget's own verifier (window.groupStoreVerify), once per page
+  // load, and do nothing at all when it is absent. No URL literal is added.
+  // -----------------------------------------------------------------------
+
+  function urlOrderId() {
+    try {
+      var m = String(location.search || '').match(/[?&]d8a_order=([A-Za-z0-9_-]+)/);
+      return m ? m[1] : '';
+    } catch (e) { return ''; }
+  }
+
+  function normalizeVerified(res) {
+    try {
+      if (!res || typeof res !== 'object') return null;
+      if (res.paid && res.order && typeof res.order === 'object') return res.order;
+      if (res.id) return res;
+      return null;
+    } catch (e) { return null; }
+  }
+
+  function initUrlOrderVerifyBanner() {
+    try {
+      if (_sspUrlOrderVerifyDone) return;
+      _sspUrlOrderVerifyDone = true;
+
+      // Already verified by the widget on this page load: just render.
+      if (window.groupStorePaid) {
+        try { initPaidBannerCtas(); } catch (e) { /* ignore */ }
+        return;
+      }
+
+      var id = urlOrderId();
+      if (!id) return;
+      if (typeof window.groupStoreVerify !== 'function') return;
+
+      var p = null;
+      try { p = window.groupStoreVerify(id); } catch (e) { p = null; }
+      if (!p || typeof p.then !== 'function') return;
+
+      p.then(function (res) {
+        try {
+          var order = normalizeVerified(res);
+          if (!order) return;
+          try { window.groupStorePaid = order; } catch (e) { /* ignore */ }
+          try {
+            if (typeof window.soundshopPersistBought === 'function') window.soundshopPersistBought(order);
+          } catch (e) { /* ignore */ }
+          try { initPaidBannerCtas(); } catch (e) { /* ignore */ }
+          try { refreshBoughtViews(); } catch (e) { /* ignore */ }
+          try {
+            document.dispatchEvent(new CustomEvent('soundshop:verified-order', { detail: order }));
+          } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore */ }
+      }).catch(function () { /* stay silent: the static page is still correct */ });
+    } catch (e) { /* ignore */ }
+  }
+
+  function initUrlOrderAutoVerify() {
+    try {
+      if (_boughtAutoVerifyCalled) return;
+      _boughtAutoVerifyCalled = true;
+      initUrlOrderVerifyBanner();
+    } catch (e) { /* ignore */ }
+  }
+
+  // Re-run the two remembered-purchase views after something changed. Both are
+  // one-shot guarded per element, so the guards are cleared first.
+  function refreshBoughtViews() {
+    try {
+      var summary = document.querySelector('[data-bought-summary]');
+      if (summary) {
+        try { summary.removeAttribute('data-ssp-bought-summary'); } catch (e) { /* ignore */ }
+        try { initBoughtSummary(summary); } catch (e) { /* ignore */ }
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      var notes = $$('[data-bought-note]');
+      for (var i = 0; i < notes.length; i++) {
+        try { notes[i].removeAttribute('data-ssp-bought-note'); } catch (e) { /* ignore */ }
+      }
+      if (notes.length) initBoughtNote();
+    } catch (e) { /* ignore */ }
+  }
 
   // Create CTAs for a bought-summary list item. Returns a container element
   // or null. This helper is idempotent and guarded by data-ssp-bought-cta so
@@ -898,7 +1130,20 @@
     } catch (e) { /* ignore overall */ }
   }
 
+  // Public entry point: run every remembered-purchase feature this file owns.
+  // Safe to call at any time and safe to call twice — every step is guarded.
+  function init(root) {
+    try { initBoughtSummary(root && root.querySelector ? root.querySelector('[data-bought-summary]') : null); } catch (e) { /* ignore */ }
+    try { initBoughtNote(root || null); } catch (e) { /* ignore */ }
+    try { initPaidBannerCtas(); } catch (e) { /* ignore */ }
+  }
+
   // Export the helpers so tools/check-plugin-exports.js and consumers can find them
+  P.init = init;
+  P.extractDownloadUrl = extractDownloadUrl;
+  P.extractReceiptUrl = extractReceiptUrl;
+  P.readBoughtArray = readBoughtArray;
+  P.createBoughtContactCta = createBoughtContactCta;
   P.initUrlOrderVerifyBanner = initUrlOrderVerifyBanner;
   P.initUrlOrderAutoVerify = initUrlOrderAutoVerify;
   P.initBoughtSummary = initBoughtSummary;
@@ -913,18 +1158,22 @@
   // call multiple times.
   try {
     if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { try { init(); } catch (e) { /* ignore */ } });
       document.addEventListener('DOMContentLoaded', initUrlOrderAutoVerify);
-      document.addEventListener('DOMContentLoaded', initPaidBannerCtas);
     } else {
       // DOM already ready
+      try { init(); } catch (e) { /* ignore */ }
       try { initUrlOrderAutoVerify(); } catch (e) { /* ignore */ }
-      try { initPaidBannerCtas(); } catch (e) { /* ignore */ }
     }
   } catch (e) { /* ignore */ }
 
-  // Also refresh CTAs when the group-store:paid event is emitted
+  // Also refresh CTAs when the group-store:paid event is emitted, and refresh
+  // the remembered-purchase note alongside them.
   try {
-    document.addEventListener('group-store:paid', function () { try { initPaidBannerCtas(); } catch (e) { /* ignore */ } });
+    document.addEventListener('group-store:paid', function () {
+      try { initPaidBannerCtas(); } catch (e) { /* ignore */ }
+      try { initBoughtNote(); } catch (e) { /* ignore */ }
+    });
   } catch (e) { /* ignore */ }
 
   // If there is a global order already (widget verified on inclusion), ensure CTAs are added
