@@ -53,7 +53,23 @@
         var contact = document.createElement('a');
         var subj = 'Buy ' + (it.name || 'product');
         contact.textContent = 'Contact to buy';
-        contact.href = 'mailto:support@soundshop.example?subject=' + encodeURIComponent(subj);
+
+        // Prefer a page-provided support href, otherwise fall back to /docs.html#support
+        var href = '';
+        try {
+          var pageHost = document.querySelector('[data-bought-summary]') || null;
+          if (pageHost && pageHost.getAttribute) href = (pageHost.getAttribute('data-bought-summary-support-href') || '').trim();
+        } catch (e) { href = ''; }
+        if (!href) href = '/docs.html#support';
+
+        try {
+          if (/^mailto:/i.test(href)) {
+            var hasQuery = href.indexOf('?') !== -1;
+            href = href + (hasQuery ? '&' : '?') + 'subject=' + encodeURIComponent(subj);
+          }
+        } catch (e) { /* ignore */ }
+
+        contact.href = href;
         contact.style.color = '#7c5cff';
         contact.style.textDecoration = 'none';
 
