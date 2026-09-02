@@ -135,5 +135,7 @@ items:
 # run: — how to run it. Yours to edit; VS Code's ▶ (the VSD8A extension) launches each entry.
 run:
   {
-    "site": { "cmd": "npx --yes serve -l 5003 .", "cwd": "site", "port": 5003 }
+    // The site, served by repository code only: tools/serve.js is zero-dependency
+    // Node 18+, so starting the box never downloads a package.
+    "web": { "cmd": "npm run web", "cwd": "", "port": 5003 }
   }

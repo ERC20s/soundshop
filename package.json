@@ -1,0 +1,17 @@
+{
+  "name": "soundshop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SOUNDSHOP — zero-build static site for a synth-plugin house. Scripts only: this package has no dependencies and installs nothing.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "web": "node tools/serve.js site 5003",
+    "dev": "node tools/serve.js site 5003",
+    "start": "node tools/serve.js site 5003",
+    "serve:root": "node tools/serve.js . 5003",
+    "check-links": "node tools/check-links.js"
+  }
+}

@@ -14,17 +14,32 @@ and a handful of vanilla-JS files loaded with `<script src>`.
 
 ## Quick start
 
-Serve **either** the repository root **or** `site/` over http — both layouts work:
+The repository serves itself. `tools/serve.js` is a zero-dependency Node 18+ static
+server and it is what the deployed site runs, so the same command works offline:
+
+```sh
+npm run web                   # → http://localhost:5003/  (serves site/ on port 5003)
+node tools/serve.js           # the same thing, without npm
+node tools/serve.js . 8000    # repository root as the web root, on port 8000
+```
+
+`npm run web` installs nothing: the root `package.json` is private and declares **no
+dependencies**, only scripts. Nothing in this repository ever fetches a package at run time.
+
+The deployed site starts from the same script: the `run:` block in the root `.d8a` file
+holds one entry, `"web": { "cmd": "npm run web", "cwd": "", "port": 5003 }`, and `web` is
+the entry the public site is proxied to.
+
+Any other static host works too — serve **either** the repository root **or** `site/`
+over http, both layouts are fine:
 
 ```sh
 # from the repository root  →  http://localhost:8000/site/index.html
 python -m http.server 8000
-npx serve .
 
 # from site/                →  http://localhost:8000/index.html
 cd site
 python -m http.server 8000
-npx serve .
 ```
 
 Then check the internal links:
@@ -42,6 +57,12 @@ the URL. Every same-directory relative reference on that page then resolves one 
 high, so the preset gallery 404s on its own JSON and the catalogue's links to
 `flagship.html` point at the wrong place. Any host is fine as long as it serves a
 directory index at `/dir/` or `/dir/index.html` rather than collapsing it to `/dir`.
+
+`tools/serve.js` follows that rule by construction: `/presets/` and `/presets/index.html`
+are both served from `site/presets/index.html`, and `/presets` (a real directory without
+the trailing slash) gets a `301` to `/presets/` so relative references keep resolving from
+the right level. It also refuses any path that would climb out of the served directory,
+so `../README.md` returns a plain `404`.
 
 ### The `file://` caveat
 
@@ -85,6 +106,8 @@ against `site/`. Nothing else in the repository uses absolute paths.
 
 ```
 README.md                          this file
+package.json                       private, zero dependencies, scripts only:
+                                   `npm run web` / `npm run dev` start tools/serve.js
 site/
   data/
     changelog.json                 release history for all four products, newest first
@@ -120,7 +143,10 @@ site/
       presets.js                   page script for presets/index.html (the gallery)
       changelog.js                 renderer for changelog.html
 tools/
+  serve.js                         zero-dependency static server — what the deployed
+                                   site runs (`node tools/serve.js [dir] [port]`)
   check-links.js                   zero-dependency internal link checker
+  check-*.js, test-*.js            the other repository checks, all Node 18+, no packages
 ```
 
 Every page loads `assets/style.css` in `<head>` and `assets/js/ui.js` before `</body>`;
@@ -259,7 +285,7 @@ that no page loads. Edit `site/data/changelog.json`.
 
 ## The link checker
 
-`tools/check-links.js` is the only tooling in the repository. Zero dependencies, Node 18+,
+`tools/check-links.js` is the main check in the repository. Zero dependencies, Node 18+,
 run it from anywhere in the tree:
 
 ```sh
