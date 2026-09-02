@@ -864,15 +864,18 @@
               container.appendChild(a2);
             }
 
-            // If neither download nor receipt is available, provide a Contact support link
-            if (!downloadUrl && !receiptUrl) {
-              var supportHref = '';
-              try {
-                var boughtHost = document.querySelector('[data-bought-summary]');
-                if (boughtHost && boughtHost.getAttribute) supportHref = boughtHost.getAttribute('data-bought-summary-support-href') || '';
-              } catch (e) { /* ignore */ }
-              if (!supportHref) supportHref = 'docs.html#support';
+            // If neither download nor receipt is available, provide a Contact support
+            // link — but only when the page declares where support lives. No path
+            // literal belongs in this file, so an absent attribute means no link.
+            var supportHref = '';
+            try {
+              var boughtHost = document.querySelector('[data-bought-summary]');
+              if (boughtHost && boughtHost.getAttribute) supportHref = boughtHost.getAttribute('data-bought-summary-support-href') || '';
+            } catch (e) { /* ignore */ }
+            if (typeof supportHref !== 'string') supportHref = '';
+            supportHref = supportHref.trim();
 
+            if (!downloadUrl && !receiptUrl && supportHref) {
               var sup = document.createElement('a');
               sup.className = 'paid-banner__support';
               sup.textContent = 'Contact support';
