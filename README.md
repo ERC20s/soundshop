@@ -27,10 +27,11 @@ python -m http.server 8000
 npx serve .
 ```
 
-Then check the internal links:
+Then run the checks — one command runs every script in `tools/`:
 
 ```sh
-node tools/check-links.js     # Node 18+, no packages, exits non-zero on a missing target
+node tools/check-all.js       # Node 18+, no packages, exits non-zero if any check fails
+node tools/check-links.js     # or run a single check on its own
 ```
 
 ### Directory indexes and "clean URLs"
@@ -120,7 +121,9 @@ site/
       presets.js                   page script for presets/index.html (the gallery)
       changelog.js                 renderer for changelog.html
 tools/
+  check-all.js                     runs every check-*.js / test-*.js below, one summary
   check-links.js                   zero-dependency internal link checker
+  check-*.js, test-*.js            the rest of the verification scripts (see "The checks")
 ```
 
 Every page loads `assets/style.css` in `<head>` and `assets/js/ui.js` before `</body>`;
@@ -257,14 +260,64 @@ that no page loads. Edit `site/data/changelog.json`.
 
 ---
 
-## The link checker
+## The checks
 
-`tools/check-links.js` is the only tooling in the repository. Zero dependencies, Node 18+,
-run it from anywhere in the tree:
+There is no build step and no `package.json`, so the checks are plain Node scripts in
+`tools/`. Zero dependencies, Node 18+, run from anywhere in the tree. One command runs
+them all:
 
 ```sh
-node tools/check-links.js
+node tools/check-all.js
 ```
+
+`tools/check-all.js` reads its own directory, picks up every `check-*.js` and `test-*.js`
+file except itself, runs each one in a child process from the repository root, prints a
+`PASS`/`FAIL` line per script, replays the output only of the ones that failed, and ends
+with a `N passed, M failed` summary. Any non-zero child exit is a failure — the scripts use
+`1` for findings and `2` for an internal error, and both are reported and named. It exits
+non-zero if anything failed. Adding a new `check-*.js` to `tools/` is enough for it to be
+run; there is no list to update.
+
+Any single check can still be run on its own, e.g. `node tools/check-links.js`.
+
+What each script guards (grouped; names are the files in `tools/`):
+
+| Script | What it guards |
+| --- | --- |
+| `check-links.js` | internal `href`/`src`/`fetch()`/CSS targets and JSON `links` objects resolve on disk |
+| `check-data-targets.js` | `data-demo-src`, `data-presets-src`, `data-src` targets exist |
+| `check-required-assets.js` | every page loads the shared assets (`assets/style.css`, `assets/js/ui.js`) |
+| `check-synth-order.js` | a page loads `assets/js/synth.js` before the page script that depends on it |
+| `check-no-external-assets.js` | no `http:`, `https:` or `//host` asset is referenced from `site/` |
+| `check-no-root-urls.js` | no site-facing URL literal starts at the server root |
+| `check-charset.js` | every HTML page under `site/` declares its charset |
+| `check-page-metadata.js` | every page carries its required metadata |
+| `check-skip-link.js` | every page has its skip link |
+| `check-duplicate-ids.js` | no HTML page repeats an `id` |
+| `check-inline-event-handlers.js` | no inline `on*=` handlers in markup |
+| `check-inline-js-sanity.js` | inline `<script>` blocks stay ES2020-and-no-modules |
+| `check-js-syntax.js` | every `.js` file parses, with no top-level `import`/`export` |
+| `check-json.js` | JSON under `site/` and `data/` parses |
+| `check-presets.js` | preset JSON under `site/presets/` is semantically valid |
+| `check-innerhtml.js` | site-facing `.innerHTML` assignments stay within the allowed shapes |
+| `check-innerhtml-safety.js` | literal HTML inserted into the DOM is safe |
+| `check-group-store-script.js` | the `group-store` script block is present where it belongs |
+| `check-payments-widget.js` | the shop widget still matches the canonical block in `.d8a` |
+| `check-store-placeholder.js` | the store placeholder markup is intact |
+| `check-store-uniqueness.js` | the store block appears once, on the canonical page |
+| `check-purchase-listener.js` | pages listen for the `group-store:paid` handshake |
+| `check-bought-on-shop.js` | `site/plugins/index.html` renders the bought state |
+| `check-bought-note.js` | product pages carry the bought note |
+| `check-bought-summary.js` | product pages carry the bought summary |
+| `check-plugin-bought-summary-api.js` | `plugin.js` still exposes the bought-summary API |
+| `check-plugin-exports.js` | `plugin.js` still exports the canonical `SSPlugin` helpers |
+| `test-create-bought-cta.js` | the `createBoughtCta` helper is present in `plugin.js` |
+
+If a check is failing on `main`, fix it or say so in the pull request — do not delete or
+silence it.
+
+The rest of this section is about `check-links.js` specifically, because it is the one with
+rules you have to write code around.
 
 It walks every `.html`, `.js` and `.css` file under `site/` and collects:
 
