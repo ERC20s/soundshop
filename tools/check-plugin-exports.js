@@ -54,6 +54,40 @@ helpers.forEach(function (name) {
 // Also ensure the runtime-friendly function definitions exist (conservative)
 check('function definitions', /function\s+extractDownloadUrl\s*\(|function\s+readBoughtArray\s*\(|function\s+maskEmail\s*\(|function\s+createBoughtCta\s*\(|function\s+initUrlOrderVerifyBanner\s*\(/, 'expected named function definitions for the helpers');
 
+// Every helper the file exports must exist. `P.<name> = <name>;` for a name
+// that is never defined throws a ReferenceError at the export line, the IIFE
+// aborts and window.SSPlugin stays empty on every page that loads the script,
+// so this is a hard failure rather than a warning.
+var exported = [];
+var seen = Object.create(null);
+var exportRE = /\bP\.([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*;/g;
+var m;
+while ((m = exportRE.exec(src)) !== null) {
+  var key = m[2];
+  if (seen[key]) continue;
+  seen[key] = true;
+  exported.push({ prop: m[1], name: key });
+}
+
+if (!exported.length) {
+  errors.push('no P.<name> = <name> exports found: expected site/assets/js/plugin.js to export its helpers on the SSPlugin object');
+} else {
+  ok('found ' + exported.length + ' exported symbol(s) to resolve');
+  exported.forEach(function (e) {
+    var defined =
+      new RegExp('function\\s+' + e.name + '\\s*\\(').test(src) ||
+      new RegExp('\\bvar\\s+' + e.name + '\\s*=').test(src) ||
+      new RegExp('\\b(?:const|let)\\s+' + e.name + '\\s*=').test(src);
+    if (defined) {
+      ok('P.' + e.prop + ' resolves to a definition of ' + e.name);
+    } else {
+      errors.push('P.' + e.prop + ' = ' + e.name +
+        ' but no "function ' + e.name + '(" (or var/let/const ' + e.name +
+        ') is defined in site/assets/js/plugin.js — this throws a ReferenceError and leaves window.SSPlugin empty');
+    }
+  });
+}
+
 // Report
 if (errors.length) {
   console.error('\nStatic check failed with ' + errors.length + ' problem(s):\n');
