@@ -32,6 +32,49 @@
           data-bought-label-anvil="ANVIL"
           data-bought-label-bundle="Full Shop bundle"></span>
   </div>
+
+  <!-- Group-store placeholder and local shim: a conservative, non-overriding
+       fallback used only in local development and CI when the real d8a widget
+       has not loaded. It defines window.groupStoreVerify if missing and emits
+       the "group-store:paid" event when a dev-prefixed ?d8a_order= id is used. -->
+  <div id="group-store"></div>
+  <script>
+  (function () {
+    // Do not overwrite an existing implementation provided by the real widget.
+    if (typeof window.groupStoreVerify === 'function') return;
+
+    // A tiny shim: only recognises developer test ids that start with "dev-".
+    function localVerify(id) {
+      return new Promise(function (resolve) {
+        try {
+          var s = String(id || '');
+          if (s.indexOf('dev-') === 0) {
+            // Minimal mock order object the page expects. Keep conservative.
+            resolve({ id: s, itemName: 'DEV-ORDER', quantity: 1, downloadUrl: '', receiptUrl: '', buyerEmail: '' });
+          } else {
+            resolve(null);
+          }
+        } catch (e) { resolve(null); }
+      });
+    }
+
+    window.groupStoreVerify = localVerify;
+
+    // If we were returned from checkout with ?d8a_order=<id>, attempt verify.
+    var m = location.search.match(/[?&]d8a_order=([^&]+)/);
+    if (m && m[1]) {
+      var id = decodeURIComponent(m[1]);
+      try {
+        window.groupStoreVerify(id).then(function (o) {
+          if (!o) return;
+          window.groupStorePaid = o;
+          // Emit the canonical event string the app listens for.
+          document.dispatchEvent(new CustomEvent("group-store:paid", { detail: o }));
+        }).catch(function () { /* ignore */ });
+      } catch (e) { /* ignore */ }
+    }
+  })();
+  </script>
 </main>
 <script src="../assets/js/plugin.js"></script>
 </body>
