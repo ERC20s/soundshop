@@ -1,0 +1,37 @@
+[
+  {
+    "id": "vanta",
+    "name": "VANTA",
+    "price": "$149.00",
+    "description": "Flagship eight-voice synth: two oscillators per voice, a resonant ladder filter and a 24-slot modulation matrix. Playable in-browser demo, presets and full docs included.",
+    "page": "./flagship.html"
+  },
+  {
+    "id": "drift",
+    "name": "DRIFT",
+    "price": "$79.00",
+    "description": "Tape delay with correlated wow and flutter, head-gap loss on repeats and a record path that saturates before it distorts.",
+    "page": "./drift.html"
+  },
+  {
+    "id": "prism",
+    "name": "PRISM",
+    "price": "$69.00",
+    "description": "Four spectral bands you can move, tilt and resonate independently. Public beta — the 1.0 release is a free update.",
+    "page": "./prism.html"
+  },
+  {
+    "id": "anvil",
+    "name": "ANVIL",
+    "price": "$89.00",
+    "description": "Transient shaping and bus compression in one signal path, with saturation after the gain element. Version 2.0.1.",
+    "page": "./anvil.html"
+  },
+  {
+    "id": "bundle",
+    "name": "The Full Shop",
+    "price": "$299.00",
+    "description": "All four plugins in every format we ship, on one licence file for three machines. Bought separately they come to $386.",
+    "page": "./index.html"
+  }
+]
