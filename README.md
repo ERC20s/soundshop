@@ -27,11 +27,30 @@ python -m http.server 8000
 npm run web
 ```
 
-Then check the internal links:
+## Checks
+
+Every guard in `tools/` runs from one command:
 
 ```sh
-node tools/check-links.js     # Node 18+, no packages, exits non-zero on a missing target
+npm test                      # Node 18+, no packages, exits non-zero if any check fails
 ```
+
+`npm test` runs `tools/run-checks.js`, which discovers every `tools/check-*.js` and
+`tools/test-*.js` file (the runner itself and the server `tools/serve.js` excluded), sorts
+them by name and runs each in its own Node process from the repository root. It prints
+`PASS`/`FAIL` per script, replays the stdout/stderr of anything that failed, and ends with a
+line like `run-checks: 30 passed, 0 failed (30 script(s), 6.2s)`.
+
+```sh
+node tools/run-checks.js --list          # what would run, runs nothing (also: npm run test:list)
+node tools/run-checks.js --only charset  # only scripts whose filename contains "charset"
+node tools/check-links.js                # any single guard still runs on its own
+```
+
+Every guard follows the same shape and new ones are picked up with no wiring: zero
+dependencies, no arguments, repository-root-relative paths, a one-line summary on success,
+and exit 0 on pass / non-zero on failure. Name a new one `tools/check-*.js` (a static rule)
+or `tools/test-*.js` (a behavioural test) and `npm test` will run it.
 
 ### Directory indexes and "clean URLs"
 
@@ -119,7 +138,14 @@ site/
       presets.js                   page script for presets/index.html (the gallery)
       changelog.js                 renderer for changelog.html
 tools/
+  run-checks.js                    runs every check-*.js and test-*.js below (npm test)
+  serve.js                         zero-dependency static server (npm run web)
   check-links.js                   zero-dependency internal link checker
+  check-*.js                       one static guard each — charset, JSON, JS syntax,
+                                   external assets, root-relative URLs, presets,
+                                   payments widget, store placeholder, and more
+  test-*.js                        behavioural tests — serve.js, the bought CTA,
+                                   the verified-order shape
 ```
 
 Every page loads `assets/style.css` in `<head>` and `assets/js/ui.js` before `</body>`;
