@@ -142,8 +142,12 @@ tools/
   serve.js                         zero-dependency static server (npm run web)
   check-links.js                   zero-dependency internal link checker
   check-store-prices.js            .d8a items:, site/data/items.json and the homepage
-                                   card/bundle prices must agree; the advertised
-                                   bundle saving must equal the real difference
+                                   card/bundle prices must agree; item descriptions
+                                   shared by .d8a and items.json must match word for
+                                   word; every items: line must be whole (no
+                                   mid-sentence cut) and under 300 characters; the
+                                   advertised bundle saving must equal the real
+                                   difference
   check-*.js                       one static guard each — charset, JSON, JS syntax,
                                    external assets, root-relative URLs, presets,
                                    payments widget, store placeholder, and more

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * tools/check-store-prices.js — keep every price the shop shows in agreement.
+ * tools/check-store-prices.js — keep every price AND every item description the
+ * shop shows in agreement.
  *
  * Three places state what things cost:
  *   - the root .d8a `items:` block (the source of truth: the platform reads it
@@ -15,7 +16,13 @@
  *      name (compared numerically, so "$149" and "$149.00" agree),
  *   3. the bundle price shown on the homepage matches the .d8a bundle price,
  *   4. the advertised "Save $N" figure equals the sum of the non-bundle .d8a
- *      prices minus the bundle price.
+ *      prices minus the bundle price,
+ *   5. every name present in BOTH .d8a items: and site/data/items.json carries
+ *      the same description (whitespace-normalised), so the platform's own item
+ *      list never advertises different words from the site,
+ *   6. every .d8a items: line stays inside the 300-character limit the platform
+ *      enforces, and no description stops mid-sentence (a truncated line used to
+ *      pass unnoticed because only the price was ever read).
  *
  * It only READS .d8a; it never edits it. Zero dependencies, Node 18+.
  *
@@ -61,10 +68,31 @@ function money(n) {
   return '$' + n.toFixed(2);
 }
 
+/** Collapse runs of whitespace so wrapping/indentation never counts as drift. */
+function normText(s) {
+  return String(s === null || s === undefined ? '' : s).replace(/\s+/g, ' ').trim();
+}
+
+/** The platform's own ceiling for one `items:` line. */
+const MAX_ITEM_LINE = 300;
+
+/**
+ * A finished sentence ends in terminal punctuation (optionally closed by a
+ * bracket or quote). "…demo, p" does not, which is exactly the shape that
+ * shipped a half-written flagship blurb.
+ */
+function looksFinished(description) {
+  return /[.!?…][)"'”’]?$/.test(description.trim());
+}
+
 /**
  * The `items:` block of .d8a: a column-0 `items:` key, then two-space indented
  * lines of the form `Name = $12.00 — description`. The block ends at the next
  * column-0 `key:` line; `#` comments are skipped.
+ *
+ * Returns Map<name, { price, description, length }>. The description is
+ * everything after the FIRST dash separator that follows the price, so a dash
+ * inside the sentence ("Public beta — the 1.0 release…") is kept intact.
  */
 function parseD8aItems(text) {
   const lines = text.split(/\r?\n/);
@@ -83,12 +111,14 @@ function parseD8aItems(text) {
     if (eq === -1) { fail('.d8a items: line is not `Name = $0.00 — text`: ' + line); continue; }
     const name = line.slice(0, eq).trim();
     const rest = line.slice(eq + 1).trim();
-    const priceText = rest.split(/\s+[—-]\s+/)[0].trim();
+    const sep = rest.match(/\s+[—–-]\s+/);
+    const priceText = (sep ? rest.slice(0, sep.index) : rest).trim();
+    const description = sep ? rest.slice(sep.index + sep[0].length).trim() : '';
     const value = toNumber(priceText);
     if (!name) { fail('.d8a items: line has no name: ' + line); continue; }
     if (value === null) { fail('.d8a items: line has no readable price: ' + line); continue; }
     if (items.has(name)) { fail('.d8a items: lists "' + name + '" more than once'); continue; }
-    items.set(name, value);
+    items.set(name, { price: value, description: description, length: raw.length });
   }
 
   if (!inBlock) fail('.d8a has no `items:` block — the shop would be paused.');
@@ -144,9 +174,21 @@ function main() {
         continue;
       }
       const truth = d8aItems.get(name);
-      if (local !== truth) {
+      if (local !== truth.price) {
         fail('price drift for "' + name + '": site/data/items.json says ' + money(local) +
-          ', .d8a says ' + money(truth) + '.');
+          ', .d8a says ' + money(truth.price) + '.');
+      }
+
+      // ---- 5. the words, not just the number ------------------------------
+      const localText = normText(entry.description);
+      const truthText = normText(truth.description);
+      if (localText && truthText && localText !== truthText) {
+        fail('description drift for "' + name + '":\n' +
+          '      .d8a               : ' + truthText + '\n' +
+          '      site/data/items.json: ' + localText);
+      } else if (localText && !truthText) {
+        fail('description drift for "' + name + '": site/data/items.json describes it but the ' +
+          '.d8a items: line carries no description, so the platform lists a bare name.');
       }
     }
   }
@@ -168,14 +210,26 @@ function main() {
       continue;
     }
     const truth = d8aItems.get(card.name);
-    if (card.price !== truth) {
+    if (card.price !== truth.price) {
       fail('price drift for "' + card.name + '": site/index.html shows ' + card.priceText +
-        ', .d8a says ' + money(truth) + '.');
+        ', .d8a says ' + money(truth.price) + '.');
+    }
+  }
+
+  // ---- 6. every .d8a items: line is a whole, legal line --------------------
+  for (const [name, item] of d8aItems) {
+    if (item.length > MAX_ITEM_LINE) {
+      fail('.d8a items: line for "' + name + '" is ' + item.length + ' characters — the platform ' +
+        'skips any line over ' + MAX_ITEM_LINE + ', which would PAUSE that product.');
+    }
+    if (item.description && !looksFinished(item.description)) {
+      fail('.d8a items: description for "' + name + '" stops mid-sentence: "…' +
+        item.description.slice(-40) + '". Restore the full sentence (site/data/items.json has it).');
     }
   }
 
   // ---- 3 & 4. the bundle block -------------------------------------------
-  const bundleTruth = d8aItems.has(BUNDLE_NAME) ? d8aItems.get(BUNDLE_NAME) : null;
+  const bundleTruth = d8aItems.has(BUNDLE_NAME) ? d8aItems.get(BUNDLE_NAME).price : null;
   if (bundleTruth === null) {
     fail('.d8a items: has no "' + BUNDLE_NAME + '" row, so the homepage bundle block ' +
       'cannot be checked against it.');
@@ -203,9 +257,9 @@ function main() {
       'has the copy changed? The saving must stay checkable.');
   } else if (bundleTruth !== null) {
     let separately = 0;
-    for (const [name, value] of d8aItems) {
+    for (const [name, item] of d8aItems) {
       if (name === BUNDLE_NAME) continue;
-      separately += value;
+      separately += item.price;
     }
     const expected = separately - bundleTruth;
     const shownSaving = toNumber(savingMatch[1]);
@@ -217,16 +271,17 @@ function main() {
   }
 
   if (problems.length) {
-    console.error('check-store-prices: FAILED — prices do not agree.\n');
+    console.error('check-store-prices: FAILED — the shop does not agree with itself.\n');
     for (const p of problems) console.error('  - ' + p);
-    console.error('\nThe .d8a items: block is the source of truth: fix the page or ' +
-      'site/data/items.json to match it (or change .d8a items: deliberately, in the same change).');
+    console.error('\nThe .d8a items: block is the source of truth for price AND wording: fix the ' +
+      'page or site/data/items.json to match it (or change .d8a items: deliberately, in the same change).');
     process.exit(1);
   }
 
   console.log('check-store-prices: OK — ' + d8aItems.size + ' item(s) in .d8a, ' +
     (itemsJson ? itemsJson.length : 0) + ' in site/data/items.json and ' + cards.length +
-    ' homepage card(s) all agree, and the advertised bundle saving adds up.');
+    ' homepage card(s) all agree on price and wording, every items: line is whole and inside ' +
+    MAX_ITEM_LINE + ' characters, and the advertised bundle saving adds up.');
 }
 
 if (require.main === module) main();
