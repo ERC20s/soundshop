@@ -98,6 +98,14 @@ use a leading `/` to mean "relative to `site/`". `site/assets/js/changelog.js` s
 slash at render time to produce a page-relative URL, and `tools/check-links.js` resolves it
 against `site/`. Nothing else in the repository uses absolute paths.
 
+The counterpart trap is a link that is relative to the *wrong* directory. Every page under
+`site/plugins/` carries the returned-from-checkout note, whose block declares
+`data-bought-summary-support-href="../docs.html#support"`; the prose link to Support inside
+that block must use the same value, because a bare `docs.html#support` resolves to
+`site/plugins/docs.html`, which does not exist. `tools/check-bought-summary.js` enforces
+that: inside a `data-bought-summary` element, any `href` ending in `docs.html#support` must
+equal the element's own `data-bought-summary-support-href`, reported as `file:line`.
+
 ---
 
 ## File map
