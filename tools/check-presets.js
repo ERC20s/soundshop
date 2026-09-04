@@ -11,10 +11,18 @@
  *  - require each preset object to have a non-empty string id and name;
  *  - ensure preset ids are unique across all scanned files;
  *  - ensure preset.params, if present, is an object (not an array);
- *  - attempt to derive allowed parameter names from site/assets/js/synth.js by
- *    scanning for R('name', ...) and E('name', ...) calls; when available,
+ *  - attempt to derive the parameter contract from site/assets/js/synth.js by
+ *    scanning for R('name', label, group, min, max, ...) and
+ *    E('name', label, group, options, ...) calls; when available,
  *    validate that every key in params is one of those names; if extraction
  *    fails, skip param-name validation and print a warning;
+ *  - validate VALUES against that same contract: a range parameter must carry a
+ *    finite number inside [min, max], an enum parameter must carry one of the
+ *    strings the spec lists. The engine hides these mistakes at runtime —
+ *    coerce() clamps numbers with clamp(n, spec.min, spec.max) and returns null
+ *    for an unknown enum string, in which case loadPreset falls back to the
+ *    factory default — so a preset card can advertise a value the synth never
+ *    plays. This check makes that a build error instead;
  *  - print file:line information for issues and exit with code 1 on any error.
  */
 
@@ -67,6 +75,107 @@ function extractParamNamesFromSynth(synthText) {
   return names;
 }
 
+/* ---- parameter contract (ranges + enum options) --------------------------
+ * synth.js builds PARAM_SPEC from two tiny factories:
+ *   R(name, label, group, min, max, step, def, unit, curve)
+ *   E(name, label, group, options, optionLabels, def)
+ * so min/max and the option list can be read straight off those calls. Enum
+ * option lists are usually named constants (WAVES, LFO_WAVES, ...), which are
+ * resolved from their `var NAME = ['a', 'b'];` declarations; an inline array
+ * literal works too. Anything that cannot be resolved is simply left
+ * unvalidated rather than reported as a failure.
+ */
+
+function stringLiteralsIn(src) {
+  const out = [];
+  const re = /(['"])((?:\\.|(?!\1)[^\\])*)\1/g;
+  let m;
+  while ((m = re.exec(src)) !== null) out.push(m[2]);
+  return out;
+}
+
+function extractArrayConstants(text) {
+  const consts = Object.create(null);
+  const re = /\b(?:var|const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*\[([^\]]*)\]/g;
+  let m;
+  while ((m = re.exec(text)) !== null) consts[m[1]] = stringLiteralsIn(m[2]);
+  return consts;
+}
+
+const NUM = '-?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?';
+const STR = '(?:\'[^\']*\'|"[^"]*")';
+
+function extractParamSpecsFromSynth(synthText) {
+  if (!synthText || typeof synthText !== 'string') return null;
+  const consts = extractArrayConstants(synthText);
+  const specs = new Map();
+  let m;
+
+  // R('name', 'Label', 'group', min, max, ...)
+  const rRe = new RegExp(
+    '\\bR\\s*\\(\\s*(' + STR + ')\\s*,\\s*' + STR + '\\s*,\\s*' + STR +
+    '\\s*,\\s*(' + NUM + ')\\s*,\\s*(' + NUM + ')\\s*,', 'g'
+  );
+  while ((m = rRe.exec(synthText)) !== null) {
+    const name = m[1].slice(1, -1);
+    const min = parseFloat(m[2]);
+    const max = parseFloat(m[3]);
+    if (!name || !isFinite(min) || !isFinite(max) || min > max) continue;
+    specs.set(name, { type: 'range', min: min, max: max });
+  }
+
+  // E('name', 'Label', 'group', OPTIONS_OR_ARRAY, ...)
+  const eRe = new RegExp(
+    '\\bE\\s*\\(\\s*(' + STR + ')\\s*,\\s*' + STR + '\\s*,\\s*' + STR +
+    '\\s*,\\s*(\\[[^\\]]*\\]|[A-Za-z_$][\\w$]*)\\s*,', 'g'
+  );
+  while ((m = eRe.exec(synthText)) !== null) {
+    const name = m[1].slice(1, -1);
+    if (!name) continue;
+    const raw = m[2];
+    const options = raw.charAt(0) === '['
+      ? stringLiteralsIn(raw)
+      : (consts[raw] || null);
+    if (!options || !options.length) continue;  // unresolved: name only
+    specs.set(name, { type: 'enum', options: options.slice() });
+  }
+
+  return specs.size ? specs : null;
+}
+
+/* Mirrors what SSSynth.coerce() would accept for a range parameter: a finite
+   number, or a string that parses as one. Returns null when the value could
+   never be read as a number at all. */
+function asNumber(value) {
+  if (typeof value === 'number') return isFinite(value) ? value : null;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = parseFloat(value);
+    return isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function checkParamValue(spec, value) {
+  if (!spec) return null;
+  if (spec.type === 'enum') {
+    if (typeof value !== 'string' || spec.options.indexOf(value) < 0) {
+      return 'value ' + JSON.stringify(value) + ' is not one of [' +
+        spec.options.join(', ') + '] — the engine would ignore it and use the default';
+    }
+    return null;
+  }
+  const n = asNumber(value);
+  if (n === null) {
+    return 'value ' + JSON.stringify(value) + ' is not a number (expected ' +
+      spec.min + '..' + spec.max + ')';
+  }
+  if (n < spec.min || n > spec.max) {
+    return 'value ' + n + ' is out of range ' + spec.min + '..' + spec.max +
+      ' — the engine would clamp it, so the preset would not sound as listed';
+  }
+  return null;
+}
+
 function reportError(errs, file, line, msg) {
   errs.push({ file, line, msg });
 }
@@ -95,9 +204,13 @@ function main() {
     return;
   }
 
-  // attempt to extract parameter names from synth.js
+  // attempt to extract the parameter contract from synth.js
   const synthText = safeReadUtf8(SYNTH_JS);
   const allowedParams = extractParamNamesFromSynth(synthText);
+  const paramSpecs = extractParamSpecsFromSynth(synthText);
+  if (allowedParams && !paramSpecs) {
+    console.error('check-presets: warning: failed to extract parameter ranges/options from ' + rel(SYNTH_JS) + ', skipping value validation.');
+  }
   if (!allowedParams) {
     if (!synthText) {
       console.error('check-presets: warning: could not read ' + rel(SYNTH_JS) + ', skipping param-name validation.');
@@ -179,6 +292,14 @@ function main() {
           for (const k of Object.keys(p)) {
             if (!allowedParams.has(k)) {
               reportError(errors, file, line, base + '.params contains unknown key "' + k + '"');
+              continue;
+            }
+            if (!paramSpecs) continue;
+            const spec = paramSpecs.get(k);
+            if (!spec) continue;   // name known, contract not resolvable: leave it alone
+            const problem = checkParamValue(spec, p[k]);
+            if (problem) {
+              reportError(errors, file, line, base + '.params."' + k + '" ' + problem);
             }
           }
         }
@@ -194,6 +315,9 @@ function main() {
   }
 
   console.log('check-presets: OK. Scanned ' + files.length + ' file(s). Found ' + totalEntries + ' preset(s).');
+  if (paramSpecs) {
+    console.log('check-presets: validated parameter values against ' + paramSpecs.size + ' spec(s) from ' + rel(SYNTH_JS) + '.');
+  }
   if (!allowedParams) console.log('check-presets: note: parameter-name validation was skipped due to inability to extract names from ' + rel(SYNTH_JS) + '.');
   process.exitCode = 0;
 }

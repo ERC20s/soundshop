@@ -231,10 +231,14 @@ this shape:
 - `id` must be unique — the gallery uses it for the URL hash so a preset can be linked to.
 - `category` and `tags` drive the gallery's filters. Reuse an existing category if one
   fits; a new one appears in the filter bar automatically.
-- Every key in `params` must be a `name` from `PARAM_SPEC`. Unknown keys are ignored and
-  out-of-range values are rejected rather than clamped, so a typo fails silently — check a
-  new preset by auditioning it in the gallery.
-- `params` may be partial. Keys you leave out keep whatever the engine currently has.
+- Every key in `params` must be a `name` from `PARAM_SPEC`. At runtime the engine hides
+  mistakes: an unknown key is ignored, a number outside the spec is clamped to `min`/`max`,
+  and an unknown enum string falls back to the factory default — so the card can list a
+  value the synth never plays. `tools/check-presets.js` (run by `npm test`) now reads the
+  `R(...)` and `E(...)` lines of `PARAM_SPEC` and fails the build on an out-of-range number
+  or an enum value that is not in its option list.
+- `params` may be partial, but loading a preset is total recall: any key you leave out
+  snaps back to its `PARAM_SPEC` default rather than keeping the current value.
 
 The quickest way to author one: open the demo, build the sound, and copy the parameter
 snapshot out of it rather than hand-writing forty numbers.
