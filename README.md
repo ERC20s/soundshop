@@ -190,8 +190,14 @@ The rest of the loop:
 - `getWaveform()`, `getSpectrum()`, `getLevel()` and `getVoiceStates()` feed the scope,
   the spectrum, the meter and the voice LEDs from one `requestAnimationFrame` loop.
 - `SSSynth.loadPreset(obj)` takes either a flat `{param: value}` map or a wrapper object
-  with a `params` key, applies only the keys it recognises, and leaves everything else
-  where it was. Partial presets are legal.
+  with a `params` key and performs a **total recall**: it starts from `getDefaults()`,
+  overlays the keys it recognises (unknown or uncoercible ones are ignored) and returns
+  every parameter the patch does *not* name to its factory default. Partial presets are
+  legal and always sound the same, whatever was loaded — or turned — before them.
+  `SSSynth.loadPreset(obj, { merge: true })` keeps the older additive behaviour and
+  overlays the patch on the current state. `on('param', …)` fires only for parameters
+  whose value actually changed; `on('preset', …)` fires once per load.
+  `tools/test-preset-recall.js` guards this behaviour.
 
 `site/index.html` uses the same engine for its inline mini-instrument, and
 `site/presets/index.html` uses it to audition a preset from the gallery. There is one

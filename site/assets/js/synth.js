@@ -912,25 +912,48 @@
     return out;
   }
 
-  function loadPreset(obj) {
+  /* Total recall. A preset is a whole patch, not a diff: loading one starts
+     from the factory defaults and overlays the values the patch names, so a
+     parameter the patch does NOT name goes back to its default instead of
+     keeping whatever the previous preset — or a knob the visitor moved — left
+     behind. Without this, moving Osc 2 Level to zero and then choosing another
+     preset leaves the oscillator silent, because most patches never mention it.
+
+     loadPreset(obj, { merge: true }) keeps the old additive behaviour for a
+     caller that really does want to overlay a partial patch on what is there.
+
+     'param' fires only for parameters whose value actually changed, so the
+     demo's control sync and section LEDs see exactly the moves that happened. */
+  function loadPreset(obj, opts) {
     if (!obj || typeof obj !== 'object') return API;
-    var applied = {};
+    var merge = !!(opts && opts.merge);
     var src = obj.params && typeof obj.params === 'object' ? obj.params : obj;
+
+    var next = merge ? getParams() : getDefaults();
+    var applied = {};
     for (var k in src) {
       if (!Object.prototype.hasOwnProperty.call(src, k)) continue;
       var spec = SPEC_BY_NAME[k];
       if (!spec) continue;
       var val = coerce(spec, src[k]);
-      if (val === null) continue;
-      P[k] = val;
+      if (val === null) continue;   // unknown or uncoercible: ignored, as before
+      next[k] = val;
       applied[k] = val;
     }
+
+    var changed = [];
+    for (var n in next) {
+      if (!Object.prototype.hasOwnProperty.call(next, n)) continue;
+      if (!SPEC_BY_NAME[n]) continue;
+      if (P[n] === next[n]) continue;
+      P[n] = next[n];
+      changed.push(n);
+    }
+
     if (built) applyAll();
-    emit('preset', { applied: applied, params: getParams() });
-    for (var n in applied) {
-      if (Object.prototype.hasOwnProperty.call(applied, n)) {
-        emit('param', { name: n, value: applied[n], spec: SPEC_BY_NAME[n] });
-      }
+    emit('preset', { applied: applied, params: getParams(), merge: merge });
+    for (var c = 0; c < changed.length; c++) {
+      emit('param', { name: changed[c], value: P[changed[c]], spec: SPEC_BY_NAME[changed[c]] });
     }
     return API;
   }
