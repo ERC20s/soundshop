@@ -141,6 +141,9 @@ tools/
   run-checks.js                    runs every check-*.js and test-*.js below (npm test)
   serve.js                         zero-dependency static server (npm run web)
   check-links.js                   zero-dependency internal link checker
+  check-store-prices.js            .d8a items:, site/data/items.json and the homepage
+                                   card/bundle prices must agree; the advertised
+                                   bundle saving must equal the real difference
   check-*.js                       one static guard each — charset, JSON, JS syntax,
                                    external assets, root-relative URLs, presets,
                                    payments widget, store placeholder, and more
