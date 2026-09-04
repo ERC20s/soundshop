@@ -314,6 +314,12 @@
       startTime: 0,
       offTime: 0,
       gen: 0,
+      source: 'key',
+      pendingOff: null,
+      // Note-event bookkeeping: listeners count events, not voices, so every
+      // 'noteon' this voice emitted must be closed by exactly one 'noteoff'.
+      onEmitted: false,   // the 'noteon' for v.midi has actually been emitted
+      offEmitted: true,   // ...and its 'noteoff' has been emitted (nothing owed)
       timer: null,
       lastFreq: 0,
       drift: (Math.random() * 2 - 1) * 3.2
@@ -703,6 +709,53 @@
     v.lastFreq = f;
   }
 
+  // Fire an event at the moment the note is actually heard rather than when it
+  // was scheduled: arpeggiator steps are queued up to SCHEDULE_AHEAD early.
+  function emitAt(evt, data, t) {
+    var lead = (t - now()) * 1000;
+    if (lead > 5) setTimeout(function () { emit(evt, data); }, lead);
+    else emit(evt, data);
+  }
+
+  /* Close the note a voice is still holding.
+     A voice about to be re-used still owes a 'noteoff' for whatever it was
+     playing: the pending timer scheduled in releaseVoice() is cancelled by the
+     v.gen++ in triggerVoice(), and a stolen (still gated) voice never had one
+     at all. Listeners count events, not voices — see markNote() in
+     site/assets/js/demo.js — so without this the key stays lit until panic or
+     a reload. Emitting here keeps every 'noteon' matched by one 'noteoff'.
+     Nothing is emitted for a voice whose own 'noteon' has not fired yet: that
+     pending emit is cancelled by the same generation bump. */
+  function closeVoiceNote(v, t) {
+    if (!v || !v.active || v.midi < 0) return;
+    if (!v.onEmitted || v.offEmitted) return;
+    var midi = v.midi;
+    v.offEmitted = true;
+    if (v.source === 'arp') {
+      var ai = arpSounding.indexOf(midi);
+      if (ai >= 0) arpSounding.splice(ai, 1);
+    }
+    emitAt('noteoff', { midi: midi, time: t, source: 'steal' }, t);
+  }
+
+  /* A note released before its own scheduled 'noteon' was reached (an
+     arpeggiator step is queued up to SCHEDULE_AHEAD early, and stopArp() /
+     noteOff() can release it in between) parks its 'noteoff' here so it is
+     emitted right after the 'noteon' instead of ahead of it. Out of order, the
+     UI counter would be left at +1 and the key would stick. */
+  function flushPendingOff(v) {
+    var p = v.pendingOff;
+    if (!p) return;
+    v.pendingOff = null;
+    if (v.offEmitted) return;
+    v.offEmitted = true;
+    if (p.source === 'arp') {
+      var i = arpSounding.indexOf(p.midi);
+      if (i >= 0) arpSounding.splice(i, 1);
+    }
+    emit('noteoff', { midi: p.midi, time: p.time, source: p.source });
+  }
+
   function triggerVoice(midi, vel, time, source) {
     var t = at(time);
     var src = source || 'key';
@@ -711,9 +764,18 @@
     // always take a fresh voice so the previous step can finish its tail.
     var v = (src === 'arp' ? null : findByMidi(midi)) || allocate();
 
+    // Stolen voice, or a legato retrigger of a voice that is still gated:
+    // release the note it was playing before the generation bump below drops
+    // its pending 'noteoff'.
+    closeVoiceNote(v, t);
+
     v.gen++;
     if (v.timer) { clearTimeout(v.timer); v.timer = null; }
 
+    v.onEmitted = false;
+    v.offEmitted = false;
+    v.pendingOff = null;
+    v.source = src;
     v.midi = midi;
     v.vel = vel;
     v.gate = true;
@@ -739,10 +801,17 @@
     var lead = (t - now()) * 1000;
     if (lead > 5) {
       (function (voice, gen) {
-        setTimeout(function () { if (voice.gen === gen) emit('noteon', ev); }, lead);
+        setTimeout(function () {
+          if (voice.gen !== gen) return;   // stolen before it was ever heard
+          voice.onEmitted = true;
+          emit('noteon', ev);
+          flushPendingOff(voice);
+        }, lead);
       })(v, v.gen);
     } else {
+      v.onEmitted = true;
       emit('noteon', ev);
+      flushPendingOff(v);
     }
     return v;
   }
@@ -765,7 +834,15 @@
     if (v.timer) { clearTimeout(v.timer); v.timer = null; }
 
     setTimeout(function () {
-      if (v.gen !== myGen) return;
+      if (v.gen !== myGen) return;   // re-used: closeVoiceNote() already closed it
+      if (v.offEmitted) return;
+      if (!v.onEmitted) {
+        // The 'noteon' for this note is still queued: park the 'noteoff' so it
+        // cannot overtake it (flushPendingOff runs the moment the note sounds).
+        v.pendingOff = { midi: midi, time: t, source: src };
+        return;
+      }
+      v.offEmitted = true;
       if (src === 'arp') {
         var i = arpSounding.indexOf(midi);
         if (i >= 0) arpSounding.splice(i, 1);
@@ -1032,7 +1109,15 @@
     var stopped = [];
     for (var i = 0; i < voices.length; i++) {
       var v = voices[i];
-      if (v.active && v.midi >= 0 && stopped.indexOf(v.midi) < 0) stopped.push(v.midi);
+      /* One 'noteoff' per note that is still owed one — a voice whose release
+         already emitted it is skipped, and a voice whose 'noteon' never fired
+         (the generation bump below cancels it) needs none. */
+      if (v.active && v.midi >= 0 && v.onEmitted && !v.offEmitted) {
+        v.offEmitted = true;
+        stopped.push(v.midi);
+      }
+      v.pendingOff = null;
+      v.onEmitted = false;
       v.gen++;
       if (v.timer) { clearTimeout(v.timer); v.timer = null; }
       anchor(v.vca.gain, t);

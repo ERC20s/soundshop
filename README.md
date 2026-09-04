@@ -147,8 +147,11 @@ tools/
   check-*.js                       one static guard each — charset, JSON, JS syntax,
                                    external assets, root-relative URLs, presets,
                                    payments widget, store placeholder, and more
+  test-voice-steal.js              runs the engine headless against a stub
+                                   AudioContext: every noteon must be closed by
+                                   exactly one noteoff, even when voices are stolen
   test-*.js                        behavioural tests — serve.js, the bought CTA,
-                                   the verified-order shape
+                                   the verified-order shape, preset recall
 ```
 
 Every page loads `assets/style.css` in `<head>` and `assets/js/ui.js` before `</body>`;
@@ -198,6 +201,14 @@ The rest of the loop:
   overlays the patch on the current state. `on('param', …)` fires only for parameters
   whose value actually changed; `on('preset', …)` fires once per load.
   `tools/test-preset-recall.js` guards this behaviour.
+- **Note events are balanced.** `on('noteon', …)` / `on('noteoff', …)` listeners count
+  events, not voices (the keybed in `demo.js` keeps a `soundingCount` per MIDI note), so
+  the engine guarantees that every `noteon` it emits is closed by exactly one `noteoff`.
+  The pool is eight voices: when a ninth note arrives, or a held note is re-triggered,
+  the voice that is re-used first emits a `noteoff` for the note it was playing, tagged
+  `source: 'steal'`. A note released before its scheduled `noteon` was reached emits its
+  `noteoff` straight after it, never before it, and `panic()` emits one `noteoff` per note
+  that is still owed one. `tools/test-voice-steal.js` guards this behaviour.
 
 `site/index.html` uses the same engine for its inline mini-instrument, and
 `site/presets/index.html` uses it to audition a preset from the gallery. There is one
