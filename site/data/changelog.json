@@ -1,5 +1,22 @@
 [
   {
+    "version": "1.2.0",
+    "date": "2026-09-25",
+    "product": "Soundshop",
+    "title": "Soundshop 1.2 — scheduled release",
+    "type": "release",
+    "notes": [
+      "Ship 1.2 on the last Friday of the month: everything merged by the Thursday cutoff is included; items still open wait for 1.3.",
+      "Delivery is by email: installers for macOS, Windows and Linux and a single licence file are attached to the delivery message.",
+      "This entry records the release date and the policy applied; technical release artefacts (installers) are distributed outside the static site and will be linked from docs when hosted.">
+    ],
+    "links": {
+      "Home": "/index.html",
+      "Plugins": "/plugins/index.html",
+      "Changelog": "/changelog.html"
+    }
+  },
+  {
     "version": "2026.8",
     "date": "2026-08-12",
     "product": "Soundshop",
@@ -27,8 +44,8 @@
       "New Drift control scales independent per-voice offsets for tuning, envelope timing and filter cutoff, from dead-accurate to visibly falling apart. Offsets are re-rolled per voice at allocation, not shared from one global LFO.",
       "Modulation matrix redrawn as twenty-four flat rows — source, destination, depth, curve. No submenus, no hidden routing, and every source now reaches every destination at audio rate.",
       "Filter envelope amount is applied through the filter's detune input rather than as a linear offset in Hz, so a sweep of a given depth sounds the same at the bottom of the keyboard as at the top.",
-      "Voice stealing reworked: free slot, then oldest released voice, then oldest held voice. A sustained chord keeps its tails when you play over it.",
-      "Preset format extended with tags. Older presets load unchanged; keys that are absent keep their current value."
+      "Turning the arpeggiator off re-sounds any notes still held, instead of leaving the chord silent until you release and repress it.",
+      "Up to three octaves of pattern range."
     ],
     "links": {
       "VANTA": "/plugins/flagship.html",
