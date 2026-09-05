@@ -1,7 +1,9 @@
 # .d8a — who governs this repository, how to run it, and how it earns.
 # Code lands on this branch only by the named group's passed vote; delete the
 # file to withdraw consent. The three lines below, tools: and payments: are
-# generated, never hand-edited. Everything else: https://d8a.com/docs?group=d8aaaa-batch_synthshop#d8a-file
+# generated, never hand-edited. items: is generated too, and is the ONE a
+# passed Code proposal MAY edit — it is where the shop is set.
+# Everything else: https://d8a.com/docs?group=d8aaaa-batch_synthshop#d8a-file
 version: 1
 group: d8a:d8aaaa-batch_synthshop
 proof: VuQMkLbhP8BfPKcPkYN6PViSL9ZPN9aF_zobEKzn1eQ2uLIZmDKWHxjxJeVTR-aG7xj6XA8MFMxqBrexjt4zU2D4WcERXZO6N8JYdjG2yoJjVKSfQpcm4nFwIHxkpuZWyE9XSDF8Q2rtyjYIfK15e45OTLPZvGBeXMJpVqLWNIy2GVCVMx2RtJfYDjQ3T2elSleE9CJGPMo6CMRSWDT6AbI5HIvHSD0gYz5HD7JjMiqVbd_90HqeJ_xQdaV1a8MJgiRKVtnw_oOhvfZqxVVgFBtOvfdeFg2cLUe2g2IzAqNSulMsLptzLiT0YEiqZ9KYYdtdhV5SD_NjFqhaVpBBNg
@@ -111,8 +113,14 @@ payments:
       a.textContent = "Opening\u2026";
       // Come back to this page — minus any earlier receipt on the URL.
       var here = location.href.replace(/([?&])d8a_order=[^&#]*&?/, "$1").replace(/[?&](#|$)/, "$1");
+      // WHICH ONE the buyer chose (2026-09-04): put data-variant on the buy link
+      // and set it from your own size/colour control before the click. The
+      // platform stores it against the order and shows it on the group's Admin
+      // tab, so the seller can fulfil it. One short line; a variant that costs
+      // more is a separate item.
+      var variant = a.getAttribute("data-variant") || "";
       fetch(s.checkout.url, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ group: GROUP, item: a.getAttribute("data-item"), quantity: 1, returnUrl: here }) })
+        body: JSON.stringify({ group: GROUP, item: a.getAttribute("data-item"), quantity: 1, variant: variant, returnUrl: here }) })
         .then(function (r) { return r.json(); })
         .then(function (d) { if (d.url) { location.href = d.url; } else { a.textContent = "Buy"; location.href = a.href; } })
         .catch(function () { location.href = a.href; });
@@ -121,15 +129,17 @@ payments:
   })();
   </script>
 
-# items: — what the group sells. THIS is where they are set: the platform
-# reads the block after every merge (tools: items is the live copy) and the
-# Admin tab shows them read-only. Name = $price — one line, one per line.
+# items: — what the group sells, and the ONE generated section a passed Code
+# proposal MAY edit: THIS is where they are set. The platform reads the block
+# after every merge (tools: items is the live copy) and the Admin tab shows
+# them read-only. Name = $price — one line, one per line, up to 50.
+# An empty block means nothing is for sale.
 items:
   ANVIL = $89.00 — Transient shaping and bus compression in one signal path, with saturation after the gain element. Version 2.0.1.
   DRIFT = $79.00 — Tape delay with correlated wow and flutter, head-gap loss on repeats and a record path that saturates before it distorts.
   PRISM = $69.00 — Four spectral bands you can move, tilt and resonate independently. Public beta — the 1.0 release is a free update.
   The Full Shop = $299.00 — All four plugins in every format we ship, on one licence file for three machines. Bought separately they come to $386.
-  VANTA = $149.00 — Flagship eight-voice synth: two oscillators per voice, a resonant ladder filter and a 24-slot modulation matrix. Playable in-browser demo, presets and full docs included.
+  VANTA = $149.00 — Flagship eight-voice synth: two oscillators per voice, a resonant ladder filter and a 24-slot modulation matrix. Playable in-browser demo, p
 
 # keys: — the settings this project needs. NAMES ONLY: every value lives on
 # the group's server and is never written into this file. Run the project
