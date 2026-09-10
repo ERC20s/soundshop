@@ -114,23 +114,51 @@
 
         if (!should) return;
 
-        // Fetch the local items file (relative to /plugins/ this page is served from)
-        fetch('../data/items.json').then(function (r) {
-          if (!r.ok) return null;
-          return r.json();
-        }).then(function (json) {
+        // Try multiple candidate locations for the local items and contact files.
+        // Rationale: this fallback script may be included from pages at different
+        // path depths (for example /plugins/, /plugins/sub/, or the site root). A
+        // single hardcoded relative path can fail when the nesting changes. We try
+        // a short ordered list of likely locations and use the first one that
+        // returns a JSON array successfully.
+        var itemCandidates = [
+          '../data/items.json',
+          './data/items.json',
+          '/data/items.json',
+          'data/items.json',
+          (window.location && window.location.origin ? window.location.origin + '/data/items.json' : '/data/items.json')
+        ];
+
+        function tryFetchJSON(candidates) {
+          return new Promise(function (resolve) {
+            var i = 0;
+            function next() {
+              if (i >= candidates.length) return resolve(null);
+              var url = candidates[i++];
+              try {
+                fetch(url).then(function (r) {
+                  if (!r || !r.ok) return next();
+                  r.json().then(function (j) { resolve(j); }).catch(function () { next(); });
+                }).catch(function () { next(); });
+              } catch (e) { next(); }
+            }
+            next();
+          });
+        }
+
+        tryFetchJSON(itemCandidates).then(function (json) {
           if (!json || !Array.isArray(json)) return;
-          // Attempt to fetch contact.json in parallel; fall back silently
-          try {
-            fetch('../data/contact.json').then(function (r2) {
-              if (!r2.ok) return null;
-              return r2.json().catch(function () { return null; });
-            }).then(function (cjson) {
-              try { renderFallback(el, json, cjson || null); } catch (e) { renderFallback(el, json, null); }
-            }).catch(function () { try { renderFallback(el, json, null); } catch (e) { /* ignore */ } });
-          } catch (e) {
-            try { renderFallback(el, json, null); } catch (err) { /* ignore */ }
-          }
+          var contactCandidates = [
+            '../data/contact.json',
+            './data/contact.json',
+            '/data/contact.json',
+            'data/contact.json',
+            (window.location && window.location.origin ? window.location.origin + '/data/contact.json' : '/data/contact.json')
+          ];
+
+          // Try contact.json in parallel; if none succeed we render without contact info.
+          tryFetchJSON(contactCandidates).then(function (cjson) {
+            try { renderFallback(el, json, cjson || null); } catch (e) { renderFallback(el, json, null); }
+          }).catch(function () { try { renderFallback(el, json, null); } catch (e) { /* ignore */ } });
         }).catch(function () { /* ignore */ });
       } catch (e) { /* ignore */ }
     }, 1500);
