@@ -985,8 +985,47 @@
       try {
         button = document.createElement('a');
         button.className = 'bought-summary__support';
-        button.setAttribute('href', 'mailto:support@soundshop.example');
         button.textContent = 'Contact support';
+
+        // Attempt to fetch contact.json once and cache the result on the
+        // SSPlugin object so multiple calls reuse it. If fetching fails we
+        // silently fall back to the mailto.
+        try {
+          if (!window.SSPlugin._contactPromise) {
+            try {
+              window.SSPlugin._contactPromise = fetch('../data/contact.json').then(function (r) {
+                if (!r.ok) return null;
+                return r.json().catch(function () { return null; });
+              }).catch(function () { return null; });
+            } catch (e) { window.SSPlugin._contactPromise = Promise.resolve(null); }
+          }
+        } catch (e) { /* ignore */ }
+
+        try {
+          // Use the cached promise to set the href asynchronously; if it
+          // resolves to null, set the mailto fallback.
+          if (window.SSPlugin._contactPromise && typeof window.SSPlugin._contactPromise.then === 'function') {
+            window.SSPlugin._contactPromise.then(function (cjson) {
+              try {
+                if (cjson && typeof cjson === 'object') {
+                  if (cjson.supportHref && String(cjson.supportHref).trim()) {
+                    button.setAttribute('href', String(cjson.supportHref).trim());
+                    return;
+                  }
+                  if (cjson.supportEmail && String(cjson.supportEmail).trim()) {
+                    button.setAttribute('href', 'mailto:' + String(cjson.supportEmail).trim());
+                    return;
+                  }
+                }
+                // Default mailto: include no subject when we set it from here
+                try { button.setAttribute('href', 'mailto:support@soundshop.example'); } catch (e) { /* ignore */ }
+              } catch (e) { try { button.setAttribute('href', 'mailto:support@soundshop.example'); } catch (err) { /* ignore */ } }
+            }).catch(function () { try { button.setAttribute('href', 'mailto:support@soundshop.example'); } catch (e) { /* ignore */ } });
+          } else {
+            try { button.setAttribute('href', 'mailto:support@soundshop.example'); } catch (e) { /* ignore */ }
+          }
+        } catch (e) { try { button.setAttribute('href', 'mailto:support@soundshop.example'); } catch (err) { /* ignore */ } }
+
       } catch (e) { button = null; }
       return button;
     } catch (e) { return null; }

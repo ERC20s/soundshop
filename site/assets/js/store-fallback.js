@@ -8,7 +8,7 @@
     document.addEventListener('DOMContentLoaded', fn);
   }
 
-  function renderFallback(el, items) {
+  function renderFallback(el, items, contactInfo) {
     try {
       if (!el) return;
       el.innerHTML = '';
@@ -50,15 +50,31 @@
         view.style.color = '#7c5cff';
         view.style.textDecoration = 'none';
 
-        var contact = document.createElement('a');
+        var contactLink = document.createElement('a');
         var subj = 'Buy ' + (it.name || 'product');
-        contact.textContent = 'Contact to buy';
-        contact.href = 'mailto:support@soundshop.example?subject=' + encodeURIComponent(subj);
-        contact.style.color = '#7c5cff';
-        contact.style.textDecoration = 'none';
+        contactLink.textContent = 'Contact to buy';
+        contactLink.style.color = '#7c5cff';
+        contactLink.style.textDecoration = 'none';
+
+        // Build href from provided contactInfo, prefer a supportHref, then supportEmail, then mailto fallback
+        try {
+          if (contactInfo && typeof contactInfo === 'object') {
+            if (contactInfo.supportHref && String(contactInfo.supportHref).trim()) {
+              contactLink.href = String(contactInfo.supportHref).trim();
+            } else if (contactInfo.supportEmail && String(contactInfo.supportEmail).trim()) {
+              contactLink.href = 'mailto:' + String(contactInfo.supportEmail).trim() + '?subject=' + encodeURIComponent(subj);
+            } else {
+              contactLink.href = 'mailto:support@soundshop.example?subject=' + encodeURIComponent(subj);
+            }
+          } else {
+            contactLink.href = 'mailto:support@soundshop.example?subject=' + encodeURIComponent(subj);
+          }
+        } catch (e) {
+          try { contactLink.href = 'mailto:support@soundshop.example?subject=' + encodeURIComponent(subj); } catch (err) { /* ignore */ }
+        }
 
         actions.appendChild(view);
-        actions.appendChild(contact);
+        actions.appendChild(contactLink);
 
         row.appendChild(left);
         row.appendChild(price);
@@ -104,7 +120,17 @@
           return r.json();
         }).then(function (json) {
           if (!json || !Array.isArray(json)) return;
-          renderFallback(el, json);
+          // Attempt to fetch contact.json in parallel; fall back silently
+          try {
+            fetch('../data/contact.json').then(function (r2) {
+              if (!r2.ok) return null;
+              return r2.json().catch(function () { return null; });
+            }).then(function (cjson) {
+              try { renderFallback(el, json, cjson || null); } catch (e) { renderFallback(el, json, null); }
+            }).catch(function () { try { renderFallback(el, json, null); } catch (e) { /* ignore */ } });
+          } catch (e) {
+            try { renderFallback(el, json, null); } catch (err) { /* ignore */ }
+          }
         }).catch(function () { /* ignore */ });
       } catch (e) { /* ignore */ }
     }, 1500);
