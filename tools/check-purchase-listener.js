@@ -18,6 +18,8 @@ const BOUGHT_KEY_RE = /BOUGHT_KEY\s*=\s*['"]soundshop:bought:v1['"]/;
 const GROUP_STORE_EVENT_RE = /document\.addEventListener\s*\(\s*['"]group-store:paid['"]/;
 const LOCALSTORAGE_SETITEM_RE = /localStorage\.setItem\s*\(\s*BOUGHT_KEY/;
 const OPT_OUT_RE = /<!--\s*no-purchase-listener-check\s*-->/i;
+// Accept pages that include the canonical shared listener script (site/assets/js/plugin.js)
+const PLUGIN_SCRIPT_RE = /<script\b[^>]*\bsrc\s*=\s*["'][^"']*plugin\.js["'][^>]*>/i;
 
 function walk(dir, out) {
   out = out || [];
@@ -58,7 +60,12 @@ function main() {
     const placeholderMatch = GROUP_STORE_PLACEHOLDER_RE.exec(text);
     if (!placeholderMatch) continue;
 
-    // This page has the placeholder; verify the purchase listener is present.
+    // If the page explicitly includes the shared plugin.js script we treat it as
+    // having the purchase listener. This avoids false negatives when the listener
+    // lives in site/assets/js/plugin.js and pages include it via a <script src=..> tag.
+    if (PLUGIN_SCRIPT_RE.test(text)) continue;
+
+    // This page has the placeholder; verify the purchase listener is present inline.
     // Look for key indicators that the purchase listener code is present:
     // 1. BOUGHT_KEY constant definition with the specific key
     // 2. document.addEventListener for 'group-store:paid'
@@ -67,7 +74,7 @@ function main() {
     const hasEventListener = GROUP_STORE_EVENT_RE.test(text);
     const hasLocalStorageSetItem = LOCALSTORAGE_SETITEM_RE.test(text);
 
-    // All three indicators must be present for the listener to be functional
+    // All three indicators must be present for the inline listener to be functional
     if (hasBoughtKey && hasEventListener && hasLocalStorageSetItem) {
       continue; // Listener is present, page is OK
     }
@@ -85,7 +92,7 @@ function main() {
     process.exit(1);
   }
 
-  console.log('check-purchase-listener: ok — all pages with group-store placeholder include the purchase listener script');
+  console.log('check-purchase-listener: ok — all pages with group-store placeholder include the purchase listener script or include site/assets/js/plugin.js');
   process.exit(0);
 }
 
