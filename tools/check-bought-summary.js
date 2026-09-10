@@ -11,6 +11,9 @@
  * data-bought-summary-support-href="../docs.html#support" must not also hard-code
  * <a href="docs.html#support"> in the same element, because from site/plugins/
  * that resolves to the non-existent site/plugins/docs.html.
+ *
+ * Additionally, verify that every data-bought-summary-labels opening tag carries
+ * data-bought-label-<id> attributes for every item id listed in site/data/items.json.
  */
 
 const fs = require('fs');
@@ -18,6 +21,7 @@ const path = require('path');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SITE_DIR = path.join(REPO_ROOT, 'site');
+const ITEMS_JSON = path.join(SITE_DIR, 'data', 'items.json');
 
 // Product pages that must have data-bought-summary
 const PRODUCT_PAGES = {
@@ -45,6 +49,10 @@ function attrValue(openingTag, name) {
   const m = re.exec(openingTag);
   if (!m) return null;
   return m[2] !== undefined ? m[2] : m[3];
+}
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // Locate the data-bought-summary element in a page. Returns null when the page
@@ -94,9 +102,44 @@ function checkSupportLinks(file, text, violations) {
   }
 }
 
+// For any page that includes a data-bought-summary-labels opening tag, ensure the
+// opening tag carries data-bought-label-<id> attributes for every id in items.json
+function checkLabelAttributes(file, text, ids, violations) {
+  const openingTagMatch = /(<[^>]*\bdata-bought-summary-labels\b[^>]*>)/i.exec(text);
+  if (!openingTagMatch) return; // page does not carry the labels span
+
+  const startIdx = openingTagMatch.index;
+  const openingTag = openingTagMatch[1];
+
+  const missing = ids.filter((id) => {
+    const re = new RegExp('\\bdata-bought-label-' + escapeRegExp(id) + '\\s*=','i');
+    return !re.test(openingTag);
+  });
+
+  if (missing.length > 0) {
+    violations.push({
+      file,
+      line: lineOf(text, startIdx),
+      reason: 'missing data-bought-label- attributes for item ids: ' + missing.join(', ')
+    });
+  }
+}
+
 function main() {
   if (!fs.existsSync(SITE_DIR)) {
     console.error('check-bought-summary: site/ directory not found at ' + SITE_DIR);
+    process.exit(2);
+  }
+
+  // Load items.json and extract ids
+  let itemIds = [];
+  try {
+    const raw = fs.readFileSync(ITEMS_JSON, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) throw new Error('items.json does not contain a JSON array');
+    itemIds = parsed.map((it) => it && it.id).filter(Boolean);
+  } catch (err) {
+    console.error('check-bought-summary: failed to read or parse ' + rel(ITEMS_JSON) + ': ' + (err && err.message));
     process.exit(2);
   }
 
@@ -198,9 +241,9 @@ function main() {
     }
   }
 
-  // Second pass: the Support-link rule, on every page under site/plugins/ that
-  // carries a bought-summary block (index.html included, not just the four
-  // product pages).
+  // Second pass: the Support-link rule and label attribute checks, on every
+  // page under site/plugins/ that carries a bought-summary block (index.html
+  // included, not just the four product pages).
   let pluginPages = [];
   try {
     pluginPages = fs.readdirSync(pluginsDir)
@@ -220,6 +263,7 @@ function main() {
     }
     if (OPT_OUT_RE.test(text)) continue;
     checkSupportLinks(file, text, violations);
+    checkLabelAttributes(file, text, itemIds, violations);
   }
 
   violations.sort((a, b) => rel(a.file).localeCompare(rel(b.file)) || a.line - b.line);
@@ -237,7 +281,8 @@ function main() {
   }
 
   console.log('check-bought-summary: ok — all product pages include proper data-bought-summary markup, ' +
-    'and every Support link inside a bought-summary block matches its own support-href');
+    'every Support link inside a bought-summary block matches its own support-href, and every labels span ' +
+    'carries data-bought-label-<id> attributes for items.json ids');
   process.exit(0);
 }
 
