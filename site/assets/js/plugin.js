@@ -41,6 +41,18 @@
   var P = {};
   window.SSPlugin = P;
 
+  // Explicit mapping of product ids/names to canonical persistence tokens.
+  // Keys are lower-case canonical ids; values are the token stored in
+  // localStorage under soundshop:bought:v1. Keep this object up to date when
+  // adding new items in site/data/items.json.
+  var PRODUCT_TOKENS = {
+    vanta: 'vanta',
+    drift: 'drift',
+    prism: 'prism',
+    anvil: 'anvil',
+    bundle: 'bundle'
+  };
+
   // Provide a safe, non-overriding fallback for window.soundshopPersistBought so
   // callers in this file can invoke it without depending on the presence of
   // site/plugins/index.html. This mirrors the canonical behaviour in
@@ -58,15 +70,45 @@
           var MAX_EMAIL_LEN = 128;
           var MAX_RECEIPT_LEN = 2000;
 
-          // Map product names/IDs to internal tokens (kept small and conservative)
+          // Map product names/IDs to internal tokens using the explicit table
+          // declared above. This prefers an exact itemId match, falls back to an
+          // itemName match against known keys, then keeps substring fallback to
+          // preserve compatibility with older order shapes.
           function getProductToken(itemName, itemId) {
-            var name = String(itemName || itemId || '').trim().toLowerCase();
-            if (!name) return null;
-            if (name === 'the full shop' || name === 'bundle' || name === 'full shop') return 'bundle';
-            if (name === 'vanta' || name.indexOf('vanta') !== -1) return 'vanta';
-            if (name === 'drift' || name.indexOf('drift') !== -1) return 'drift';
-            if (name === 'prism' || name.indexOf('prism') !== -1) return 'prism';
-            if (name === 'anvil' || name.indexOf('anvil') !== -1) return 'anvil';
+            try {
+              var id = String(itemId || '').trim().toLowerCase();
+              var name = String(itemName || '').trim().toLowerCase();
+              // Prefer an exact id match when available
+              try { if (id && Object.prototype.hasOwnProperty.call(PRODUCT_TOKENS, id)) return PRODUCT_TOKENS[id]; } catch (e) { /* ignore */ }
+
+              // Exact name match
+              try { if (name && Object.prototype.hasOwnProperty.call(PRODUCT_TOKENS, name)) return PRODUCT_TOKENS[name]; } catch (e) { /* ignore */ }
+
+              // Some items use friendly display names — map obvious alternatives
+              try {
+                if (name === 'the full shop' || name === 'full shop' || name === 'bundle') return PRODUCT_TOKENS.bundle || 'bundle';
+              } catch (e) { /* ignore */ }
+
+              // Contains match against known keys (conservative)
+              try {
+                for (var k in PRODUCT_TOKENS) {
+                  if (!Object.prototype.hasOwnProperty.call(PRODUCT_TOKENS, k)) continue;
+                  try { if (name && name.indexOf(k) !== -1) return PRODUCT_TOKENS[k]; } catch (e) { /* ignore */ }
+                }
+              } catch (e) { /* ignore */ }
+
+              // Final fallback: check the combined itemName/itemId string as the
+              // original code did so we don't lose compatibility with older
+              // provider payloads.
+              try {
+                var combined = (name || id || '').toLowerCase();
+                for (var kk in PRODUCT_TOKENS) {
+                  if (!Object.prototype.hasOwnProperty.call(PRODUCT_TOKENS, kk)) continue;
+                  try { if (combined === kk || combined.indexOf(kk) !== -1) return PRODUCT_TOKENS[kk]; } catch (e) { /* ignore */ }
+                }
+              } catch (e) { /* ignore */ }
+
+            } catch (e) { /* ignore */ }
             return null;
           }
 
