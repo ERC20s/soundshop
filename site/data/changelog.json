@@ -1,5 +1,23 @@
 [
   {
+    "version": "1.2",
+    "date": "2026-09-25",
+    "product": "Soundshop",
+    "title": "September maintenance release",
+    "type": "release",
+    "notes": [
+      "VANTA now emits a note-off when a voice is stolen, so the demo keybed can no longer stick lit.",
+      "Preset recall is now total: loading a preset resets every unnamed parameter to its default instead of leaving it at whatever the previous preset left behind.",
+      "Added the Massive Donk preset to VANTA's factory bank.",
+      "Corrected the homepage bundle saving to $87.",
+      "Fixed the dead Support link in the purchase note on all five plugin pages."
+    ],
+    "links": {
+      "Instruments": "/plugins/index.html",
+      "Changelog": "/changelog.html"
+    }
+  },
+  {
     "version": "2026.8",
     "date": "2026-08-12",
     "product": "Soundshop",
