@@ -24,15 +24,19 @@ function previewText(s, maxChars = 320) {
   return trimmed.slice(0, maxChars) + '\n...';
 }
 
-// Canonical payments block copied verbatim from the repository's .d8a
-const canonicalPaymentsBlock = `  <!-- Sell on your site: your items, a Buy button each. After a payment the buyer
+// Canonical payments block template; the GROUP value is filled at runtime
+const canonicalPaymentsBlockFallbackGroup = 'batch-synthshop';
+
+function buildCanonicalPaymentsBlock(group) {
+  const G = String(group || canonicalPaymentsBlockFallbackGroup);
+  return `  <!-- Sell on your site: your items, a Buy button each. After a payment the buyer
        returns here with ?d8a_order=<id>; the widget verifies it with the platform and
        fires "group-store:paid" (window.groupStorePaid) — release the product there. -->
   <div id="group-store"></div>
   <script>
   (function () {
     var BASE = "https://d8a.com";
-    var GROUP = "batch-synthshop";
+    var GROUP = "${G}";
     var esc = function (s) {
       return String(s).replace(/[&<>\"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
     };
@@ -86,6 +90,7 @@ const canonicalPaymentsBlock = `  <!-- Sell on your site: your items, a Buy butt
       });
   })();
   </script>`;
+}
 
 // Replace JavaScript strings and comments with spaces (preserving newlines) so
 // GROUP=... searches ignore text that only appears inside quotes or comments.
@@ -168,9 +173,13 @@ async function main() {
 
   // Derive the expected GROUP from .d8a payments block, then plugins page, then canonical block, then fallback
   let expectedGroup = null;
+  // Build an initial canonicalPaymentsBlock using the fallback group so it's available
+  let canonicalPaymentsBlock = buildCanonicalPaymentsBlock();
   try {
     const fromD8a = await extractGroupFromD8a();
     if (fromD8a) {
+      // Rebuild canonical block to include the real GROUP from .d8a so exact-paste detection matches this repo
+      canonicalPaymentsBlock = buildCanonicalPaymentsBlock(fromD8a);
       expectedGroup = fromD8a;
       console.log('Resolved expected GROUP from .d8a payments block:', expectedGroup);
     } else {
