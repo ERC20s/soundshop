@@ -62,17 +62,38 @@ function extractGetProductTokenBody(src) {
 function main() {
   const ids = readItems();
   const pluginSrc = readPlugin();
-  const body = extractGetProductTokenBody(pluginSrc);
-  if (body === null) fail('could not locate getProductToken function in ' + rel(PLUGIN_JS));
+  // Prefer detecting an explicit PRODUCT_TOKENS object in plugin.js. If it
+  // exists we parse its keys and assert coverage; otherwise fall back to the
+  // legacy substring scan of the getProductToken body for backward
+  // compatibility with older commits.
+  const productMapMatch = pluginSrc.match(/\bvar\s+PRODUCT_TOKENS\s*=\s*\{([\s\S]*?)\}\s*;/);
+  let declaredKeys = null;
+  if (productMapMatch) {
+    const body = productMapMatch[1];
+    // Extract keys like: key: 'value', or 'key': 'value', or "key": 'value'
+    const keyRe = /['"]?([A-Za-z0-9_-]+)['"]?\s*:/g;
+    declaredKeys = new Set();
+    let m;
+    while ((m = keyRe.exec(body)) !== null) {
+      declaredKeys.add(m[1].toLowerCase());
+    }
+  }
 
-  const lower = body.toLowerCase();
   const missing = [];
 
   for (const id of ids) {
     const idStr = String(id || '').trim().toLowerCase();
     if (!idStr) continue;
-    // Conservative check: the function body must contain the id as a substring
-    // (case-insensitive). This matches the simple mapping currently used.
+    if (declaredKeys) {
+      if (!declaredKeys.has(idStr)) missing.push(id);
+      continue;
+    }
+
+    // Legacy fallback: locate getProductToken and ensure the id appears as a
+    // substring inside it.
+    const body = extractGetProductTokenBody(pluginSrc);
+    if (body === null) fail('could not locate getProductToken function in ' + rel(PLUGIN_JS));
+    const lower = body.toLowerCase();
     if (lower.indexOf(idStr) === -1) {
       missing.push(id);
     }
