@@ -119,6 +119,17 @@ html[data-standalone] .demo [data-frameless] { display: inline-flex; }
 .demo-presets__meta .label { display: block; color: var(--accent-text); }
 
 /* --- rack ------------------------------------------------------------ */
+.demo-rack-nav:not([hidden]) { display: flex; flex-wrap: wrap; gap: 8px; }
+.demo-rack-nav .btn, .demo-presets .btn, .demo-oct .btn { min-height: 44px; }
+.rack-sec { scroll-margin-block-start: 130px; }
+.rack-sec:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 4px; }
+@media (max-width: 519px) {
+  .demo-presets__select { width: 100%; min-height: 44px; }
+  .demo-keys__head { flex-wrap: wrap; gap: 8px; }
+  .demo-oct { flex-wrap: wrap; }
+  .demo-keys__body { overflow-x: auto; }
+  .demo-keys .keybed { min-width: 540px; }
+}
 .demo-rack {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 322px), 1fr));
@@ -430,10 +441,7 @@ html[data-standalone] .demo [data-frameless] { display: inline-flex; }
       </div>
     </section>
 
-    <!-- the rack itself, rendered from SSSynth.PARAM_SPEC -->
-    <div class="demo-rack" id="rack" data-rack></div>
-
-    <!-- keyboard -->
+    <!-- keyboard: play before diving into sound design -->
     <section class="panel demo-keys" id="keys">
       <div class="panel__head demo-keys__head">
         <span class="rack__group-label">Keyboard</span>
@@ -444,6 +452,7 @@ html[data-standalone] .demo [data-frameless] { display: inline-flex; }
         </span>
       </div>
       <div class="panel__body demo-keys__body">
+        <p class="demo-hint">On a narrow screen, scroll sideways using the space below the keys to reach the upper notes.</p>
         <div class="keybed" data-keybed role="group"
              aria-label="Two and a half octave keybed. Play it with the pointer, or with the computer keys listed below.">
           <div class="keybed__keys" data-keys></div>
@@ -452,11 +461,16 @@ html[data-standalone] .demo [data-frameless] { display: inline-flex; }
           Play with the computer keyboard —
           <kbd>A</kbd><kbd>W</kbd><kbd>S</kbd><kbd>E</kbd><kbd>D</kbd><kbd>F</kbd><kbd>T</kbd><kbd>G</kbd><kbd>Y</kbd><kbd>H</kbd><kbd>U</kbd><kbd>J</kbd><kbd>K</kbd><kbd>O</kbd><kbd>L</kbd><kbd>P</kbd><kbd>;</kbd>
           run chromatically up from the leftmost C. <kbd>Z</kbd> and <kbd>X</kbd> shift the octave.
-          Drag any knob, or scroll it, or focus it and use the arrow keys; hold
-          <kbd>Shift</kbd> for fine adjustment and double-click to reset a control to its default.
+          Start with a preset, then shape the sound below. Focus a knob before scrolling to adjust it,
+          or drag it or use arrow keys. Hold <kbd>Shift</kbd> for fine adjustment;
+          double-click or press <kbd>Delete</kbd> to reset the focused control.
         </p>
       </div>
     </section>
+
+    <nav class="demo-rack-nav" data-rack-nav aria-label="Sound design sections" hidden></nav>
+    <!-- the rack itself, rendered from SSSynth.PARAM_SPEC -->
+    <div class="demo-rack" id="rack" data-rack></div>
 
   </main>
 

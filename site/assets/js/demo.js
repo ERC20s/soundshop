@@ -245,8 +245,11 @@
     on(node, 'lostpointercapture', endDrag);
 
     on(node, 'wheel', function (e) {
-      var dir = (e.deltaY || e.deltaX) > 0 ? -1 : 1;
-      if (!dir) return;
+      /* Scrolling through the rack must not silently edit the patch. */
+      if (document.activeElement !== node) return;
+      var delta = e.deltaY || e.deltaX;
+      if (!delta) return;
+      var dir = delta > 0 ? -1 : 1;
       e.preventDefault();
       write(nudge(spec, read(), dir, false, e.shiftKey), true);
     }, { passive: false });
@@ -289,7 +292,7 @@
     root.setAttribute('aria-valuemin', String(spec.min));
     root.setAttribute('aria-valuemax', String(spec.max));
     root.setAttribute('data-param', spec.name);
-    root.title = spec.label + ' — drag, scroll or use the arrow keys. Shift for fine, double-click to reset.';
+    root.title = spec.label + ' — drag or use arrow keys; focus before scrolling. Shift for fine, double-click to reset.';
 
     var ring = el('span', 'knob__ring');
     ring.innerHTML =
@@ -352,7 +355,7 @@
     root.setAttribute('aria-valuemin', String(spec.min));
     root.setAttribute('aria-valuemax', String(spec.max));
     root.setAttribute('data-param', spec.name);
-    root.title = spec.label + ' — drag, scroll or use the arrow keys. Shift for fine, double-click to reset.';
+    root.title = spec.label + ' — drag or use arrow keys; focus before scrolling. Shift for fine, double-click to reset.';
 
     var track = el('span', 'fader__track');
     var ticks = el('span', 'fader__ticks');
@@ -503,6 +506,7 @@
     SECTIONS.forEach(function (sec) {
       var panel = el('section', 'panel rack-sec rack-sec--' + sec.id);
       panel.id = 'rack-' + sec.id;
+      panel.setAttribute('tabindex', '-1');
       panel.setAttribute('aria-label', sec.title);
 
       var head = el('div', 'panel__head rack-sec__head');
@@ -562,6 +566,25 @@
     if (masterSlot) {
       specsIn('master').forEach(function (p) { masterSlot.appendChild(makeKnob(p, true)); });
     }
+  }
+
+  /* Section navigation is generated from the same registry as the rack. */
+  function initRackNavigation() {
+    var nav = $('[data-rack-nav]');
+    if (!nav) return;
+    SECTIONS.forEach(function (sec) {
+      var button = el('button', 'btn btn--sm btn--mono', sec.title);
+      button.type = 'button';
+      button.setAttribute('aria-controls', 'rack-' + sec.id);
+      on(button, 'click', function () {
+        var panel = document.getElementById('rack-' + sec.id);
+        if (!panel) return;
+        panel.focus({ preventScroll: true });
+        panel.scrollIntoView({ behavior: 'auto', block: 'start' });
+      });
+      nav.appendChild(button);
+    });
+    nav.hidden = false;
   }
 
   /* Light the section LED whose parameter just moved. */
@@ -1523,6 +1546,7 @@
     }
 
     renderRack($('[data-rack]'));
+    initRackNavigation();
     initMeter();
     initScope();
     initTransport();
