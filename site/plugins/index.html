@@ -5,11 +5,68 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="All four SOUNDSHOP instruments compared: VANTA, DRIFT, PRISM and ANVIL.">
 <title>Plugins — SOUNDSHOP</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2308090A'/%3E%3Crect x='6.5' y='6.5' width='19' height='19' rx='3' fill='none' stroke='%23363D44'/%3E%3Cpath d='M10 21h12M10 17h12' stroke='%238A939B' stroke-width='1.2'/%3E%3Ccircle cx='16' cy='12' r='2.6' fill='%23F2A93B'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="../assets/style.css">
+<style>
+  /* Header: keep the theme toggle to the right of the nav on desktop and
+     beside the burger on mobile. */
+  .site-head > .theme-toggle { flex: none; }
+  @media (max-width: 899px) {
+    .site-head > .theme-toggle { margin-inline-start: auto; }
+    .site-head > .nav-toggle   { margin-inline-start: var(--sp-3); }
+  }
+</style>
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
+<header class="site-head" data-head>
+  <a class="brand" href="../index.html" aria-label="Soundshop home">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">SOUNDSHOP</span>
+  </a>
+  <nav class="site-nav" aria-label="Primary">
+    <a href="index.html">Plugins</a>
+    <a href="../presets/index.html">Presets</a>
+    <a href="../demo/flagship-demo.html">Demo</a>
+    <a href="../docs.html">Docs</a>
+    <a href="../changelog.html">Changelog</a>
+  </nav>
+  <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" aria-label="Switch to light theme" title="Switch to light theme">
+    <span data-theme-label>Dark</span>
+  </button>
+  <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" data-nav-toggle>
+    <span></span><span></span><span></span>
+  </button>
+</header>
 <main id="main">
+  <section class="section section--tight" aria-labelledby="shop-title">
+    <div class="wrap stack stack--lg">
+      <div class="stack stack--sm">
+        <h1 id="shop-title">Plugins</h1>
+        <p class="lead">Four instruments, one signal philosophy. VST3, AU, AAX and CLAP for macOS,
+          Windows and Linux; no subscription, no iLok.</p>
+      </div>
+      <ul class="grid" role="list">
+        <li class="card card--pad span-6">
+          <h2 class="card__title"><a href="flagship.html">VANTA</a></h2>
+          <p class="card__sub">8-voice virtual-analog polysynth — $149</p>
+        </li>
+        <li class="card card--pad span-6">
+          <h2 class="card__title"><a href="drift.html">DRIFT</a></h2>
+          <p class="card__sub">Tape-modelled delay &amp; pitch-warping echo — $79</p>
+        </li>
+        <li class="card card--pad span-6">
+          <h2 class="card__title"><a href="prism.html">PRISM</a></h2>
+          <p class="card__sub">4-band spectral filter &amp; formant morpher (public beta) — $69</p>
+        </li>
+        <li class="card card--pad span-6">
+          <h2 class="card__title"><a href="anvil.html">ANVIL</a></h2>
+          <p class="card__sub">Transient shaper &amp; saturating bus compressor — $89</p>
+        </li>
+      </ul>
+      <p class="muted">All four together: The Full Shop, $299 — every format, one licence file for three machines.</p>
+    </div>
+  </section>
   <!-- Purchase summary for the shop page: what this browser remembers buying.
        Ships hidden; plugin.js will unhide it when purchases are remembered locally. -->
   <div class="note note--good" hidden
@@ -78,7 +135,27 @@
   })();
   </script>
 </main>
-<p class="muted"><a href="../index.html">← Plugins</a></p>
+<footer class="site-foot">
+  <div class="foot-grid">
+    <div class="foot-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <p>SOUNDSHOP<br><span class="muted">Instruments for the deep end.</span></p>
+    </div>
+    <div><h3>Instruments</h3><ul>
+      <li><a href="flagship.html">VANTA</a></li>
+      <li><a href="drift.html">DRIFT</a></li>
+      <li><a href="prism.html">PRISM</a></li>
+      <li><a href="anvil.html">ANVIL</a></li>
+    </ul></div>
+    <div><h3>Resources</h3><ul>
+      <li><a href="../presets/index.html">Preset library</a></li>
+      <li><a href="../demo/flagship-demo.html">Playable demo</a></li>
+      <li><a href="../docs.html">Documentation</a></li>
+      <li><a href="../changelog.html">Changelog</a></li>
+    </ul></div>
+  </div>
+  <p class="foot-legal"><span class="muted">&copy; 2026 Soundshop. Every page here is static — no build step, no trackers.</span></p>
+</footer>
 <script src="../assets/js/store-fallback.js"></script>
 <script src="../assets/js/ui.js"></script>
 <script src="../assets/js/plugin.js"></script>

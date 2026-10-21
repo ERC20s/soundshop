@@ -520,8 +520,9 @@
   ];
 
   /* White keys of the two-octave-ish span the computer keyboard covers, and
-     the white key each black key hangs off (a black key is a child of the
-     white key immediately above it, so it straddles the correct edge). */
+     the white key each black key hangs off (it straddles that key's left
+     edge). Keys are siblings in chromatic order so each one is its own
+     focusable, named button — see SS.keybed in assets/js/ui.js. */
   var WHITE_SEMIS = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16];
   var BLACK_UNDER = { 2: 1, 4: 3, 7: 6, 9: 8, 11: 10, 14: 13, 16: 15 };
 
@@ -580,8 +581,11 @@
       var el = document.createElement('div');
       el.className = 'keybed__key ' + (black ? 'keybed__key--black' : 'keybed__key--white');
       el.setAttribute('data-semi', String(semi));
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '-1');
       var name = document.createElement('span');
       name.className = 'keybed__key-name';
+      name.setAttribute('aria-hidden', 'true');
       name.textContent = hints[semi] || '';
       el.appendChild(name);
       keyEls[semi] = el;
@@ -591,20 +595,33 @@
     function buildKeys() {
       if (!keysHost) return;
       keysHost.textContent = '';
+      keysHost.style.setProperty('--whites', String(WHITE_SEMIS.length));
       for (var i = 0; i < WHITE_SEMIS.length; i++) {
         var semi = WHITE_SEMIS[i];
-        var white = makeKey(semi, false);
         var blackSemi = BLACK_UNDER[semi];
-        if (blackSemi !== undefined && i > 0) white.appendChild(makeKey(blackSemi, true));
-        keysHost.appendChild(white);
+        if (blackSemi !== undefined && i > 0) {
+          var black = makeKey(blackSemi, true);
+          black.style.setProperty('--i', String(i));
+          keysHost.appendChild(black);
+        }
+        keysHost.appendChild(makeKey(semi, false));
       }
       syncLabels();
+      var SS = window.SS;
+      if (SS && typeof SS.keybed === 'function' && keybed) {
+        SS.keybed(keybed,
+          function (key) { press(Number(key.getAttribute('data-semi'))); },
+          function (key) { release(Number(key.getAttribute('data-semi'))); });
+        SS.keybed.refresh(keybed);
+      }
     }
 
     function syncLabels() {
       for (var semi in keyEls) {
         if (!Object.prototype.hasOwnProperty.call(keyEls, semi)) continue;
-        keyEls[semi].setAttribute('title', noteName(midiFor(Number(semi))));
+        var n = noteName(midiFor(Number(semi)));
+        keyEls[semi].setAttribute('title', n);
+        keyEls[semi].setAttribute('aria-label', n.replace('#', '\u266F'));
       }
       if (octaveEl) octaveEl.textContent = noteName(midiFor(0));
     }

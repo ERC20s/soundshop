@@ -643,34 +643,53 @@
     keys.textContent = '';
     keyNodes = {};
     var base = baseMidi();
+    var whites = 0;
+    for (var w = 0; w < KEY_SPAN; w++) if (isWhite(w)) whites++;
+    keys.style.setProperty('--whites', String(whites));
 
+    /* Keys are siblings in chromatic order, so each is its own focusable,
+       named button (SS.keybed in ui.js routes the keyboard); a black key is
+       placed over the left edge of white key --i. */
+    var wi = 0;
     for (var semi = 0; semi < KEY_SPAN; semi++) {
       if (!isWhite(semi)) continue;
-      var midi = base + semi;
-      var white = makeKey(midi, semi, false);
-      /* The black key one semitone below hangs off this white key's left edge. */
       if (semi > 0 && !isWhite(semi - 1)) {
-        white.appendChild(makeKey(base + semi - 1, semi - 1, true));
+        var black = makeKey(base + semi - 1, semi - 1, true);
+        black.style.setProperty('--i', String(wi));
+        keys.appendChild(black);
       }
-      keys.appendChild(white);
+      keys.appendChild(makeKey(base + semi, semi, false));
+      wi++;
     }
     refreshKeyStates();
+    if (keybedHost && SS.keybed) SS.keybed.refresh(keybedHost);
   }
 
   function makeKey(midi, semi, black) {
     var node = el('span', 'keybed__key ' + (black ? 'keybed__key--black' : 'keybed__key--white'));
     node.setAttribute('data-midi', String(midi));
-    node.setAttribute('aria-hidden', 'true');
-    if (midi > 127 || midi < 0) node.classList.add('is-oob');
+    node.setAttribute('role', 'button');
+    node.setAttribute('tabindex', '-1');
+    var oob = midi > 127 || midi < 0;
+    if (oob) {
+      node.classList.add('is-oob');
+      node.setAttribute('aria-disabled', 'true');
+      node.setAttribute('aria-label', 'Out of range');
+    } else if (S) {
+      node.setAttribute('aria-label', S.midiToName(midi).replace('#', '\u266F'));
+    }
 
     var letter = letterFor(semi);
     if (((midi % 12) + 12) % 12 === 0) {
       node.classList.add('is-c');
       var mark = el('span', 'keybed__octave-mark', S ? S.midiToName(midi) : '');
+      mark.setAttribute('aria-hidden', 'true');
       node.appendChild(mark);
     }
     if (letter) {
-      node.appendChild(el('span', 'keybed__key-name', letter.toUpperCase()));
+      var hint = el('span', 'keybed__key-name', letter.toUpperCase());
+      hint.setAttribute('aria-hidden', 'true');
+      node.appendChild(hint);
     }
     keyNodes[midi] = node;
     return node;
@@ -737,6 +756,24 @@
         if (Object.prototype.hasOwnProperty.call(active, id)) release(id);
       }
     });
+
+    /* Keyboard: Tab to the keybed, arrows to choose a key, Space or Enter to
+       play it. */
+    if (typeof SS.keybed === 'function') {
+      SS.keybed(keybedHost,
+        function (key) {
+          var m = parseInt(key.getAttribute('data-midi'), 10);
+          if (isNaN(m) || !S) return;
+          ensurePower();
+          key.setAttribute('data-kb-midi', String(m));
+          S.noteOn(m, 0.9);
+        },
+        function (key) {
+          var m = parseInt(key.getAttribute('data-kb-midi'), 10);
+          key.removeAttribute('data-kb-midi');
+          if (!isNaN(m) && S) S.noteOff(m);
+        });
+    }
   }
 
   /* --- computer keyboard --------------------------------------------- */

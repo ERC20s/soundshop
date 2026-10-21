@@ -103,40 +103,8 @@
 
   .hero__strip { margin-block-start: clamp(20px, 2.6vw, 40px); }
 
-  /* --- playable strip ---------------------------------------------------- */
-  .play-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: end;
-    gap: var(--gap);
-  }
-  @media (max-width: 719px) { .play-grid { grid-template-columns: minmax(0, 1fr); } }
-
-  .voice-leds { display: inline-flex; gap: 5px; }
-
-  .play-hint {
-    font-size: var(--fs-small);
-    line-height: 1.7;
-    color: var(--text-mute);
-    margin: 0;
-    max-width: 60ch;
-  }
-  .play-hint kbd {
-    display: inline-block;
-    min-width: 1.5em;
-    padding: 1px 5px;
-    margin-inline: 1px;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--r-xs);
-    background: var(--bg-2);
-    font-family: var(--font-mono);
-    font-size: var(--fs-micro);
-    text-align: center;
-    color: var(--text-dim);
-  }
-
-  .play-meter { display: flex; align-items: center; gap: var(--sp-3); min-width: 190px; }
-  .play-meter .meter { flex: 1 1 auto; }
+  /* The playable strip's layout (.play-grid, .play-meter, .voice-leds,
+     .play-hint) lives in assets/style.css, shared with the VANTA page. */
 
   /* --- product cards ----------------------------------------------------- */
   .card__desc { font-size: var(--fs-body); color: var(--text-dim); margin: 0; }
@@ -267,13 +235,13 @@
                 </div>
               </div>
 
-              <div class="keybed" data-keybed aria-hidden="true">
+              <div class="keybed" data-keybed role="group" aria-label="VANTA keyboard" aria-describedby="play-hint">
                 <div class="keybed__keys" data-keybed-keys></div>
               </div>
 
               <div class="play-grid">
-                <p class="play-hint">
-                  Click the keys, or type
+                <p class="play-hint" id="play-hint">
+                  Click the keys, or Tab to them and use the arrow keys and Space; or type
                   <kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd>
                   with <kbd>W</kbd><kbd>E</kbd><kbd>T</kbd><kbd>Y</kbd><kbd>U</kbd> for the sharps.
                   <kbd>Z</kbd><kbd>X</kbd> shift the octave.
