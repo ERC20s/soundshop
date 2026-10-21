@@ -13,6 +13,7 @@
      05  Current-page nav marker (SS.initCurrentNav)
      06  Scroll reveal       (SS.initReveal)
      07  Clipboard + toast   (SS.copyText, SS.toast)
+     07b Keybed keyboard access (SS.keybed)
      08  Boot
 
    NOTE FOR MAINTAINERS: tools/check-links.js scans this file for
@@ -584,6 +585,94 @@
         });
       });
     });
+  };
+
+  /* =======================================================================
+     07b KEYBED KEYBOARD ACCESS
+     The playable keybeds (home hero, VANTA page, full demo) are one tab stop:
+     the keys are role="button" elements with an aria-label naming the note,
+     arrow keys / Home / End move between them (roving tabindex), and Space or
+     Enter plays the focused key for as long as it is held. The page script
+     builds the keys and owns the sound; this only routes the keyboard.
+       SS.keybed(host, press, release)  wire once; press(key)/release(key)
+       SS.keybed.refresh(host)          after the keys were rebuilt
+     ======================================================================= */
+
+  function keybedKeys(host) {
+    return SS.$$('[role="button"]', host).filter(function (k) {
+      return k.getAttribute('aria-disabled') !== 'true';
+    });
+  }
+
+  function keybedFocus(host, key) {
+    keybedKeys(host).forEach(function (k) { k.setAttribute('tabindex', k === key ? '0' : '-1'); });
+    if (key) { try { key.focus({ preventScroll: false }); } catch (e) { key.focus(); } }
+  }
+
+  SS.keybed = function (host, press, release) {
+    if (!host || host.getAttribute('data-ss-bound') === 'keybed') return;
+    host.setAttribute('data-ss-bound', 'keybed');
+    var held = null;
+
+    function keyOf(node) {
+      var k = node && node.closest ? node.closest('[role="button"]') : null;
+      return k && host.contains(k) && k.getAttribute('aria-disabled') !== 'true' ? k : null;
+    }
+    function letGo() {
+      if (!held) return;
+      var k = held;
+      held = null;
+      k.classList.remove('is-focus-held');
+      release(k);
+    }
+
+    host.addEventListener('keydown', function (ev) {
+      var key = keyOf(ev.target);
+      if (!key || ev.altKey || ev.ctrlKey || ev.metaKey) return;
+      var all = keybedKeys(host);
+      var i = all.indexOf(key);
+      var next = null;
+      if (ev.key === 'ArrowRight' || ev.key === 'ArrowUp') next = all[Math.min(all.length - 1, i + 1)];
+      else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowDown') next = all[Math.max(0, i - 1)];
+      else if (ev.key === 'Home') next = all[0];
+      else if (ev.key === 'End') next = all[all.length - 1];
+      if (next) {
+        ev.preventDefault();
+        if (next !== key) { letGo(); keybedFocus(host, next); }
+        return;
+      }
+      if (ev.key === ' ' || ev.key === 'Enter') {
+        ev.preventDefault();          // Space would scroll the page
+        if (ev.repeat || held === key) return;
+        letGo();
+        held = key;
+        key.classList.add('is-focus-held');
+        press(key);
+      }
+    });
+    host.addEventListener('keyup', function (ev) {
+      if (ev.key === ' ' || ev.key === 'Enter') letGo();
+    });
+    host.addEventListener('focusin', function (ev) {
+      var key = keyOf(ev.target);
+      if (key) keybedKeys(host).forEach(function (k) { k.setAttribute('tabindex', k === key ? '0' : '-1'); });
+    });
+    host.addEventListener('focusout', function (ev) {
+      if (!ev.relatedTarget || !host.contains(ev.relatedTarget)) letGo();
+    });
+    SS.keybed.refresh(host);
+  };
+
+  /** Make exactly one enabled key tabbable (the focused one, else the first C, else the first). */
+  SS.keybed.refresh = function (host) {
+    if (!host) return;
+    var all = keybedKeys(host);
+    if (!all.length) return;
+    var current = all.filter(function (k) { return k === document.activeElement; })[0] ||
+      all.filter(function (k) { return k.getAttribute('tabindex') === '0'; })[0] ||
+      all.filter(function (k) { return /^C-?\d/.test(k.getAttribute('aria-label') || ''); })[0] ||
+      all[0];
+    SS.$$('[role="button"]', host).forEach(function (k) { k.setAttribute('tabindex', k === current ? '0' : '-1'); });
   };
 
   /* =======================================================================

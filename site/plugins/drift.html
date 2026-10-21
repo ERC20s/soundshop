@@ -5,10 +5,45 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="DRIFT — tape-modelled delay product page with demos and purchase information.">
 <title>DRIFT — tape-modelled delay — SOUNDSHOP</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2308090A'/%3E%3Crect x='6.5' y='6.5' width='19' height='19' rx='3' fill='none' stroke='%23363D44'/%3E%3Cpath d='M10 21h12M10 17h12' stroke='%238A939B' stroke-width='1.2'/%3E%3Ccircle cx='16' cy='12' r='2.6' fill='%23F2A93B'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="../assets/style.css">
+<style>
+  /* Header: keep the theme toggle to the right of the nav on desktop and
+     beside the burger on mobile. */
+  .site-head > .theme-toggle { flex: none; }
+  @media (max-width: 899px) {
+    .site-head > .theme-toggle { margin-inline-start: auto; }
+    .site-head > .nav-toggle   { margin-inline-start: var(--sp-3); }
+  }
+  /* Product page: the buy row wraps under the price on a phone. */
+  .product__buy { align-items: center; }
+  .product__buy .card__price { margin: 0; }
+  @media (max-width: 519px) {
+    .product__buy .btn { flex: 1 1 100%; justify-content: center; }
+  }
+</style>
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
+<header class="site-head" data-head>
+  <a class="brand" href="../index.html" aria-label="Soundshop home">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">SOUNDSHOP</span>
+  </a>
+  <nav class="site-nav" aria-label="Primary">
+    <a href="index.html">Plugins</a>
+    <a href="../presets/index.html">Presets</a>
+    <a href="../demo/flagship-demo.html">Demo</a>
+    <a href="../docs.html">Docs</a>
+    <a href="../changelog.html">Changelog</a>
+  </nav>
+  <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" aria-label="Switch to light theme" title="Switch to light theme">
+    <span data-theme-label>Dark</span>
+  </button>
+  <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" data-nav-toggle>
+    <span></span><span></span><span></span>
+  </button>
+</header>
 <main id="main">
   <!-- Purchase summary for product pages: what this browser remembers buying.
        Ships hidden; plugin.js will unhide it when purchases are remembered locally. -->
@@ -40,8 +75,56 @@
     <span data-bought-cover>DRIFT</span> was bought on this device on
     <span data-bought-date></span>.
   </p>
+
+  <section class="section section--tight" aria-labelledby="product-title">
+    <div class="wrap stack stack--lg">
+      <p class="muted"><a href="index.html">Plugins</a> / DRIFT</p>
+      <div class="stack stack--sm">
+        <div class="cluster cluster--sm"><span class="badge badge--version num">v1.1.0</span></div>
+        <h1 id="product-title">DRIFT</h1>
+        <p class="lead">Tape-modelled delay &amp; pitch-warping echo</p>
+      </div>
+      <p>
+        DRIFT models the parts of tape delay people actually miss: wow and flutter with
+        correlated low-frequency drift, head-gap loss on repeats, and a record path that
+        saturates before it distorts. Push the transport speed and the repeats bend with
+        it, the way a machine does. Tempo-sync, free-run, and a freeze that holds the
+        loop without re-recording into it.
+      </p>
+      <p class="cluster cluster--sm"><span class="chip">VST3</span><span class="chip">AU</span><span class="chip">AAX</span><span class="chip">CLAP</span></p>
+      <div class="cluster product__buy">
+        <p class="card__price num">$79</p>
+        <a class="btn btn-primary btn--lg" href="index.html#group-store" data-buy="drift">Buy DRIFT — $79</a>
+      </div>
+      <p class="muted">
+        VST3, AU, AAX and CLAP for macOS 11+ (Universal), Windows 10+ (x64) and Linux
+        (x64, VST3/CLAP). No subscription, no iLok, no account required to demo.
+        <a href="../docs.html#requirements">System requirements</a>
+      </p>
+    </div>
+  </section>
 </main>
-<p class="muted"><a href="../index.html">← Plugins</a></p>
+<footer class="site-foot">
+  <div class="foot-grid">
+    <div class="foot-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <p>SOUNDSHOP<br><span class="muted">Instruments for the deep end.</span></p>
+    </div>
+    <div><h3>Instruments</h3><ul>
+      <li><a href="flagship.html">VANTA</a></li>
+      <li><a href="drift.html">DRIFT</a></li>
+      <li><a href="prism.html">PRISM</a></li>
+      <li><a href="anvil.html">ANVIL</a></li>
+    </ul></div>
+    <div><h3>Resources</h3><ul>
+      <li><a href="../presets/index.html">Preset library</a></li>
+      <li><a href="../demo/flagship-demo.html">Playable demo</a></li>
+      <li><a href="../docs.html">Documentation</a></li>
+      <li><a href="../changelog.html">Changelog</a></li>
+    </ul></div>
+  </div>
+  <p class="foot-legal"><span class="muted">&copy; 2026 Soundshop. Every page here is static — no build step, no trackers.</span></p>
+</footer>
 <script src="../assets/js/ui.js"></script>
 <script src="../assets/js/plugin.js"></script>
 </body>

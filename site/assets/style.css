@@ -1849,6 +1849,20 @@ pre code { background: none; border: 0; padding: 0; color: inherit; }
   background: linear-gradient(180deg, var(--accent), var(--accent-dim));
 }
 
+/* Keys are siblings in chromatic order (a black key nested in a white one
+   would vanish inside its role="button" for assistive tech), so a black key
+   is placed over the edge of white key --i out of --whites. */
+.keybed__keys > .keybed__key--black {
+  left: calc(100% * var(--i, 0) / var(--whites, 1));
+  width: calc(58% / var(--whites, 1));
+  margin-inline-start: calc(-29% / var(--whites, 1));
+}
+.keybed__key:focus { outline: none; }
+.keybed__key:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: -4px;
+}
+
 .keybed__key-name,
 .key__name {
   position: absolute;
@@ -1871,6 +1885,42 @@ pre code { background: none; border: 0; padding: 0; color: inherit; }
   letter-spacing: 0.16em;
   color: var(--text-mute);
   pointer-events: none;
+}
+
+/* --- playable strip (home hero, VANTA page) ------------------------------ */
+
+.play-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--gap);
+}
+@media (max-width: 719px) { .play-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.play-meter { display: flex; align-items: center; gap: var(--sp-3); min-width: 190px; }
+.play-meter .meter { flex: 1 1 auto; }
+
+.voice-leds { display: inline-flex; gap: 5px; }
+
+.play-hint {
+  font-size: var(--fs-small);
+  line-height: 1.7;
+  color: var(--text-mute);
+  margin: 0;
+  max-width: 60ch;
+}
+.play-hint kbd {
+  display: inline-block;
+  min-width: 1.5em;
+  padding: 1px 5px;
+  margin-inline: 1px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-xs);
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  text-align: center;
+  color: var(--text-dim);
 }
 
 /* --- meter --------------------------------------------------------------- */
