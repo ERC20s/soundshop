@@ -23,7 +23,8 @@
  *   2. Parameter changes ramp. Moving every continuous parameter while a note
  *      sounds schedules no setValueAtTime that changes a value; discrete
  *      switches (oscillator shape, filter type) happen only while the voice bus
- *      is ducked to silence.
+ *      is ducked to silence, and every switch requested under one duck (a
+ *      preset changing shapes and filter type together) lands on every voice.
  *   3. No voice leaks. Hundreds of notes, the arpeggiator and start/stop cycles
  *      create no audio nodes beyond the fixed graph, except one-shot unlock
  *      sources that disconnect themselves when they end; never more than
@@ -446,6 +447,71 @@ function caseParamsRamp() {
     var after = bus.gain.valueAt(clock.now());
     if (Math.abs(after - bus.gain.initial) > 1e-3) bad('the voice bus did not come back after a duck (gain ' + after.toFixed(3) + ')');
     else ok('the voice bus returns to its level after the duck');
+    // Some node switching is not enough: BOTH switches asked for under the
+    // one duck must have landed on every voice.
+    expectVoiceTypes(S, 'setParam(osc1wave) then setParam(filtType) under one duck');
+  });
+}
+
+/* Every voice's oscillators and filter, found from the graph: osc -> gain ->
+   mix -> filter -> trem -> vca. Oscillators are created o1, o2, sub. */
+function voiceNodesOf() {
+  var nodes = created.map(function (c) { return c.node; });
+  return voicesOf().map(function (v) {
+    var trem = nodes.filter(function (n) { return n.outs.indexOf(v.vca) >= 0; })[0];
+    var filt = nodes.filter(function (n) { return n.kind === 'biquad' && n.outs.indexOf(trem) >= 0; })[0];
+    var mix = nodes.filter(function (n) { return n.kind === 'gain' && n.outs.indexOf(filt) >= 0; })[0];
+    var oscs = nodes.filter(function (n) {
+      return n.kind === 'osc' && n.outs.some(function (g) { return g.outs.indexOf(mix) >= 0; });
+    });
+    return { o1: oscs[0], o2: oscs[1], sub: oscs[2], filt: filt };
+  });
+}
+
+// Every voice's node types must match the engine's current parameters.
+function expectVoiceTypes(S, what) {
+  var want = { o1: S.getParam('osc1wave'), o2: S.getParam('osc2wave'), sub: S.getParam('subWave'), filt: S.getParam('filtType') };
+  var vs = voiceNodesOf();
+  if (vs.length !== S.MAX_VOICES || vs.some(function (v) { return !v.o1 || !v.o2 || !v.sub || !v.filt; })) {
+    bad(what + ': could not find the oscillators and filter of all ' + S.MAX_VOICES + ' voices in the graph');
+    return;
+  }
+  var wrong = [];
+  vs.forEach(function (v, i) {
+    Object.keys(want).forEach(function (k) {
+      if (v[k].type !== want[k]) wrong.push('voice ' + i + ' ' + k + ' is ' + v[k].type + ', engine says ' + want[k]);
+    });
+  });
+  if (wrong.length) bad(what + ': ' + wrong.length + ' node(s) never switched (' + wrong.slice(0, 3).join('; ') + ')');
+  else ok(what + ': every voice runs the oscillator shapes and filter type the engine reports');
+}
+
+/* ================================================================== *
+ * 2b. A preset that changes oscillator shapes AND filter type while a note
+ *     rings applies all of them. Both switches duck the same voice bus; the
+ *     second must join the pending duck, not replace the first.
+ * ================================================================== */
+function caseSwitchesLand() {
+  var E = fresh(), S = E.S;
+  return startInGesture(S).then(flush).then(function () {
+    S.loadPreset(PATCH);
+    S.noteOn(57, 1);
+    clock.advance(0.2);
+    function other(name) {
+      var spec = S.PARAM_SPEC.filter(function (s) { return s.name === name; })[0];
+      return spec.options.filter(function (o) { return o !== S.getParam(name); })[0];
+    }
+    var patch = {};
+    for (var k in PATCH) if (Object.prototype.hasOwnProperty.call(PATCH, k)) patch[k] = PATCH[k];
+    patch.osc1wave = other('osc1wave');
+    patch.osc2wave = other('osc2wave');
+    patch.subWave = other('subWave');
+    patch.filtType = other('filtType');
+    S.loadPreset(patch);
+    clock.advance(0.2);
+    expectVoiceTypes(S, 'loadPreset() with new shapes and filter type under a ringing note');
+    S.noteOff(57);
+    clock.advance(1);
   });
 }
 
@@ -562,6 +628,7 @@ function caseIOS() {
 
 caseNoJumps()
   .then(caseParamsRamp)
+  .then(caseSwitchesLand)
   .then(caseNoLeaks)
   .then(caseIOS)
   .then(function () {

@@ -343,16 +343,20 @@
   /* A discrete switch — oscillator shape, filter type, a new reverb impulse —
      has no ramp, and flipping it under a sounding signal clicks. Duck the gain
      after it to silence, make the switch, then bring the gain back. Switches
-     requested while a duck is pending are folded into it. */
+     requested while a duck is pending are folded into it — every one of
+     them: the oscillator shapes and the filter type share the voice bus, and
+     a preset that changes both must not lose the first switch to the second. */
   var DUCK = 0.006;
   function ducked(param, level, apply) {
-    if (param.__ssDuck) { param.__ssDuck.apply = apply; return; }
-    var job = { apply: apply };
+    if (param.__ssDuck) { param.__ssDuck.applies.push(apply); return; }
+    var job = { applies: [apply] };
     try { param.__ssDuck = job; } catch (e) { apply(); return; }
     var t = fadeOut(param, at(now()), DUCK);
     setTimeout(function () {
       param.__ssDuck = null;
-      try { job.apply(); } catch (e) { /* ignore */ }
+      for (var i = 0; i < job.applies.length; i++) {
+        try { job.applies[i](); } catch (e) { /* ignore */ }
+      }
       var t2 = at(now());
       anchor(param, t2);
       sched(param, 'ramp', level, t2 + 0.012);
