@@ -55,6 +55,18 @@ function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Every .html file under a directory, recursively.
+function walkHtml(dir, out) {
+  out = out || [];
+  for (const name of fs.readdirSync(dir)) {
+    const full = path.join(dir, name);
+    const st = fs.statSync(full);
+    if (st.isDirectory()) walkHtml(full, out);
+    else if (/\.html?$/i.test(name)) out.push(full);
+  }
+  return out;
+}
+
 // Locate the data-bought-summary element in a page. Returns null when the page
 // does not carry one (index.html and the product pages both carry one today).
 function findBoughtSummary(text) {
@@ -242,19 +254,19 @@ function main() {
   }
 
   // Second pass: the Support-link rule and label attribute checks, on every
-  // page under site/plugins/ that carries a bought-summary block (index.html
-  // included, not just the four product pages).
-  let pluginPages = [];
+  // page under site/ that carries a bought-summary block — the shop page, the
+  // four product pages AND site/docs.html, which carries the block too. A
+  // labels span whose attributes name a page ("flagship") instead of the item
+  // id ("vanta") renders the raw token as the product name, and only a
+  // site-wide pass catches that outside site/plugins/.
+  let pages = [];
   try {
-    pluginPages = fs.readdirSync(pluginsDir)
-      .filter((name) => /\.html$/i.test(name))
-      .sort();
+    pages = walkHtml(SITE_DIR).sort();
   } catch (err) {
-    pluginPages = [];
+    pages = [];
   }
 
-  for (const name of pluginPages) {
-    const file = path.join(pluginsDir, name);
+  for (const file of pages) {
     let text;
     try {
       text = fs.readFileSync(file, 'utf8');

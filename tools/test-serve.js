@@ -57,6 +57,17 @@ function ok(msg) { console.log('OK:', msg); }
   // 3. /presets (no trailing slash) -> 301
   r = await req('/presets');
   if (r.status === 301) ok('/presets -> 301'); else fail('/presets did not redirect (status ' + r.status + ')');
+  if (r.status === 301 && r.headers.location === '/presets/') ok('/presets redirects to /presets/'); else fail('/presets redirected to ' + JSON.stringify(r.headers && r.headers.location) + ', expected /presets/');
+
+  // 3b. A run of leading slashes must not turn the redirect into a
+  //     protocol-relative URL: "Location: //presets/" sends the browser to
+  //     http://presets/ (an open redirect), not to this site's /presets/.
+  r = await req('//presets');
+  if (r.status === 301 && r.headers.location === '/presets/') ok('//presets redirects to /presets/, not //presets/'); else fail('//presets -> ' + r.status + ' Location: ' + JSON.stringify(r.headers && r.headers.location) + ' (expected 301 to /presets/)');
+  r = await req('///demo');
+  if (r.status === 301 && r.headers.location === '/demo/') ok('///demo redirects to /demo/'); else fail('///demo -> ' + r.status + ' Location: ' + JSON.stringify(r.headers && r.headers.location) + ' (expected 301 to /demo/)');
+  r = await req('//index.html');
+  if (r.status === 200 && r.body.indexOf('<main') !== -1) ok('//index.html still serves the page'); else fail('//index.html -> ' + r.status);
 
   // 4. directory traversal attempts 404
   r = await req('/../README.md');

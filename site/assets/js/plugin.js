@@ -916,9 +916,22 @@
         }
 
         // Only create the button if the host exposes groupStoreVerify and we
-        // actually have missing refs to attempt.
+        // actually have missing refs to attempt. Without the second half of
+        // that test every visitor to a page that defines groupStoreVerify
+        // would see a "Re-verify purchases" button with nothing behind it.
+        function hasMissingRefs() {
+          try {
+            var arr = readBoughtArray() || {};
+            for (var k in arr) {
+              if (!Object.prototype.hasOwnProperty.call(arr, k)) continue;
+              try { if ((arr[k] && arr[k].ref) && !hasValidatedUrls(arr[k])) return true; } catch (e) { /* ignore */ }
+            }
+          } catch (e) { /* ignore */ }
+          return false;
+        }
+
         try {
-          if (typeof window.groupStoreVerify === 'function') {
+          if (typeof window.groupStoreVerify === 'function' && hasMissingRefs()) {
             // Guard so we don't create duplicates
             var reBtn = null;
             try {
@@ -1020,6 +1033,24 @@
   // available. The function is safe to call multiple times and will not
   // duplicate elements.
   // -----------------------------------------------------------------------
+  // Where support lives, as the page itself declares it: the bought-summary
+  // block carries data-bought-summary-support-href ("../docs.html#support" on
+  // a plugin page, "#support" on the docs page). The block enclosing `host` is
+  // preferred; the paid banner sits outside any block, so it falls back to the
+  // first block on the page. Returns '' when the page declares nothing.
+  function declaredSupportHref(host) {
+    try {
+      var block = null;
+      var node = host;
+      while (node && node.getAttribute) {
+        if (node.getAttribute('data-bought-summary') !== null) { block = node; break; }
+        node = node.parentNode;
+      }
+      if (!block) block = document.querySelector('[data-bought-summary-support-href]');
+      return block ? attr(block, 'data-bought-summary-support-href') : '';
+    } catch (e) { return ''; }
+  }
+
   function createBoughtContactCta(host, rec) {
     try {
       if (!host || !host.setAttribute) return null;
@@ -1028,6 +1059,16 @@
         button = document.createElement('a');
         button.className = 'bought-summary__support';
         button.textContent = 'Contact support';
+
+        // The page's own declaration wins: it is page-relative by construction
+        // and costs no request. The contact.json fetch below is relative to the
+        // page too, so from site/docs.html it reaches for a file one directory
+        // above the site and 404s whenever the repository root is the web root.
+        var declared = declaredSupportHref(host);
+        if (declared) {
+          button.setAttribute('href', declared);
+          return button;
+        }
 
         // Attempt to fetch contact.json once and cache the result on the
         // SSPlugin object so multiple calls reuse it. If fetching fails we
@@ -1112,5 +1153,29 @@
   try { P.normalizeVerifiedOrder = normalizeVerifiedOrder; } catch (e) { /* ignore */ }
   try { P.maskRef = maskRef; } catch (e) { /* ignore */ }
   try { P.maskEmail = maskEmail; } catch (e) { /* ignore */ }
+
+  // Boot. Nothing above runs by itself: a page that loads this script expects
+  // its bought notes, the purchase summary, the ?d8a_order= verify and the
+  // paid-banner CTAs to come up on DOM ready without calling SSPlugin.init()
+  // by hand (no page does). init() is idempotent — every entry point is bound
+  // once through a data-ssp-* guard — so a page that also calls it changes
+  // nothing. tools/test-plugin-init.js runs this file headless and fails when
+  // the boot is missing.
+  function boot() {
+    try { init(); } catch (e) { /* ignore */ }
+  }
+  try {
+    if (SS && typeof SS.ready === 'function') SS.ready(boot);
+    else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+    else boot();
+  } catch (e) { /* ignore */ }
+
+  // The payments widget inserts its <p data-paid> banner and fires
+  // "group-store:paid" after its own verify; decorate the banner then, too.
+  try {
+    document.addEventListener('group-store:paid', function () {
+      try { initPaidBannerCtas(); } catch (e) { /* ignore */ }
+    });
+  } catch (e) { /* ignore */ }
 
 }(window, document));
