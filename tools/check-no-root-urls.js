@@ -157,6 +157,7 @@ function collectFromFile(file, text, problems) {
       const body = m[2] || '';
       if (ATTR_SRC_RE.test(attrs)) continue; // external script
       // scan this inline script for fetch('...') literals
+      let m2;
       FETCH_RE.lastIndex = 0;
       while ((m2 = FETCH_RE.exec(body)) !== null) {
         const target = m2[1] !== undefined ? m2[1] : m2[2];

@@ -199,6 +199,7 @@
 
   var ARC_LEN = 113.1;   /* 24px radius over 270deg */
   var ARC_D = 'M13.03 46.97 A24 24 0 1 1 46.97 46.97';
+  var SVG_NS = 'http://www.w3.org/2000/svg';
 
   function bindContinuous(node, spec, read, write) {
     /* read() -> current value; write(value, fromUser) -> commit + render */
@@ -295,12 +296,19 @@
     root.title = spec.label + ' — drag or use arrow keys; focus before scrolling. Shift for fine, double-click to reset.';
 
     var ring = el('span', 'knob__ring');
-    ring.innerHTML =
-      '<svg viewBox="0 0 60 60" aria-hidden="true" focusable="false">' +
-      '<path class="knob__track" d="' + ARC_D + '"></path>' +
-      '<path class="knob__arc" d="' + ARC_D + '"></path>' +
-      '</svg>';
-    var arc = ring.querySelector('.knob__arc');
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 60 60');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    var track = document.createElementNS(SVG_NS, 'path');
+    track.setAttribute('class', 'knob__track');
+    track.setAttribute('d', ARC_D);
+    var arc = document.createElementNS(SVG_NS, 'path');
+    arc.setAttribute('class', 'knob__arc');
+    arc.setAttribute('d', ARC_D);
+    svg.appendChild(track);
+    svg.appendChild(arc);
+    ring.appendChild(svg);
     var cap = el('span', 'knob__cap');
     var ind = el('span', 'knob__indicator');
     ring.appendChild(cap);
