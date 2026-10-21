@@ -55,6 +55,12 @@ function makeHandler(root) {
         return;
       }
 
+      // Collapse a run of leading slashes. path.join below already treats
+      // "//presets" as "/presets", so the directory redirect further down used
+      // to answer "GET //presets" with "Location: //presets/" — which a browser
+      // reads as a protocol-relative URL, i.e. a redirect to another host.
+      rawPath = rawPath.replace(/^\/+/, '/');
+
       // Construct fs path and prevent traversal
       const joined = path.join(root, '.' + rawPath);
       const normalized = path.normalize(joined);
@@ -80,7 +86,8 @@ function makeHandler(root) {
         // If path doesn't end with slash, redirect to path + '/'
         if (!rawPath.endsWith('/')) {
           res.statusCode = 301;
-          res.setHeader('Location', rawPath + '/');
+          // rawPath was percent-decoded above; a header must carry it encoded.
+          res.setHeader('Location', encodeURI(rawPath) + '/');
           res.end('Moved permanently');
           return;
         }

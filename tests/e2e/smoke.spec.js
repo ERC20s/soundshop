@@ -81,6 +81,54 @@ test('home -> VANTA page -> play a note -> Buy button', async ({ page, baseURL }
   expect(errors).toEqual([]);
 });
 
+// A purchase this browser remembers (what the plugins page writes on a paid
+// checkout return) must show up on the product page and on the docs page.
+// plugin.js has to boot by itself for that: no page calls SSPlugin.init().
+// Bought yesterday, so the record never ages past the 60-day retention
+// plugin.js applies; the date the note must show is derived from it.
+const BOUGHT_AT = Date.now() - 24 * 60 * 60 * 1000;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const BOUGHT_DATE = ((d) => `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`)(new Date(BOUGHT_AT));
+const REMEMBERED = { vanta: { t: BOUGHT_AT, ref: 'ord_abcdef123456', state: 'paid' } };
+
+test('a remembered purchase shows on the VANTA page and in the docs', async ({ page, baseURL }) => {
+  const errors = watchErrors(page, baseURL);
+  await page.addInitScript((rec) => {
+    window.localStorage.setItem('soundshop:bought:v1', JSON.stringify(rec));
+  }, REMEMBERED);
+
+  await page.goto('plugins/flagship.html');
+  const note = page.locator('[data-bought-note][data-bought-item="vanta"]');
+  await expect(note).toBeVisible();
+  await expect(note).toHaveText(new RegExp('VANTA was bought on this device on\\s+' + BOUGHT_DATE + '\\.'));
+  const summary = page.locator('[data-bought-summary]');
+  await expect(summary).toBeVisible();
+  await expect(summary.locator('.bought-summary__label')).toHaveText(['VANTA']);
+  await expect(summary.locator('.bought-summary__ref')).toHaveText('ord_…3456');
+  await expect(summary.locator('.bought-summary__support')).toHaveAttribute('href', '../docs.html#support');
+
+  await page.goto('docs.html');
+  const docSummary = page.locator('[data-bought-summary]');
+  await expect(docSummary).toBeVisible();
+  await expect(docSummary.locator('.bought-summary__label')).toHaveText(['VANTA']);
+  await expect(docSummary.locator('.bought-summary__support')).toHaveAttribute('href', '#support');
+
+  // The shop page defines groupStoreVerify, and this purchase has a reference
+  // but no download link yet, so it is the one place a re-verify is offered.
+  await page.goto('plugins/index.html');
+  await expect(page.locator('[data-bought-summary]')).toBeVisible();
+  await expect(page.locator('[data-ssp-reverify]')).toHaveText('Re-verify purchases');
+
+  expect(errors).toEqual([]);
+});
+
+test('with nothing remembered the shop page offers nothing to re-verify', async ({ page }) => {
+  await page.goto('plugins/index.html');
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('[data-bought-summary]')).toBeHidden();
+  await expect(page.locator('[data-ssp-reverify]')).toHaveCount(0);
+});
+
 const KEYBEDS = [
   { path: 'index.html', group: 'VANTA keyboard' },
   { path: 'plugins/flagship.html', group: 'VANTA keyboard' },
