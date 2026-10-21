@@ -34,6 +34,12 @@
           data-bought-label-anvil="ANVIL"
           data-bought-label-bundle="Full Shop bundle"></span>
   </div>
+  <!-- Bought note for this product only. Ships hidden; plugin.js unhides it
+       and fills in the date when this browser remembers buying DRIFT. -->
+  <p class="note note--good mt-6" hidden data-bought-note data-bought-item="drift">
+    <span data-bought-cover>DRIFT</span> was bought on this device on
+    <span data-bought-date></span>.
+  </p>
 </main>
 <p class="muted"><a href="../index.html">← Plugins</a></p>
 <script src="../assets/js/ui.js"></script>

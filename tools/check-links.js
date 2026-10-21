@@ -61,7 +61,7 @@ const STRING_RE = /'([^']*)'|"([^']*)"/g;
 // <style> ... </style> blocks inside an HTML document
 const STYLE_BLOCK_RE = /<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi;
 // url(foo) / url('foo') / url("foo")
-const CSS_URL_RE = /\burl\(\s*(?:'([^']*)'|"([^']*)"|([^)'"\s]+))\s*\)/gi;
+const CSS_URL_RE = /\burl\(\s*(?:'([^']*)'|"([^"]*)"|([^)'"\s]+))\s*\)/gi;
 // @import 'foo'; / @import "foo";  (the @import url(...) form is covered by CSS_URL_RE)
 const CSS_IMPORT_RE = /@import\s+(?:'([^']*)'|"([^']*)")/gi;
 

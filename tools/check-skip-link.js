@@ -38,15 +38,13 @@ function rel(p) {
   return path.relative(REPO_ROOT, p).split(path.sep).join('/');
 }
 
-function stripQueryAndHash(target) {
-  return target.replace(/[?#].*$/, '');
-}
-
+// Trim and decode only: the target being looked for IS a fragment (#main),
+// so stripping the query/hash here would turn every skip link into ''.
 function cleanTarget(target) {
   if (!target) return '';
   let t = target.trim();
   try { t = decodeURIComponent(t); } catch (e) { /* ignore */ }
-  return stripQueryAndHash(t);
+  return t;
 }
 
 function findSkipLinkBeforeIndex(text, cutoffIndex) {
