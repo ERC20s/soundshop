@@ -34,6 +34,9 @@
    * ================================================================== */
 
   var MAX_VOICES = 8;
+  var VOICE_BUS_GAIN = 0.25;
+  var REV_OUT_GAIN = 0.9;
+  var STEAL_FADE = 0.004;   // s — a sounding voice fades this fast before re-use
   var VERSION = '1.4.0';
 
   var NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -202,30 +205,113 @@
 
   /* ------------------------------------------------------------------ *
    * AudioParam scheduling helpers — these never throw and never click.
+   *
+   * Every event the engine schedules goes through sched(), which mirrors it
+   * in a small shadow timeline on the param (param.__ssTl). anchor() reads
+   * the exact value the param will have at t from that timeline and pins it
+   * with setValueAtTime before a new ramp starts.
+   *
+   * cancelAndHoldAtTime() is NOT used for this. Chromium inserts no hold
+   * when nothing is automating the param at t, and resolves a hold inside a
+   * running setTargetAtTime to the wrong value, so the linear attack that
+   * follows interpolates from a stale event: measured in Chromium, every
+   * note-on jumped straight to peak and every steal dropped toward zero —
+   * an audible click each time. Firefox has no cancelAndHoldAtTime at all.
    * ------------------------------------------------------------------ */
 
   function now() { return ctx ? ctx.currentTime : 0; }
-  function at(t) { var c = now(); return (isNum(t) && t > c) ? t : c; }
+
+  /* currentTime is the start of the render quantum being computed, and an
+     event posted from this thread lands on a later one. An event scheduled
+     at currentTime is therefore already in the past when it arrives, and the
+     first milliseconds of its ramp are skipped. Two render quanta of lead
+     keep the start of every ramp audible. */
+  function lead() { return ctx ? 256 / ctx.sampleRate : 0; }
+  function at(t) { var c = now() + lead(); return (isNum(t) && t > c) ? t : c; }
+
+  function timeline(param) {
+    var tl = param.__ssTl;
+    if (!tl) {
+      tl = [{ type: 'set', v: isNum(param.value) ? param.value : 0, t: 0 }];
+      try { param.__ssTl = tl; } catch (e) { /* frozen param: untracked */ }
+    }
+    return tl;
+  }
+
+  /* Walk a timeline per the Web Audio automation rules for the three event
+     types used here. `upTo` stops the walk at the first event later than it
+     and returns the state reached; valueOf(state, x) then gives the value. */
+  function walk(tl, upTo) {
+    var s = { t0: tl[0].t, v0: tl[0].v, tgt: null, tau: 0, n: 1 };
+    for (var i = 1; i < tl.length; i++) {
+      var e = tl[i];
+      if (e.type === 'ramp') {
+        if (upTo < e.t) { s.ramp = e; break; }
+        s.t0 = e.t; s.v0 = e.v; s.tgt = null;
+      } else {
+        if (upTo < e.t) break;
+        if (e.type === 'set') { s.v0 = e.v; s.tgt = null; }
+        else { s.v0 = valueOf(s, e.t); s.tgt = e.v; s.tau = e.tau; }
+        s.t0 = e.t;
+      }
+      s.n = i + 1;
+    }
+    return s;
+  }
+
+  function valueOf(s, x) {
+    if (s.ramp && x > s.t0) {
+      var r = s.ramp;
+      var span = r.t - s.t0;
+      return span > 0 ? s.v0 + (r.v - s.v0) * Math.min(1, (x - s.t0) / span) : r.v;
+    }
+    if (s.tgt === null) return s.v0;
+    return s.tgt + (s.v0 - s.tgt) * Math.exp(-Math.max(0, x - s.t0) / s.tau);
+  }
+
+  function valueAt(param, t) { var tl = timeline(param); return valueOf(walk(tl, t), t); }
+
+  function sched(param, type, v, t, tau) {
+    var tl = timeline(param);
+    try {
+      if (type === 'set') param.setValueAtTime(v, t);
+      else if (type === 'ramp') param.linearRampToValueAtTime(v, t);
+      else param.setTargetAtTime(v, t, tau);
+    } catch (e) { return; }
+    var e2 = { type: type, v: v, t: t, tau: tau };
+    var i = tl.length;
+    while (i > 1 && tl[i - 1].t > t) i--;
+    tl.splice(i, 0, e2);
+    // Fold everything already played into one or two events so a knob
+    // being dragged for minutes never grows the timeline.
+    if (tl.length > 8) {
+      var s = walk(tl, now());
+      var head = [{ type: 'set', v: s.v0, t: s.t0 }];
+      if (s.tgt !== null) head.push({ type: 'target', v: s.tgt, t: s.t0, tau: s.tau });
+      tl.splice.apply(tl, [0, s.n].concat(head));
+    }
+  }
 
   function anchor(param, t) {
-    // Cancel everything from t onward while holding the value the parameter
+    // Cancel everything from t onward and pin the value the parameter
     // actually has at t, so a retrigger never produces a discontinuity.
-    try {
-      if (typeof param.cancelAndHoldAtTime === 'function') {
-        param.cancelAndHoldAtTime(t);
-        return;
-      }
-    } catch (e) { /* fall through */ }
-    try { param.cancelScheduledValues(t); } catch (e) { /* ignore */ }
-    try { param.setValueAtTime(param.value, t); } catch (e) { /* ignore */ }
+    // Cancel from one sample after t: a ramp's event time is its END, so
+    // cancelling at t itself would delete a fade that finishes exactly at t
+    // (a steal fade, right before the new note's attack) and undo it.
+    var tl = timeline(param);
+    var v = valueAt(param, t);
+    var tc = t + (ctx ? 1 / ctx.sampleRate : 0);
+    try { param.cancelScheduledValues(tc); } catch (e) { /* ignore */ }
+    for (var i = tl.length - 1; i > 0; i--) if (tl[i].t >= tc) tl.splice(i, 1);
+    sched(param, 'set', v, t);
   }
 
   function setSmooth(param, value, t, tau) {
-    try { param.setTargetAtTime(value, at(t), tau || 0.02); } catch (e) { /* ignore */ }
+    sched(param, 'target', value, at(t), tau || 0.02);
   }
 
   function setNow(param, value, t) {
-    try { param.setValueAtTime(value, at(t)); } catch (e) { /* ignore */ }
+    sched(param, 'set', value, at(t));
   }
 
   // Attack (linear ramp) + exponential-ish decay toward sustain.
@@ -233,9 +319,8 @@
     var tt = at(t);
     anchor(param, tt);
     var atk = Math.max(a, 0.0015);
-    try { param.linearRampToValueAtTime(peak, tt + atk); } catch (e) { /* ignore */ }
-    var sus = peak * s;
-    try { param.setTargetAtTime(sus, tt + atk, Math.max(d, 0.002) / 3.2); } catch (e) { /* ignore */ }
+    sched(param, 'ramp', peak, tt + atk);
+    sched(param, 'target', peak * s, tt + atk, Math.max(d, 0.002) / 3.2);
   }
 
   // Release toward a target, plus a guaranteed hard landing well past audibility.
@@ -243,9 +328,40 @@
     var tt = at(t);
     anchor(param, tt);
     var rr = Math.max(r, 0.005);
-    try { param.setTargetAtTime(target, tt, rr / 4.6); } catch (e) { /* ignore */ }
-    try { param.setValueAtTime(target, tt + rr * 1.6 + 0.02); } catch (e) { /* ignore */ }
+    sched(param, 'target', target, tt, rr / 4.6);
+    sched(param, 'set', target, tt + rr * 1.6 + 0.02);
     return tt + rr * 1.6 + 0.05;
+  }
+
+  // Short linear fade to silence, used before a sounding voice is re-pitched.
+  function fadeOut(param, t, dur) {
+    anchor(param, t);
+    sched(param, 'ramp', 0, t + dur);
+    return t + dur;
+  }
+
+  /* A discrete switch — oscillator shape, filter type, a new reverb impulse —
+     has no ramp, and flipping it under a sounding signal clicks. Duck the gain
+     after it to silence, make the switch, then bring the gain back. Switches
+     requested while a duck is pending are folded into it. */
+  var DUCK = 0.006;
+  function ducked(param, level, apply) {
+    if (param.__ssDuck) { param.__ssDuck.apply = apply; return; }
+    var job = { apply: apply };
+    try { param.__ssDuck = job; } catch (e) { apply(); return; }
+    var t = fadeOut(param, at(now()), DUCK);
+    setTimeout(function () {
+      param.__ssDuck = null;
+      try { job.apply(); } catch (e) { /* ignore */ }
+      var t2 = at(now());
+      anchor(param, t2);
+      sched(param, 'ramp', level, t2 + 0.012);
+    }, Math.max(0, (t - now()) * 1000) + 5);
+  }
+
+  function anyVoiceActive() {
+    for (var i = 0; i < voices.length; i++) if (voices[i].active) return true;
+    return false;
   }
 
   /* ================================================================== *
@@ -376,7 +492,7 @@
     if (built) return;
 
     voiceBus = ctx.createGain();
-    voiceBus.gain.value = 0.25;
+    voiceBus.gain.value = VOICE_BUS_GAIN;
 
     driveIn = ctx.createGain();
     shaper = ctx.createWaveShaper();
@@ -442,7 +558,7 @@
     convolver.buffer = buildIR(P.revSize);
     irSizeCached = P.revSize;
     revOut = ctx.createGain();
-    revOut.gain.value = 0.9;
+    revOut.gain.value = REV_OUT_GAIN;
     revIn.connect(convolver); convolver.connect(revOut);
 
     // LFO sources.
@@ -504,12 +620,18 @@
   }
 
   function applyOscWaves() {
-    for (var i = 0; i < voices.length; i++) {
-      var v = voices[i];
-      v.o1.type = P.osc1wave;
-      v.o2.type = P.osc2wave;
-      v.sub.type = P.subWave;
+    function apply() {
+      for (var i = 0; i < voices.length; i++) {
+        var v = voices[i];
+        v.o1.type = P.osc1wave;
+        v.o2.type = P.osc2wave;
+        v.sub.type = P.subWave;
+      }
     }
+    var v0 = voices[0];
+    if (!v0 || (v0.o1.type === P.osc1wave && v0.o2.type === P.osc2wave && v0.sub.type === P.subWave)) return;
+    if (anyVoiceActive()) ducked(voiceBus.gain, VOICE_BUS_GAIN, apply);
+    else apply();
   }
 
   function applyOscLevels() {
@@ -544,18 +666,24 @@
     }
   }
 
+  function applyFilterType() {
+    function apply() {
+      for (var i = 0; i < voices.length; i++) voices[i].filt.type = P.filtType;
+    }
+    if (!voices.length || voices[0].filt.type === P.filtType) return;
+    if (anyVoiceActive()) ducked(voiceBus.gain, VOICE_BUS_GAIN, apply);
+    else apply();
+  }
+
   function applyFilterStatic() {
     var t = now();
+    applyFilterType();
     for (var i = 0; i < voices.length; i++) {
       var v = voices[i];
-      v.filt.type = P.filtType;
       setSmooth(v.filt.Q, P.reso, t, 0.02);
-      if (v.active && v.midi >= 0) {
-        try { v.filt.frequency.cancelScheduledValues(t); } catch (e) { /* ignore */ }
-        setSmooth(v.filt.frequency, voiceCutoff(v.midi), t, 0.02);
-      } else {
-        setNow(v.filt.frequency, voiceCutoff(60), t);
-      }
+      var hz = voiceCutoff(v.active && v.midi >= 0 ? v.midi : 60);
+      anchor(v.filt.frequency, at(t));
+      setSmooth(v.filt.frequency, hz, t, 0.02);
     }
   }
 
@@ -574,7 +702,9 @@
       var ms = Math.max(16, 1000 / Math.max(P.lfoRate, 0.02));
       shTimer = setInterval(function () {
         if (!ctx || !shSrc) return;
-        setNow(shSrc.offset, Math.random() * 2 - 1, now());
+        // A bare step clicks when the LFO drives the amp; a 2 ms slew keeps
+        // the stepped character without the click.
+        setSmooth(shSrc.offset, Math.random() * 2 - 1, now(), 0.002);
       }, ms);
     }
 
@@ -615,7 +745,10 @@
         irTimer = null;
         if (!ctx || !convolver) return;
         irSizeCached = P.revSize;
-        try { convolver.buffer = buildIR(P.revSize); } catch (e) { /* ignore */ }
+        var ir = null;
+        try { ir = buildIR(P.revSize); } catch (e) { return; }
+        // Swapping the impulse under a ringing tail clicks: duck it first.
+        ducked(revOut.gain, REV_OUT_GAIN, function () { convolver.buffer = ir; });
       }, 120);
     }
   }
@@ -712,10 +845,15 @@
   // Fire an event at the moment the note is actually heard rather than when it
   // was scheduled: arpeggiator steps are queued up to SCHEDULE_AHEAD early.
   function emitAt(evt, data, t) {
-    var lead = (t - now()) * 1000;
-    if (lead > 5) setTimeout(function () { emit(evt, data); }, lead);
+    var ms = ahead(t);
+    if (ms > 5) setTimeout(function () { emit(evt, data); }, ms);
     else emit(evt, data);
   }
+
+  /* How far beyond "as soon as possible" t lies, in ms. Live playing is
+     scheduled lead() after currentTime (plus a steal fade) and still counts
+     as now; arpeggiator steps queued up to SCHEDULE_AHEAD early do not. */
+  function ahead(t) { return (t - now() - lead()) * 1000; }
 
   /* Close the note a voice is still holding.
      A voice about to be re-used still owes a 'noteoff' for whatever it was
@@ -769,6 +907,13 @@
     // its pending 'noteoff'.
     closeVoiceNote(v, t);
 
+    // A voice still sounding a different note — stolen, or a release tail
+    // being re-used — fades out first: re-pitching it and jumping its filter
+    // under a live signal is a click. The new note starts once it is silent.
+    if (v.active && v.midi !== midi && valueAt(v.vca.gain, t) > 1e-4) {
+      t = fadeOut(v.vca.gain, t, STEAL_FADE);
+    }
+
     v.gen++;
     if (v.timer) { clearTimeout(v.timer); v.timer = null; }
 
@@ -788,7 +933,6 @@
     var base = voiceCutoff(midi);
     anchor(v.filt.frequency, t);
     setNow(v.filt.frequency, base, t);
-    v.filt.type = P.filtType;
     setNow(v.filt.Q, P.reso, t);
     attackDecay(v.filt.detune, t, P.fegAmt * (0.55 + 0.45 * vel), P.fegA, P.fegD, P.fegS);
 
@@ -798,15 +942,15 @@
 
     // Events fire when the note is actually heard, not when it is scheduled.
     var ev = { midi: midi, velocity: vel, time: t, source: src, voice: v.index };
-    var lead = (t - now()) * 1000;
-    if (lead > 5) {
+    var ms = ahead(t);
+    if (ms > 5) {
       (function (voice, gen) {
         setTimeout(function () {
           if (voice.gen !== gen) return;   // stolen before it was ever heard
           voice.onEmitted = true;
           emit('noteon', ev);
           flushPendingOff(voice);
-        }, lead);
+        }, ms);
       })(v, v.gen);
     } else {
       v.onEmitted = true;
@@ -1041,44 +1185,82 @@
     return out;
   }
 
+  /* iOS Safari starts audio only from work done synchronously inside a user
+     gesture: the unlock buffer and resume() must both run in the handler that
+     called start(), before any promise settles — not in a .then(). iOS also
+     parks a running context in the non-standard 'interrupted' state (a call,
+     Siri, the screen locking) and needs a fresh gesture to bring it back, so
+     every later gesture resumes a context the page still wants running. */
+  var wanted = false;        // start() was called and stop() has not been since
+  var suspendTimer = null;
+  var gesturesHooked = false;
+
+  function unlock() {
+    try {
+      var s = ctx.createBufferSource();
+      s.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+      s.connect(ctx.destination);
+      s.onended = function () { try { s.disconnect(); } catch (e) { /* ignore */ } };
+      s.start(0);
+    } catch (e) { /* ignore */ }
+  }
+
+  function resumeNow() {
+    if (!ctx || ctx.state === 'running' || ctx.state === 'closed') return Promise.resolve();
+    unlock();
+    try {
+      var p = ctx.resume();
+      return (p && typeof p.then === 'function') ? p : Promise.resolve();
+    } catch (e) {
+      return Promise.resolve();
+    }
+  }
+
+  function syncRunning() {
+    API.running = !!(wanted && ctx && ctx.state === 'running');
+  }
+
+  function onGesture() {
+    if (wanted && ctx && ctx.state !== 'running') resumeNow().then(syncRunning, syncRunning);
+  }
+
+  function hookGestures() {
+    if (gesturesHooked || typeof global.addEventListener !== 'function') return;
+    gesturesHooked = true;
+    var evs = ['pointerdown', 'touchend', 'mousedown', 'keydown'];
+    for (var i = 0; i < evs.length; i++) {
+      try { global.addEventListener(evs[i], onGesture, true); } catch (e) { /* ignore */ }
+    }
+  }
+
   function start() {
     if (!AC) return Promise.resolve(false);
+    wanted = true;
+    if (suspendTimer) { clearTimeout(suspendTimer); suspendTimer = null; }
     try {
       if (!ctx) {
         ctx = new AC();
         build();
+        if (typeof ctx.addEventListener === 'function') ctx.addEventListener('statechange', syncRunning);
+        hookGestures();
       }
     } catch (e) {
       API.supported = false;
       return Promise.resolve(false);
     }
-    var p;
-    try {
-      p = (ctx.state === 'suspended' && typeof ctx.resume === 'function')
-        ? ctx.resume()
-        : Promise.resolve();
-    } catch (e2) {
-      p = Promise.resolve();
-    }
-    if (!p || typeof p.then !== 'function') p = Promise.resolve();
-    return p.then(function () {
-      // A one-sample source unlocks stubborn mobile audio stacks.
-      try {
-        var b = ctx.createBuffer(1, 1, ctx.sampleRate);
-        var s = ctx.createBufferSource();
-        s.buffer = b;
-        s.connect(ctx.destination);
-        s.start(0);
-      } catch (e3) { /* ignore */ }
+    // resumeNow() unlocks a context that is not running; one that already
+    // runs can still have its output locked on iOS until a source plays.
+    if (ctx.state === 'running') unlock();
+    return resumeNow().then(function () {
       ready = true;
       API.ready = true;
       /* Resuming after stop(): rebuild the sample-and-hold interval that stop()
          cleared. Idempotent — a no-op for every other LFO wave. */
       try { if (built) applyLfo(); } catch (e4) { /* ignore */ }
-      API.running = (ctx.state === 'running');
+      syncRunning();
       API.sampleRate = ctx.sampleRate;
       emit('start', { sampleRate: ctx.sampleRate, state: ctx.state });
-      return true;
+      return API.running;
     })['catch'](function () {
       API.running = false;
       return false;
@@ -1087,14 +1269,22 @@
 
   function stop() {
     if (!ctx || !built) return API;
+    wanted = false;
     panic();
     /* The sample-and-hold LFO drives its offset from a plain interval; leaving
        it running would keep poking a suspended context. start() calls
        applyLfo() again, which recreates it when lfoWave is still 'sh'. */
     if (shTimer) { clearInterval(shTimer); shTimer = null; }
-    try {
-      if (typeof ctx.suspend === 'function') ctx.suspend();
-    } catch (e) { /* ignore */ }
+    /* panic() fades every voice over 15 ms; suspending the clock mid-fade
+       freezes the output on a non-zero sample, which is a click. */
+    if (suspendTimer) clearTimeout(suspendTimer);
+    suspendTimer = setTimeout(function () {
+      suspendTimer = null;
+      if (wanted || !ctx) return;
+      try {
+        if (typeof ctx.suspend === 'function') ctx.suspend();
+      } catch (e) { /* ignore */ }
+    }, 40);
     API.running = false;
     emit('stop', {});
     return API;
@@ -1120,8 +1310,7 @@
       v.onEmitted = false;
       v.gen++;
       if (v.timer) { clearTimeout(v.timer); v.timer = null; }
-      anchor(v.vca.gain, t);
-      try { v.vca.gain.linearRampToValueAtTime(0, t + 0.015); } catch (e) { /* ignore */ }
+      fadeOut(v.vca.gain, at(t), 0.015);
       anchor(v.filt.detune, t);
       setSmooth(v.filt.detune, 0, t, 0.02);
       v.active = false;
@@ -1136,6 +1325,9 @@
 
   function noteOn(midi, velocity) {
     if (!ready || !built) return API;
+    // Interrupted (iOS) or suspended under us: a note is almost always played
+    // from a gesture, which is exactly when a resume is allowed to succeed.
+    if (wanted && ctx.state !== 'running') resumeNow().then(syncRunning, syncRunning);
     var m = Math.round(Number(midi));
     if (!isNum(m) || m < 0 || m > 127) return API;
     var vel = isNum(velocity) ? clamp(velocity, 0, 1) : 0.85;
