@@ -11,9 +11,11 @@ npm ci                 # install (there are no dependencies; this validates pack
 npm test               # every tools/check-*.js and tools/test-*.js — must end "0 failed"
 npm run test:list      # list what npm test would run
 npm run web            # serve site/ at http://localhost:5003 (the `run:` block in .d8a)
+npm run test:e2e       # Playwright browser tests in tests/e2e (after `npx playwright install chromium`)
 ```
 
-CI (`.github/workflows/ci.yml`) runs `npm ci` and `npm test` on every push and pull request.
+CI (`.github/workflows/ci.yml`) runs `npm ci` and `npm test` on every push and pull request,
+and the browser tests in a second job.
 
 ## Ground rules
 

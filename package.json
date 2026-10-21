@@ -7,6 +7,10 @@
     "test": "node tools/run-checks.js",
     "test:list": "node tools/run-checks.js --list",
     "test:serve": "node tools/test-serve.js",
-    "check-links": "node tools/check-links.js"
+    "check-links": "node tools/check-links.js",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
   }
 }

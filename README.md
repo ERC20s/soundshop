@@ -52,6 +52,24 @@ dependencies, no arguments, repository-root-relative paths, a one-line summary o
 and exit 0 on pass / non-zero on failure. Name a new one `tools/check-*.js` (a static rule)
 or `tools/test-*.js` (a behavioural test) and `npm test` will run it.
 
+### Browser tests
+
+`tests/e2e/` holds Playwright tests that run the site in Chromium (CI runs them as a
+separate job):
+
+```sh
+npm ci                                   # installs @playwright/test (the only devDependency)
+npx playwright install --with-deps chromium
+npm run test:e2e                         # starts tools/serve.js on port 5183 itself
+```
+
+`smoke.spec.js` goes home → VANTA page → plays a note (the AudioContext must exist and be
+running) → checks the Buy link; renders every plugin page at 1280 and 390 px with no console
+error and no sideways scroll; and plays every keybed from the keyboard alone.
+`audio.spec.js` records the engine's real output with an AudioWorklet and fails on any
+click. `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome` points the tests at a Chromium that
+was installed some other way.
+
 ### Directory indexes and "clean URLs"
 
 `serve.json` (one at the repository root, one in `site/`) sets `"cleanUrls": false`. It is
@@ -140,7 +158,8 @@ site/
       ui.js                        window.SS — chrome, theme, nav, scroll reveal,
                                    clipboard/toast, formatting helpers
       synth.js                     window.SSSynth — the VANTA browser audio engine
-      home.js                      page script for index.html (hero canvas, mini-instrument)
+      home.js                      page script for index.html (hero canvas, mini-instrument);
+                                   also drives the mini-instrument on plugins/flagship.html
       plugin.js                    window.SSPlugin — shared behaviour for the four
       demo.js                      page script for demo/flagship-demo.html (the rack)
       presets.js                   page script for presets/index.html (the gallery)
@@ -159,9 +178,14 @@ tools/
   check-*.js                       one static guard each — charset, JSON, JS syntax,
                                    external assets, root-relative URLs, presets,
                                    payments widget, store placeholder, and more
+  check-site-integrity.js          #fragment links, data-* runtime assets, and every
+                                   plugin page renders (h1, content, Buy link)
   test-voice-steal.js              runs the engine headless against a stub
                                    AudioContext: every noteon must be closed by
                                    exactly one noteoff, even when voices are stolen
+  test-synth-automation.js         renders the engine's recorded automation: no
+                                   gain jumps, ramped parameter changes, no node
+                                   leaks, iOS gesture unlock and interruption
   test-*.js                        behavioural tests — serve.js, the bought CTA,
                                    the verified-order shape, preset recall
 ```
